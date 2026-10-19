@@ -38,8 +38,4 @@ public class ProductRule {
     /** null 이면 현재 유효. */
     @Column(name = "effective_to")
     private LocalDate effectiveTo;
-
-    /** {regulation_id}/{version}/{article_id} 또는 product */
-    @Column(nullable = false, length = 100)
-    private String source;
 }

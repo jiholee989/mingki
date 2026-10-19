@@ -220,8 +220,7 @@ CREATE TABLE product_rules (
     value          VARCHAR(50)  NOT NULL,
     unit           VARCHAR(20)  NOT NULL,   -- ratio | percent_point | krw | age | score | bool
     effective_from DATE         NOT NULL,
-    effective_to   DATE,
-    source         VARCHAR(100) NOT NULL    -- {regulation_id}/{version}/{article_id} 또는 product
+    effective_to   DATE
 );
 CREATE INDEX idx_product_rules_product_key ON product_rules(product_id, rule_key, effective_from);
 
@@ -242,6 +241,5 @@ CREATE TABLE loan_contracts (
     dsr_at_approval  NUMERIC(4, 3),
     senior_applied   BOOLEAN,
     rate_discount_pp NUMERIC(3, 2),
-    reject_reason    VARCHAR(50),
-    note             TEXT
+    reject_reason    VARCHAR(50)
 );

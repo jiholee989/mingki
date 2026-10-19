@@ -68,9 +68,6 @@ public class LoanContract {
     @Column(name = "reject_reason", length = 50)
     private String rejectReason;
 
-    @Column(columnDefinition = "text")
-    private String note;
-
     /** 신청일 기준 만 나이. */
     public int ageAtApplication() {
         return Period.between(birthDate, appliedAt).getYears();

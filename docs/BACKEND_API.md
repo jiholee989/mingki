@@ -210,7 +210,7 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 ```jsonc
 // GET /internal/product-rules — effectiveTo가 null이면 현재 유효
 {"ruleId":"R010","productId":"P002","ruleKey":"ELIGIBLE_MIN_AGE","value":"65","unit":"age",
- "effectiveFrom":"2024-01-01","effectiveTo":null,"source":"credit-loan-ops/v3/15"}
+ "effectiveFrom":"2024-01-01","effectiveTo":null}
 
 // GET /internal/contracts/impact?ageFrom=60&ageTo=64&appliedBefore=2026-12-01
 {"ageFrom":60,"ageTo":64,"total":2,"byProduct":{"P001":2},"appliedBefore":"2026-12-01","grandfathered":2,
@@ -219,7 +219,6 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 ```
 
 - `unit`: `ratio` · `percent_point` · `krw` · `age` · `score` · `bool`
-- `source`: `{regulation_id}/{version}/{article_id}` 또는 `product`(상품 자체 기준)
 - 경과조치는 기존 행을 `effectiveTo = 2026-11-30`으로 닫고 `effectiveFrom = 2026-12-01` 행을 추가한다.
 - `contracts/impact`의 나이는 `birth_date`와 `applied_at`으로 계산한 신청일 기준 만 나이다. `REJECTED`와 만기 지난 계약은 세지 않는다. `appliedBefore`보다 먼저 신청한 건이 `grandfathered`(종전 기준 유지)다.
 

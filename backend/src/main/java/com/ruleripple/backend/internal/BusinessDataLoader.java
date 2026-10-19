@@ -1,5 +1,6 @@
 package com.ruleripple.backend.internal;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +25,7 @@ import java.util.List;
 /**
  * 기동 시 data/business/*.json 을 읽어 비어 있는 업무 테이블에 넣는다.
  * 샘플 업무 데이터의 원천은 JSON 하나뿐이다. 이미 행이 있는 테이블은 건드리지 않는다.
+ * source · note 는 정답 힌트라 DB 에 넣지 않는다. 그 밖의 모르는 필드는 기동 오류로 잡는다.
  */
 @Component
 public class BusinessDataLoader implements ApplicationRunner {
@@ -33,14 +35,16 @@ public class BusinessDataLoader implements ApplicationRunner {
     record ProductRow(String productId, String name, String description, List<String> repaymentTypes,
                       int minTermMonths, int maxTermMonths, String status) {}
 
+    @JsonIgnoreProperties({"source"})
     record RuleRow(String ruleId, String productId, String ruleKey, String value, String unit,
-                   LocalDate effectiveFrom, LocalDate effectiveTo, String source) {}
+                   LocalDate effectiveFrom, LocalDate effectiveTo) {}
 
+    @JsonIgnoreProperties({"note"})
     record ContractRow(String contractId, String productId, String customerId, LocalDate birthDate,
                        LocalDate appliedAt, LocalDate contractedAt, String status, long amount, int termMonths,
                        String repaymentType, LocalDate maturityDate, int extensionCount, long annualIncome,
                        BigDecimal dsrAtApproval, Boolean seniorApplied, BigDecimal rateDiscountPp,
-                       String rejectReason, String note) {}
+                       String rejectReason) {}
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -55,7 +59,7 @@ public class BusinessDataLoader implements ApplicationRunner {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)   // JSON 파싱 오류(IOException)에도 전부 되돌린다
     public void run(ApplicationArguments args) throws IOException {
         if (!Files.isDirectory(dir)) {
             log.warn("업무 데이터 폴더가 없어 시드를 건너뜀: {}", dir.toAbsolutePath());
@@ -83,13 +87,13 @@ public class BusinessDataLoader implements ApplicationRunner {
         if (!isEmpty("product_rules")) return;
         List<RuleRow> rows = read("product_rules.json", new TypeReference<>() {});
         jdbc.batchUpdate("""
-                insert into product_rules (rule_id, product_id, rule_key, value, unit, effective_from, effective_to, source)
-                values (?, ?, ?, ?, ?, ?, ?, ?)
+                insert into product_rules (rule_id, product_id, rule_key, value, unit, effective_from, effective_to)
+                values (?, ?, ?, ?, ?, ?, ?)
                 """, rows.stream().map(r -> new Object[]{
                         r.ruleId(), r.productId(), r.ruleKey(), r.value(), r.unit(),
-                        r.effectiveFrom(), r.effectiveTo(), r.source()}).toList(),
+                        r.effectiveFrom(), r.effectiveTo()}).toList(),
                 new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                        Types.DATE, Types.DATE, Types.VARCHAR});
+                        Types.DATE, Types.DATE});
         log.info("product_rules {}건 시드", rows.size());
     }
 
@@ -99,16 +103,15 @@ public class BusinessDataLoader implements ApplicationRunner {
         jdbc.batchUpdate("""
                 insert into loan_contracts (contract_id, product_id, customer_id, birth_date, applied_at, contracted_at,
                     status, amount, term_months, repayment_type, maturity_date, extension_count, annual_income,
-                    dsr_at_approval, senior_applied, rate_discount_pp, reject_reason, note)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    dsr_at_approval, senior_applied, rate_discount_pp, reject_reason)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, rows.stream().map(r -> new Object[]{
                         r.contractId(), r.productId(), r.customerId(), r.birthDate(), r.appliedAt(), r.contractedAt(),
                         r.status(), r.amount(), r.termMonths(), r.repaymentType(), r.maturityDate(), r.extensionCount(),
-                        r.annualIncome(), r.dsrAtApproval(), r.seniorApplied(), r.rateDiscountPp(), r.rejectReason(),
-                        r.note()}).toList(),
+                        r.annualIncome(), r.dsrAtApproval(), r.seniorApplied(), r.rateDiscountPp(), r.rejectReason()}).toList(),
                 new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.DATE, Types.DATE, Types.DATE,
                         Types.VARCHAR, Types.BIGINT, Types.INTEGER, Types.VARCHAR, Types.DATE, Types.INTEGER,
-                        Types.BIGINT, Types.NUMERIC, Types.BOOLEAN, Types.NUMERIC, Types.VARCHAR, Types.VARCHAR});
+                        Types.BIGINT, Types.NUMERIC, Types.BOOLEAN, Types.NUMERIC, Types.VARCHAR});
         log.info("loan_contracts {}건 시드", rows.size());
     }
 
