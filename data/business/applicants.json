@@ -1,0 +1,56 @@
+[
+  {
+    "applicant_id": "A01", "product_id": "P001", "birth_date": "1966-12-06", "applied_at": "2026-12-05",
+    "annual_income": 40000000, "annual_debt_service": 8000000,
+    "expected": { "age": 59, "rule_version": "v4", "is_senior": false, "dsr": 0.20, "decision": "APPROVE" },
+    "purpose": "고령자 경계: 59세(하루 차이)"
+  },
+  {
+    "applicant_id": "A02", "product_id": "P001", "birth_date": "1966-12-05", "applied_at": "2026-12-05",
+    "annual_income": 40000000, "annual_debt_service": 8000000,
+    "expected": { "age": 60, "rule_version": "v4", "is_senior": true, "dsr": 0.20, "decision": "APPROVE" },
+    "purpose": "고령자 경계: 신청일에 만 60세 도달"
+  },
+  {
+    "applicant_id": "A03", "product_id": "P001", "birth_date": "1964-03-15", "applied_at": "2026-12-10",
+    "annual_income": 40000000, "annual_debt_service": 8000000,
+    "expected": { "age": 62, "rule_version": "v4", "is_senior": true, "dsr": 0.20, "decision": "APPROVE" },
+    "purpose": "시스템 테스트: 62세가 신청 API 전체 흐름에서 고령자로 처리되는가"
+  },
+  {
+    "applicant_id": "A04", "product_id": "P002", "birth_date": "1961-01-20", "applied_at": "2026-12-10",
+    "annual_income": 30000000, "annual_debt_service": 6000000,
+    "expected": { "age": 65, "rule_version": "v4", "is_senior": true, "dsr": 0.20, "decision": "APPROVE" },
+    "purpose": "종전 기준에서도 고령자인 65세"
+  },
+  {
+    "applicant_id": "A05", "product_id": "P002", "birth_date": "1964-06-01", "applied_at": "2026-12-08",
+    "annual_income": 30000000, "annual_debt_service": 6000000,
+    "expected": { "age": 62, "rule_version": "v4", "is_senior": true, "dsr": 0.20, "decision": "APPROVE" },
+    "purpose": "시니어 상품 자격(ELIGIBLE_MIN_AGE) 60세로 낮아졌는지"
+  },
+  {
+    "applicant_id": "A06", "product_id": "P001", "birth_date": "1964-03-15", "applied_at": "2026-11-30",
+    "annual_income": 40000000, "annual_debt_service": 8000000,
+    "expected": { "age": 62, "rule_version": "v3", "is_senior": false, "dsr": 0.20, "decision": "APPROVE" },
+    "purpose": "경과조치: A03과 같은 나이, 시행일 전날 신청이라 비고령자"
+  },
+  {
+    "applicant_id": "A07", "product_id": "P001", "birth_date": "1985-04-01", "applied_at": "2026-12-07",
+    "annual_income": 50000000, "annual_debt_service": 18500000,
+    "expected": { "age": 41, "rule_version": "v4", "is_senior": false, "dsr": 0.37, "decision": "REJECT", "reject_reason": "DSR_EXCEEDED" },
+    "purpose": "DSR 0.37: 신 한도 0.35 초과"
+  },
+  {
+    "applicant_id": "A08", "product_id": "P001", "birth_date": "1988-09-09", "applied_at": "2026-12-07",
+    "annual_income": 60000000, "annual_debt_service": 21000000,
+    "expected": { "age": 38, "rule_version": "v4", "is_senior": false, "dsr": 0.35, "decision": "APPROVE" },
+    "purpose": "DSR 경계: 정확히 0.35는 허용(초과할 수 없다)"
+  },
+  {
+    "applicant_id": "A09", "product_id": "P001", "birth_date": "1985-04-01", "applied_at": "2026-11-30",
+    "annual_income": 50000000, "annual_debt_service": 18500000,
+    "expected": { "age": 41, "rule_version": "v3", "is_senior": false, "dsr": 0.37, "decision": "APPROVE" },
+    "purpose": "경과조치: A07과 같은 DSR, 시행일 전 신청이라 종전 한도 0.40으로 승인"
+  }
+]
