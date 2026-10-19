@@ -3,57 +3,49 @@
     "contract_id": "C0001", "product_id": "P001", "customer_id": "U0001", "birth_date": "1958-03-10",
     "applied_at": "2025-03-02", "contracted_at": "2025-03-05", "status": "ACTIVE",
     "amount": 30000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2028-03-05", "extension_count": 0,
-    "annual_income": 42000000, "dsr_at_approval": 0.28, "senior_applied": true, "rate_discount_pp": 0.3,
-    "note": "신청 당시 만 66세, 종전 기준 고령자"
+    "annual_income": 42000000, "dsr_at_approval": 0.28, "senior_applied": true, "rate_discount_pp": 0.3
   },
   {
     "contract_id": "C0002", "product_id": "P001", "customer_id": "U0002", "birth_date": "1963-05-20",
     "applied_at": "2025-06-11", "contracted_at": "2025-06-13", "status": "ACTIVE",
     "amount": 25000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2029-06-13", "extension_count": 0,
-    "annual_income": 55000000, "dsr_at_approval": 0.31, "senior_applied": false, "rate_discount_pp": 0.2,
-    "note": "신청 당시 만 62세. v4 기준이면 고령자지만 기존 계약이라 종전 기준 유지"
+    "annual_income": 55000000, "dsr_at_approval": 0.31, "senior_applied": false, "rate_discount_pp": 0.2
   },
   {
     "contract_id": "C0003", "product_id": "P002", "customer_id": "U0003", "birth_date": "1960-01-15",
     "applied_at": "2025-09-01", "contracted_at": "2025-09-04", "status": "ACTIVE",
     "amount": 20000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2028-09-04", "extension_count": 0,
-    "annual_income": 30000000, "dsr_at_approval": 0.33, "senior_applied": true, "rate_discount_pp": 0.3,
-    "note": "시니어 상품, 신청 당시 만 65세"
+    "annual_income": 30000000, "dsr_at_approval": 0.33, "senior_applied": true, "rate_discount_pp": 0.3
   },
   {
     "contract_id": "C0004", "product_id": "P001", "customer_id": "U0004", "birth_date": "1965-12-02",
     "applied_at": "2026-11-27", "contracted_at": null, "status": "APPLIED",
     "amount": 40000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
-    "annual_income": 60000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
-    "note": "시행일 전 신청(만 60세), 체결은 시행일 이후 예정. 신청일 기준이라 종전 기준(비고령자) 적용"
+    "annual_income": 60000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
   },
   {
     "contract_id": "C0005", "product_id": "P003", "customer_id": "U0005", "birth_date": "1990-07-07",
     "applied_at": "2024-05-10", "contracted_at": "2024-05-14", "status": "ACTIVE",
     "amount": 70000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-05-14", "extension_count": 0,
-    "annual_income": 95000000, "dsr_at_approval": 0.31, "senior_applied": false, "rate_discount_pp": 0.0,
-    "note": "프리미엄 상품, 상품 DSR 0.35 이내"
+    "annual_income": 95000000, "dsr_at_approval": 0.31, "senior_applied": false, "rate_discount_pp": 0.0
   },
   {
     "contract_id": "C0006", "product_id": "P001", "customer_id": "U0006", "birth_date": "1980-02-14",
     "applied_at": "2024-02-20", "contracted_at": "2024-02-22", "status": "ACTIVE",
     "amount": 50000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-02-22", "extension_count": 2,
-    "annual_income": 70000000, "dsr_at_approval": 0.38, "senior_applied": false, "rate_discount_pp": 0.2,
-    "note": "만기일시, 2회 연장. 2027-02 연장 시 DSR 0.38이지만 경과조치로 종전 한도 0.40 적용"
+    "annual_income": 70000000, "dsr_at_approval": 0.38, "senior_applied": false, "rate_discount_pp": 0.2
   },
   {
     "contract_id": "C0007", "product_id": "P001", "customer_id": "U0007", "birth_date": "1975-10-03",
     "applied_at": "2025-11-12", "contracted_at": "2025-11-14", "status": "ACTIVE",
     "amount": 35000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2030-11-14", "extension_count": 0,
-    "annual_income": 48000000, "dsr_at_approval": 0.39, "senior_applied": false, "rate_discount_pp": 0.0,
-    "note": "DSR 0.39. v4 기준이면 초과지만 기존 계약이라 영향 없음"
+    "annual_income": 48000000, "dsr_at_approval": 0.39, "senior_applied": false, "rate_discount_pp": 0.0
   },
   {
     "contract_id": "C0008", "product_id": "P002", "customer_id": "U0008", "birth_date": "1962-08-30",
     "applied_at": "2026-11-25", "contracted_at": null, "status": "REJECTED",
     "amount": 15000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
     "annual_income": 28000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
-    "reject_reason": "AGE_UNDER_MIN",
-    "note": "시니어 상품에 만 64세가 시행일 전 신청. 종전 기준(65세)으로 거절"
+    "reject_reason": "AGE_UNDER_MIN"
   }
 ]
