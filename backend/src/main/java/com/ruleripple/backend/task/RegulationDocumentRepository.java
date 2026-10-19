@@ -6,5 +6,5 @@ import java.util.List;
 import java.util.UUID;
 
 public interface RegulationDocumentRepository extends JpaRepository<RegulationDocument, Long> {
-    List<RegulationDocument> findByTaskIdOrderBySideAsc(UUID taskId);
+    List<RegulationDocument> findByTaskIdOrderByIdAsc(UUID taskId);
 }

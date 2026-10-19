@@ -2,6 +2,7 @@ package com.ruleripple.backend.config;
 
 import com.ruleripple.backend.auth.InternalTokenFilter;
 import com.ruleripple.backend.auth.JwtAuthFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,7 +33,9 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/actuator/health").permitAll()
+                // SSE 완료·타임아웃(ASYNC)과 /error(ERROR) 재디스패치는 인증 없이 통과 — 원 요청에서 이미 검사함
+                .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
+                .requestMatchers("/api/auth/**", "/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/internal/**").hasRole("INTERNAL")
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().denyAll())

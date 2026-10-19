@@ -85,7 +85,7 @@ public class TaskService {
     @Transactional(readOnly = true)
     public List<RegulationDocument> documents(UUID taskId) {
         get(taskId);
-        return documents.findByTaskIdOrderBySideAsc(taskId);
+        return documents.findByTaskIdOrderByIdAsc(taskId);
     }
 
     @Transactional(readOnly = true)

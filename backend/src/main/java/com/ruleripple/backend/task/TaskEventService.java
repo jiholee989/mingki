@@ -82,7 +82,7 @@ public class TaskEventService {
             }
             case "STATUS" -> {
                 String s = str(p.get("status"));
-                if (s != null) task.setStatus(TaskStatus.valueOf(s));
+                if (s != null) task.setStatus(parseStatus(s));
             }
             case "APPROVAL_REQUIRED" -> {
                 if (task.getStatus().isTerminal()) return;
@@ -92,7 +92,7 @@ public class TaskEventService {
             }
             case "DONE" -> {
                 String outcome = str(p.get("outcome"));
-                TaskStatus s = outcome == null ? TaskStatus.DONE : TaskStatus.valueOf(outcome);
+                TaskStatus s = outcome == null ? TaskStatus.DONE : parseStatus(outcome);
                 if (!s.isTerminal() || s == TaskStatus.FAILED) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DONE.outcome must be DONE|NO_CHANGE|HELD|REJECTED");
                 }
@@ -104,6 +104,14 @@ public class TaskEventService {
                 task.setErrorMessage(str(p.get("reason")));
             }
             default -> { /* TOKEN, TOOL_START, TOOL_END, RESUMED: 상태 변화 없음 */ }
+        }
+    }
+
+    private static TaskStatus parseStatus(String s) {
+        try {
+            return TaskStatus.valueOf(s);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "알 수 없는 상태: " + s);
         }
     }
 

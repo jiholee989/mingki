@@ -35,7 +35,7 @@ public class AgentDispatcher {
     public void run(UUID taskId) {
         try {
             AnalysisTask task = tasks.findById(taskId).orElseThrow();
-            agent.run(task, documents.findByTaskIdOrderBySideAsc(taskId));
+            agent.run(task, documents.findByTaskIdOrderByIdAsc(taskId));
         } catch (Exception e) {
             log.warn("agent run failed task={} : {}", taskId, e.getMessage());
             events.append(taskId, "FAILED", Map.<String, Object>of("reason", "Agent 호출 실패: " + e.getMessage()));

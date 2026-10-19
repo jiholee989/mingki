@@ -48,11 +48,19 @@ public class JobWorker {
 
     @RabbitListener(queues = "${ruleripple.queue.main-queue}")
     public void onMessage(JobMessage msg, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long tag) throws IOException {
-        Job job = jobs.findById(msg.jobId()).orElse(null);
-        if (job == null || job.getStatus() == Job.Status.DONE) {
-            channel.basicAck(tag, false);   // 없거나 이미 끝난 작업은 버린다 (중복 전달 대비)
-            return;
+        try {
+            handle(msg);
+        } catch (Exception e) {
+            // 재발행·DB 오류 등 예상 밖 실패. 수동 ack 모드라 ack 를 빠뜨리면 prefetch=1 소비자가 멈춘다.
+            log.error("job handling crashed id={} : {}", msg.jobId(), e.getMessage(), e);
+        } finally {
+            channel.basicAck(tag, false);
         }
+    }
+
+    private void handle(JobMessage msg) {
+        Job job = jobs.findById(msg.jobId()).orElse(null);
+        if (job == null || job.getStatus() == Job.Status.DONE) return;  // 없거나 이미 끝난 작업은 버린다 (중복 전달 대비)
         job.setStatus(Job.Status.RUNNING);
         job.setAttempts(msg.attempt());
         jobs.save(job);
@@ -79,7 +87,6 @@ public class JobWorker {
             if (retry) log.warn("job failed id={} attempt={} → retry: {}", job.getId(), msg.attempt(), error);
             else log.error("job dead id={} after {} attempts: {}", job.getId(), msg.attempt(), error);
         }
-        channel.basicAck(tag, false); // 실패 시에도 재발행했으므로 원 메시지는 ack
     }
 
     private Map<String, Object> process(Job job) {
