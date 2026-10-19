@@ -1,0 +1,25 @@
+[project]
+name = "mingki"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.146.0",
+    "fastmcp>=4.1.1",
+    "langchain>=1.4.6",
+    "langchain-openai>=1.7.2",
+    "langgraph>=1.2.16",
+    "pydantic>=2.14.1",
+    "python-dotenv>=1.2.4",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
