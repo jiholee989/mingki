@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** 공개 API 의 업무 로직: 작업 생성, 화면별 조회, interrupt ①② 처리. */
 @Service
@@ -59,7 +61,7 @@ public class TaskService {
         }
         String oldLabel = blankToDefault(oldVersion, "v3");
         String newLabel = blankToDefault(newVersion, "v4");
-        String taskTitle = blankToDefault(title, stripExt(newFile.getOriginalFilename()) + " " + oldLabel + " → " + newLabel);
+        String taskTitle = blankToDefault(title, regulationName(newText, newFile) + " " + oldLabel + " → " + newLabel);
 
         AnalysisTask task = tasks.save(AnalysisTask.create(me.id(), taskTitle));
         documents.save(new RegulationDocument(task.getId(), RegulationDocument.Side.OLD, oldLabel,
@@ -277,6 +279,14 @@ public class TaskService {
         if (name == null) return "";
         int i = name.lastIndexOf('.');
         return i < 0 ? "" : name.substring(i + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private static final Pattern FRONTMATTER_TITLE = Pattern.compile("\\A---\\R(?:(?!---).*\\R)*?title:\\s*(.+?)\\s*\\R");
+
+    /** 규정 이름은 frontmatter 의 title 을 쓰고, 없으면 파일명을 쓴다. */
+    private static String regulationName(String text, MultipartFile file) {
+        Matcher m = FRONTMATTER_TITLE.matcher(text);
+        return m.find() ? m.group(1) : stripExt(file.getOriginalFilename());
     }
 
     private static String stripExt(String name) {

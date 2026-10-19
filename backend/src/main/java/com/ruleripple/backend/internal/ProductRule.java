@@ -6,31 +6,40 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 
-/** 규정 키별 상품 적용값. 시행일 버전(effectiveFrom)으로 경과조치를 표현한다. 읽기 전용. */
+/**
+ * 상품별 규칙값 (data/business/product_rules.json). 읽기 전용.
+ * 경과조치는 기존 행을 effectiveTo 로 닫고 새 effectiveFrom 행을 추가해 표현한다.
+ */
 @Entity
 @Table(name = "product_rules")
 @Getter
 @NoArgsConstructor
 public class ProductRule {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "rule_id", length = 10)
+    private String ruleId;
 
-    @Column(name = "product_id", nullable = false, length = 16)
+    @Column(name = "product_id", nullable = false, length = 10)
     private String productId;
 
-    @Column(name = "rule_key", nullable = false, length = 64)
+    @Column(name = "rule_key", nullable = false, length = 50)
     private String ruleKey;
 
-    @Column(nullable = false, length = 64)
+    @Column(nullable = false, length = 50)
     private String value;
 
-    @Column
-    private String description;
-
-    @Column(name = "regulation_ref", length = 64)
-    private String regulationRef;
+    /** ratio | percent_point | krw | age | score | bool */
+    @Column(nullable = false, length = 20)
+    private String unit;
 
     @Column(name = "effective_from", nullable = false)
     private LocalDate effectiveFrom;
+
+    /** null 이면 현재 유효. */
+    @Column(name = "effective_to")
+    private LocalDate effectiveTo;
+
+    /** {regulation_id}/{version}/{article_id} 또는 product */
+    @Column(nullable = false, length = 100)
+    private String source;
 }

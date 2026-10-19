@@ -22,6 +22,7 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     ports:
+      - "5672:5672"      # 로컬 개발 편의용 (gradle bootRun). 제출 시 제거 가능
       - "15672:15672"    # 관리 콘솔 (guest/guest) — 시연에서 재시도·DLQ 보여줄 때 사용
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
@@ -39,6 +40,9 @@ services:
       INTERNAL_TOKEN: rr-internal-dev-token
       JWT_SECRET: rule-ripple-demo-secret-key-change-me-please-32b
       JOB_FAILURE_RATE: "0.3"
+      BUSINESS_DATA_DIR: /data/business
+    volumes:
+      - ./data/business:/data/business:ro   # 샘플 업무 시드 JSON
     ports:
       - "8080:8080"
     depends_on:

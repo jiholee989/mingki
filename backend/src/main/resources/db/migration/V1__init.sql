@@ -201,31 +201,47 @@ CREATE TABLE jobs (
 CREATE INDEX idx_jobs_task ON jobs(task_id);
 
 -- ===== 샘플 업무 (개인신용대출, 가상 데이터) =====
+-- 스키마는 data/business/README.md 제안 스키마를 따른다. 데이터는 BusinessDataLoader 가 data/business/*.json 에서 넣는다.
 CREATE TABLE products (
-    id          VARCHAR(16) PRIMARY KEY,
-    name        VARCHAR(64) NOT NULL,
-    type        VARCHAR(16) NOT NULL,
-    active      BOOLEAN     NOT NULL DEFAULT true
+    product_id      VARCHAR(10)  PRIMARY KEY,
+    name            VARCHAR(100) NOT NULL,
+    description     TEXT,
+    repayment_types JSONB        NOT NULL,   -- ["AMORTIZING", "BULLET"]
+    min_term_months INT          NOT NULL,
+    max_term_months INT          NOT NULL,
+    status          VARCHAR(20)  NOT NULL
 );
 
--- 규정 키별 상품 적용값. 시행일 버전(effective_from)으로 경과조치를 표현한다.
+-- 상품별 규칙값. 경과조치는 기존 행을 effective_to 로 닫고 새 effective_from 행을 추가해 표현한다.
 CREATE TABLE product_rules (
-    id                 BIGSERIAL PRIMARY KEY,
-    product_id         VARCHAR(16)  NOT NULL REFERENCES products(id),
-    rule_key           VARCHAR(64)  NOT NULL,
-    value              VARCHAR(64)  NOT NULL,
-    description        VARCHAR(255),
-    regulation_ref     VARCHAR(64),
-    effective_from     DATE         NOT NULL,
-    UNIQUE (product_id, rule_key, effective_from)
+    rule_id        VARCHAR(10)  PRIMARY KEY,
+    product_id     VARCHAR(10)  NOT NULL REFERENCES products(product_id),
+    rule_key       VARCHAR(50)  NOT NULL,
+    value          VARCHAR(50)  NOT NULL,
+    unit           VARCHAR(20)  NOT NULL,   -- ratio | percent_point | krw | age | score | bool
+    effective_from DATE         NOT NULL,
+    effective_to   DATE,
+    source         VARCHAR(100) NOT NULL    -- {regulation_id}/{version}/{article_id} 또는 product
 );
+CREATE INDEX idx_product_rules_product_key ON product_rules(product_id, rule_key, effective_from);
 
 CREATE TABLE loan_contracts (
-    id            BIGSERIAL PRIMARY KEY,
-    product_id    VARCHAR(16)   NOT NULL REFERENCES products(id),
-    customer_ref  VARCHAR(32)   NOT NULL,   -- 마스킹된 식별자만 (Guardrail)
-    customer_age  INT           NOT NULL,
-    principal     NUMERIC(14,0) NOT NULL,
-    applied_at    DATE          NOT NULL,   -- 신청일 (경과조치 판단 기준)
-    maturity_at   DATE          NOT NULL
+    contract_id      VARCHAR(10)   PRIMARY KEY,
+    product_id       VARCHAR(10)   NOT NULL REFERENCES products(product_id),
+    customer_id      VARCHAR(10)   NOT NULL,
+    birth_date       DATE          NOT NULL,
+    applied_at       DATE          NOT NULL,   -- 신청일. 나이 계산 · 경과조치 판단 기준
+    contracted_at    DATE,
+    status           VARCHAR(20)   NOT NULL,   -- APPLIED | ACTIVE | REJECTED
+    amount           BIGINT        NOT NULL,
+    term_months      INT           NOT NULL,
+    repayment_type   VARCHAR(20)   NOT NULL,
+    maturity_date    DATE,
+    extension_count  INT           NOT NULL DEFAULT 0,
+    annual_income    BIGINT        NOT NULL,
+    dsr_at_approval  NUMERIC(4, 3),
+    senior_applied   BOOLEAN,
+    rate_discount_pp NUMERIC(3, 2),
+    reject_reason    VARCHAR(50),
+    note             TEXT
 );

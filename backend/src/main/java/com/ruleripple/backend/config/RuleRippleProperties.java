@@ -3,7 +3,8 @@ package com.ruleripple.backend.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "ruleripple")
-public record RuleRippleProperties(Jwt jwt, Internal internal, Agent agent, Queue queue) {
+public record RuleRippleProperties(Jwt jwt, Internal internal, Agent agent, Queue queue,
+                                  BusinessData businessData) {
 
     public record Jwt(String secret, int expiresMinutes) {}
 
@@ -13,4 +14,7 @@ public record RuleRippleProperties(Jwt jwt, Internal internal, Agent agent, Queu
 
     public record Queue(String exchange, String mainQueue, String retryQueue, String deadLetterQueue,
                         int retryDelayMs, int maxAttempts, double failureRate) {}
+
+    /** 샘플 업무 시드 JSON 폴더 (data/business). */
+    public record BusinessData(String dir) {}
 }

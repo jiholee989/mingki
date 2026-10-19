@@ -2,6 +2,7 @@ package com.ruleripple.backend.internal;
 
 import com.ruleripple.backend.queue.Job;
 import com.ruleripple.backend.queue.JobPublisher;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,9 +18,9 @@ import java.util.*;
  *
  * 읽기 (get_product_rules, get_db_schema)
  *   GET  /internal/products
- *   GET  /internal/product-rules?key=SENIOR_AGE        key 없으면 전체
+ *   GET  /internal/product-rules?key=ELIGIBLE_MIN_AGE  key 없으면 전체
  *   GET  /internal/products/{id}/rules
- *   GET  /internal/contracts/impact?ageFrom=60&ageTo=64&appliedBefore=2026-12-01   경과조치 판단
+ *   GET  /internal/contracts/impact?ageFrom=60&ageTo=64&appliedBefore=2026-12-01   신청일 기준 만 나이 · 경과조치 판단
  *   GET  /internal/db/schema
  * 쓰기 · 승인 필요 (create_work_ticket)
  *   POST /internal/work-tickets   {taskId, approvalId, idempotencyKey, title, description?, type, targetRef?, specKeys?, assignee?}
@@ -72,27 +73,47 @@ public class InternalBusinessController {
         return rules.findByProductIdOrderByRuleKeyAscEffectiveFromDesc(id);
     }
 
-    /** 나이 구간에 걸리는 유효 계약 수. appliedBefore 를 주면 시행일 전 신청분(종전 기준 유지 대상)만 따로 센다. */
+    /**
+     * 신청일 기준 만 나이가 [ageFrom, ageTo] 인 유효 계약 · 신청. 거절 건과 만기 지난 계약은 뺀다.
+     * appliedBefore(시행일)를 주면 그 전에 신청한 건을 경과조치 대상(종전 기준 유지)으로 센다.
+     */
     @GetMapping("/contracts/impact")
     public Map<String, Object> contractImpact(@RequestParam(defaultValue = "0") int ageFrom,
                                               @RequestParam(defaultValue = "200") int ageTo,
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate appliedBefore) {
-        List<LoanContract> hits = contracts.findByCustomerAgeBetweenAndMaturityAtAfter(ageFrom, ageTo, LocalDate.now());
+        LocalDate today = LocalDate.now();
         Map<String, Long> byProduct = new TreeMap<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         long grandfathered = 0;
-        for (LoanContract c : hits) {
+        for (LoanContract c : contracts.findAll(Sort.by("contractId"))) {
+            if ("REJECTED".equals(c.getStatus())) continue;
+            if (c.getMaturityDate() != null && !c.getMaturityDate().isAfter(today)) continue;
+            int age = c.ageAtApplication();
+            if (age < ageFrom || age > ageTo) continue;
+
+            boolean beforeEffective = appliedBefore != null && c.getAppliedAt().isBefore(appliedBefore);
+            if (beforeEffective) grandfathered++;
             byProduct.merge(c.getProductId(), 1L, Long::sum);
-            if (appliedBefore != null && c.getAppliedAt().isBefore(appliedBefore)) grandfathered++;
+
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("contractId", c.getContractId());
+            item.put("productId", c.getProductId());
+            item.put("status", c.getStatus());
+            item.put("appliedAt", c.getAppliedAt().toString());
+            item.put("ageAtApplication", age);
+            if (appliedBefore != null) item.put("grandfathered", beforeEffective);
+            items.add(item);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ageFrom", ageFrom);
         out.put("ageTo", ageTo);
-        out.put("total", hits.size());
+        out.put("total", items.size());
         out.put("byProduct", byProduct);
         if (appliedBefore != null) {
             out.put("appliedBefore", appliedBefore.toString());
             out.put("grandfathered", grandfathered);   // 경과조치로 종전 기준 유지
         }
+        out.put("contracts", items);
         return out;
     }
 

@@ -4,7 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
-public interface ProductRuleRepository extends JpaRepository<ProductRule, Long> {
+public interface ProductRuleRepository extends JpaRepository<ProductRule, String> {
     List<ProductRule> findByProductIdOrderByRuleKeyAscEffectiveFromDesc(String productId);
 
     List<ProductRule> findByRuleKeyOrderByProductIdAscEffectiveFromDesc(String ruleKey);

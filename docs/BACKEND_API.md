@@ -200,9 +200,36 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 
 | 도구 | Spring |
 |---|---|
-| `get_product_rules(key?)` | `GET /internal/product-rules?key=SENIOR_AGE` |
-| | `GET /internal/products`, `GET /internal/products/{id}/rules` |
+| `get_product_rules(key?)` | `GET /internal/product-rules?key=ELIGIBLE_MIN_AGE` (key 없으면 전체) |
+| | `GET /internal/products`, `GET /internal/products/{productId}/rules` |
 | `get_db_schema()` | `GET /internal/db/schema` |
 | (경과조치 판단) | `GET /internal/contracts/impact?ageFrom=60&ageTo=64&appliedBefore=2026-12-01` |
 
-시드 데이터에는 시나리오 대상(`SENIOR_AGE`, `DSR_LIMIT`)과 함정(`LTV_LIMIT = 0.40`, `RETIREMENT_AGE = 65`)이 같이 들어 있다.
+데이터와 스키마는 [data/business/README.md](../data/business/README.md)를 따른다. 기동할 때 `data/business/*.json`을 읽어 비어 있는 테이블에만 넣는다.
+
+```jsonc
+// GET /internal/product-rules — effectiveTo가 null이면 현재 유효
+{"ruleId":"R010","productId":"P002","ruleKey":"ELIGIBLE_MIN_AGE","value":"65","unit":"age",
+ "effectiveFrom":"2024-01-01","effectiveTo":null,"source":"credit-loan-ops/v3/15"}
+
+// GET /internal/contracts/impact?ageFrom=60&ageTo=64&appliedBefore=2026-12-01
+{"ageFrom":60,"ageTo":64,"total":2,"byProduct":{"P001":2},"appliedBefore":"2026-12-01","grandfathered":2,
+ "contracts":[{"contractId":"C0002","productId":"P001","status":"ACTIVE","appliedAt":"2025-06-11",
+               "ageAtApplication":62,"grandfathered":true}, …]}
+```
+
+- `unit`: `ratio` · `percent_point` · `krw` · `age` · `score` · `bool`
+- `source`: `{regulation_id}/{version}/{article_id}` 또는 `product`(상품 자체 기준)
+- 경과조치는 기존 행을 `effectiveTo = 2026-11-30`으로 닫고 `effectiveFrom = 2026-12-01` 행을 추가한다.
+- `contracts/impact`의 나이는 `birth_date`와 `applied_at`으로 계산한 신청일 기준 만 나이다. `REJECTED`와 만기 지난 계약은 세지 않는다. `appliedBefore`보다 먼저 신청한 건이 `grandfathered`(종전 기준 유지)다.
+
+시드의 규칙 키는 시나리오 대상과 함정을 같이 담는다.
+
+| rule_id | 키 · 값 | 판단 | 이유 |
+|---|---|---|---|
+| R001, R011 | `DSR_LIMIT 0.40` | 변경 대상 | 제8조 40% → 35% |
+| R010 | P002 `ELIGIBLE_MIN_AGE 65` | 변경 대상 | 제15조 고령자 기준. 키에 SENIOR가 없다 |
+| R015 | P003 `DSR_LIMIT 0.35` | 대상 아님 | 상품 기준이 이미 신 기준 이하 |
+| R007, R018 | `MORTGAGE_LTV_LIMIT 0.40` | 함정 | 같은 0.40이지만 LTV(제10조) |
+| R008 | `INCOME_EST_RETIREMENT_AGE 65` | 함정 | 같은 65지만 소득 추정용 정년(제7조) |
+| R005, R013, R019 | `SENIOR_RATE_DISCOUNT 0.3` | 대상 아님 | 우대 폭은 그대로, 적용 대상만 넓어짐 |
