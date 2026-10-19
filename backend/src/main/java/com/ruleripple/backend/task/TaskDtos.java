@@ -1,5 +1,7 @@
 package com.ruleripple.backend.task;
 
+import com.ruleripple.backend.auth.User;
+
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -89,11 +91,18 @@ public final class TaskDtos {
     public record PatchesResponse(TaskSummary task, int maxVerifyRounds, int latestRound, int passed, int failed,
                                   int pending, boolean canApprove, List<PatchView> patches, List<TestCaseView> testCases) {}
 
-    public record ApprovalView(Long id, String step, String decision, Long approverId, String comment,
-                               Map<String, Object> payload, OffsetDateTime createdAt) {
-        public static ApprovalView of(Approval a) {
+    public record ApprovalView(Long id, String step, String decision, Long approverId, Approver approver,
+                               String comment, Map<String, Object> payload, OffsetDateTime createdAt) {
+        public static ApprovalView of(Approval a, User approver) {
             return new ApprovalView(a.getId(), a.getStep().name(), a.getDecision().name(), a.getApproverId(),
-                    a.getComment(), a.getPayload(), a.getCreatedAt());
+                    Approver.of(approver), a.getComment(), a.getPayload(), a.getCreatedAt());
+        }
+    }
+
+    /** 승인자. 화면이 이름 · 역할을 따로 조회하지 않아도 되게 같이 내려준다. */
+    public record Approver(Long userId, String username, String displayName, String role) {
+        public static Approver of(User u) {
+            return new Approver(u.getId(), u.getUsername(), u.getDisplayName(), u.getRole().name());
         }
     }
 

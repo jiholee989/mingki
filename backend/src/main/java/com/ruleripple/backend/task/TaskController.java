@@ -90,7 +90,7 @@ public class TaskController {
         return new TaskDetail(TaskSummary.of(t), t.getErrorMessage(), MAX_VERIFY_ROUNDS,
                 service.documents(id).stream().map(DocumentMeta::of).toList(),
                 PendingAction.of(t.getStatus(), t.getId()), counts,
-                service.approvals(id).stream().map(ApprovalView::of).toList(),
+                service.approvals(id),
                 service.deliveries(id).stream().map(DeliveryView::of).toList());
     }
 
@@ -109,7 +109,7 @@ public class TaskController {
                                             @RequestBody RequirementApprovalRequest req) {
         Approval a = service.approveRequirements(id, me, req.decisions(), req.comment());
         dispatcher.resume(id, a.getId());
-        return ApprovalView.of(a);
+        return service.approvalView(a);
     }
 
     // ---------- 영향 위치 ----------
@@ -145,7 +145,7 @@ public class TaskController {
     public ApprovalView review(@AuthenticationPrincipal AuthUser me, @PathVariable UUID id, @RequestBody ReviewRequest req) {
         Approval a = service.review(id, me, req.decision(), req.comment(), req.excludedSpecKeys());
         dispatcher.resume(id, a.getId());
-        return ApprovalView.of(a);
+        return service.approvalView(a);
     }
 
     // ---------- 리포트 · 평가 ----------

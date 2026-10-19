@@ -103,6 +103,13 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
 // Patch
 {"id":7,"bundle":"eligibility","round":2,"specKeys":["S1","S4"],"filePath":"loan/eligibility.py",
  "diff":"--- a/…\n+++ b/…","verifyStatus":"PASSED","verifyLog":"…","failureKind":null,"latest":true,"detail":{}}
+
+// Approval — ① 요건 확정은 요청 값 그대로 CONFIRMED(하나라도 확정) · HELD(전부 보류)
+{"id":1,"step":"REQUIREMENTS","decision":"CONFIRMED","approverId":1,
+ "approver":{"userId":1,"username":"officer1","displayName":"김준법","role":"OFFICER"},"comment":"R2 보류",
+ "payload":{"decisions":[{"requirementId":1,"reqKey":"R1","decision":"CONFIRMED"},…],"confirmedReqKeys":["R1"]},
+ "createdAt":"…"}
+// ② 검토 · 승인은 step "REVIEW", decision APPROVE · REJECT · REQUEST_CHANGES
 ```
 
 `changeType`: `VALUE`(①) · `LOGIC`(②) · `DB`(③) · `NEW`(④).
@@ -135,6 +142,8 @@ POST {AGENT_BASE_URL}/run
 POST {AGENT_BASE_URL}/resume
 {"taskId","threadId","step":"REQUIREMENTS"|"REVIEW","decision","approvalId","comment","payload","callbackBaseUrl"}
 ```
+
+`decision`: REQUIREMENTS면 `CONFIRMED` · `HELD`, REVIEW면 `APPROVE` · `REJECT` · `REQUEST_CHANGES`.
 
 `/resume`의 payload
 - REQUIREMENTS: `{decisions:[{requirementId, reqKey, decision}], confirmedReqKeys:[…]}`

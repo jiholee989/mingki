@@ -2,6 +2,8 @@ package com.ruleripple.backend.task;
 
 import com.ruleripple.backend.auth.AuthUser;
 import com.ruleripple.backend.auth.User;
+import com.ruleripple.backend.auth.UserRepository;
+import com.ruleripple.backend.task.TaskDtos.ApprovalView;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,11 +34,13 @@ public class TaskService {
     private final ApprovalRepository approvals;
     private final DeliveryRepository deliveries;
     private final TaskEventService events;
+    private final UserRepository users;
 
     public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
                        RequirementRepository requirements, ChangeSpecRepository changeSpecs,
                        CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
-                       DeliveryRepository deliveries, TaskEventService events) {
+                       DeliveryRepository deliveries, TaskEventService events,
+                       UserRepository users) {
         this.tasks = tasks;
         this.documents = documents;
         this.requirements = requirements;
@@ -46,6 +50,7 @@ public class TaskService {
         this.approvals = approvals;
         this.deliveries = deliveries;
         this.events = events;
+        this.users = users;
     }
 
     // ===================== 생성 =====================
@@ -115,8 +120,17 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public List<Approval> approvals(UUID taskId) {
-        return approvals.findByTaskIdOrderByIdAsc(taskId);
+    public List<ApprovalView> approvals(UUID taskId) {
+        List<Approval> list = approvals.findByTaskIdOrderByIdAsc(taskId);
+        Map<Long, User> byId = new HashMap<>();
+        users.findAllById(list.stream().map(Approval::getApproverId).distinct().toList())
+                .forEach(u -> byId.put(u.getId(), u));
+        return list.stream().map(a -> ApprovalView.of(a, byId.get(a.getApproverId()))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ApprovalView approvalView(Approval a) {
+        return ApprovalView.of(a, users.findById(a.getApproverId()).orElseThrow());
     }
 
     @Transactional(readOnly = true)
@@ -165,14 +179,14 @@ public class TaskService {
         }
         if (!byId.isEmpty()) throw bad("이 작업에 없는 요건 id: " + byId.keySet());
 
-        Approval.Decision overall = confirmedKeys.isEmpty() ? Approval.Decision.HOLD : Approval.Decision.CONFIRM;
+        Approval.Decision overall = confirmedKeys.isEmpty() ? Approval.Decision.HELD : Approval.Decision.CONFIRMED;
         Approval saved = approvals.save(new Approval(taskId, Approval.Step.REQUIREMENTS, overall, me.id(), comment,
                 Map.<String, Object>of("decisions", recorded, "confirmedReqKeys", confirmedKeys)));
 
         // 전부 보류 → 바로 HELD (Agent 는 report 만 만들고 끝낸다). 일부라도 확정 → 영향 위치 탐색.
         events.append(taskId, "RESUMED", Map.<String, Object>of("step", "REQUIREMENTS", "decision", overall.name(),
                 "by", me.username(), "approvalId", saved.getId()));
-        if (overall == Approval.Decision.HOLD) {
+        if (overall == Approval.Decision.HELD) {
             events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.HELD.name()));
         } else {
             events.append(taskId, "STEP", Map.<String, Object>of("node", "locate_agent"));
