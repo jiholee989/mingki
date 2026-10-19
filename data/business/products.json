@@ -20,7 +20,7 @@
   {
     "product_id": "P003",
     "name": "리플 프리미엄 신용대출",
-    "description": "우량 신용 고객 대상. 운영기준보다 엄격한 DSR 적용",
+    "description": "우량 신용 고객 대상 신용대출",
     "repayment_types": ["AMORTIZING", "BULLET"],
     "min_term_months": 12,
     "max_term_months": 60,
