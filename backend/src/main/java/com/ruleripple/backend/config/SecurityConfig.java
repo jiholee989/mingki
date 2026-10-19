@@ -3,22 +3,25 @@ package com.ruleripple.backend.config;
 import com.ruleripple.backend.auth.InternalTokenFilter;
 import com.ruleripple.backend.auth.JwtAuthFilter;
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Configuration
@@ -31,7 +34,9 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsSource()))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+            .exceptionHandling(e -> e
+                .authenticationEntryPoint((req, res, ex) -> writeError(res, HttpStatus.UNAUTHORIZED, "인증이 필요합니다"))
+                .accessDeniedHandler((req, res, ex) -> writeError(res, HttpStatus.FORBIDDEN, "권한이 없습니다")))
             .authorizeHttpRequests(auth -> auth
                 // SSE 완료·타임아웃(ASYNC)과 /error(ERROR) 재디스패치는 인증 없이 통과 — 원 요청에서 이미 검사함
                 .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
@@ -62,6 +67,14 @@ public class SecurityConfig {
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /** 필터 단계 401/403 도 ApiExceptionHandler 와 같은 {error, message} 형태로 응답한다. */
+    private static void writeError(HttpServletResponse res, HttpStatus status, String message) throws IOException {
+        res.setStatus(status.value());
+        res.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        res.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        res.getWriter().write("{\"error\":\"" + status.name() + "\",\"message\":\"" + message + "\"}");
     }
 
     private CorsConfigurationSource corsSource() {
