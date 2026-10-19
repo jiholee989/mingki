@@ -16,21 +16,21 @@ pnpm dev          # http://localhost:5173, mock API 사용
 
 ## 명령
 
-| 명령 | 설명 |
-|---|---|
-| `pnpm dev` | 개발 서버 |
-| `pnpm build` | 타입 검사 + 프로덕션 빌드 (`dist/`) |
-| `pnpm typecheck` | 타입 검사만 |
-| `pnpm lint` / `pnpm lint:fix` | ESLint |
-| `pnpm format` / `pnpm format:check` | Prettier |
-| `pnpm test` / `pnpm test:watch` | Vitest |
+| 명령                                | 설명                                |
+| ----------------------------------- | ----------------------------------- |
+| `pnpm dev`                          | 개발 서버                           |
+| `pnpm build`                        | 타입 검사 + 프로덕션 빌드 (`dist/`) |
+| `pnpm typecheck`                    | 타입 검사만                         |
+| `pnpm lint` / `pnpm lint:fix`       | ESLint                              |
+| `pnpm format` / `pnpm format:check` | Prettier                            |
+| `pnpm test` / `pnpm test:watch`     | Vitest                              |
 
 ## 환경 변수
 
-| 변수 | 개발 기본값 | 설명 |
-|---|---|---|
-| `VITE_API_BASE` | `/api` | 백엔드 API 기본 경로 |
-| `VITE_USE_MOCK` | `true` | `true`면 MSW가 API 요청을 가로채 가짜 데이터로 응답 |
+| 변수            | 개발 기본값 | 설명                                                |
+| --------------- | ----------- | --------------------------------------------------- |
+| `VITE_API_BASE` | `/api`      | 백엔드 API 기본 경로                                |
+| `VITE_USE_MOCK` | `true`      | `true`면 MSW가 API 요청을 가로채 가짜 데이터로 응답 |
 
 실서버와 연결할 때는 `.env.development`에서 `VITE_USE_MOCK=false`로 바꾼다.
 
