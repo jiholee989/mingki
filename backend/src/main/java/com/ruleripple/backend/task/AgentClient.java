@@ -2,7 +2,6 @@ package com.ruleripple.backend.task;
 
 import com.ruleripple.backend.config.RuleRippleProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.web.client.RestClientCustomizer;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -28,17 +27,20 @@ public class AgentClient {
     private final RestClient client;
     private final String callbackBase;
 
-    public AgentClient(RuleRippleProperties props, RestClientCustomizer customizer) {
+    /**
+     * Boot 가 주는 RestClient.Builder (prototype) 를 받는다. 등록된 RestClientCustomizer 가 모두 적용된 상태다.
+     * (RestClientCustomizer 를 직접 주입하면 Boot 자체 customizer 빈들과 겹쳐 NoUniqueBeanDefinitionException)
+     */
+    public AgentClient(RuleRippleProperties props, RestClient.Builder builder) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(props.agent().connectTimeoutMs());
         factory.setReadTimeout(props.agent().readTimeoutMs());
-        RestClient.Builder builder = RestClient.builder()
+        this.client = builder
                 .baseUrl(props.agent().baseUrl())
                 .requestFactory(factory)
                 .defaultHeader("X-Internal-Token", props.internal().token())
-                .defaultHeader("X-Internal-Caller", "backend");
-        customizer.customize(builder);
-        this.client = builder.build();
+                .defaultHeader("X-Internal-Caller", "backend")
+                .build();
         this.callbackBase = props.internal().callbackBaseUrl();
     }
 

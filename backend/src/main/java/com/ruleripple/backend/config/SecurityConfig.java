@@ -2,6 +2,7 @@ package com.ruleripple.backend.config;
 
 import com.ruleripple.backend.auth.InternalTokenFilter;
 import com.ruleripple.backend.auth.JwtAuthFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -38,6 +39,21 @@ public class SecurityConfig {
             .addFilterBefore(internalTokenFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /** 두 필터는 @Component 라 Spring Boot 가 서블릿 필터로도 자동 등록한다. 보안 체인 안에서만 돌도록 끈다. */
+    @Bean
+    FilterRegistrationBean<JwtAuthFilter> jwtAuthFilterRegistration(JwtAuthFilter filter) {
+        FilterRegistrationBean<JwtAuthFilter> reg = new FilterRegistrationBean<>(filter);
+        reg.setEnabled(false);
+        return reg;
+    }
+
+    @Bean
+    FilterRegistrationBean<InternalTokenFilter> internalTokenFilterRegistration(InternalTokenFilter filter) {
+        FilterRegistrationBean<InternalTokenFilter> reg = new FilterRegistrationBean<>(filter);
+        reg.setEnabled(false);
+        return reg;
     }
 
     @Bean
