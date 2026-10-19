@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,10 +50,7 @@ public class AgentResultService {
     /** requirement_agent: 요건 추출 중에만, 전체 교체. */
     @Transactional
     public int replaceRequirements(UUID taskId, List<RequirementItem> items) {
-        AnalysisTask task = load(taskId);
-        if (task.getStatus() != TaskStatus.EXTRACTING) {
-            throw conflict("요건은 EXTRACTING 상태에서만 저장할 수 있습니다 (현재 " + task.getStatus() + ")");
-        }
+        lockIn(taskId, "요건은", TaskStatus.EXTRACTING);
         requirements.deleteAll(requirements.findByTaskIdOrderByIdAsc(taskId));
         requirements.flush();
         for (RequirementItem i : nonNull(items)) {
@@ -73,11 +71,10 @@ public class AgentResultService {
         return nonNull(items).size();
     }
 
-    /** locate_agent: specKey 기준 upsert (system test 실패로 locate 가 다시 돌면 위치가 추가된다). */
+    /** locate_agent: specKey 기준 upsert (system test 실패로 locate 가 다시 돌면 위치가 추가된다). 요건 확정 뒤에만. */
     @Transactional
     public int upsertChangeSpecs(UUID taskId, List<ChangeSpecItem> items) {
-        AnalysisTask task = load(taskId);
-        if (task.getStatus().isTerminal()) throw conflict("종료된 작업입니다");
+        lockIn(taskId, "영향 위치는", TaskStatus.LOCATING, TaskStatus.DESIGNING, TaskStatus.VERIFYING);
         for (ChangeSpecItem i : nonNull(items)) {
             if (blank(i.specKey()) || blank(i.reqKey()) || i.locationKind() == null || i.target() == null || blank(i.reason())) {
                 throw bad("specKey, reqKey, locationKind, target, reason 은 필수입니다");
@@ -102,10 +99,10 @@ public class AgentResultService {
         return nonNull(items).size();
     }
 
-    /** test_agent: 한 번만 저장. 이후 수정 불가 (자기채점 방지). */
+    /** test_agent: 요건 확정 뒤 한 번만 저장. 이후 수정 불가 (자기채점 방지). */
     @Transactional
     public int saveTestCases(UUID taskId, List<TestCaseItem> items) {
-        load(taskId);
+        lockIn(taskId, "테스트는", TaskStatus.LOCATING);
         if (testCases.existsByTaskId(taskId)) throw conflict("테스트는 이미 고정되었습니다. 수정할 수 없습니다");
         for (TestCaseItem i : nonNull(items)) {
             if (blank(i.testKey()) || blank(i.reqKey()) || blank(i.name()) || i.kind() == null || blank(i.code())) {
@@ -124,11 +121,13 @@ public class AgentResultService {
         return nonNull(items).size();
     }
 
-    /** design_agent(diff 저장) · verify(결과 갱신) 공용. (bundle, round, filePath) 기준 upsert. */
+    /**
+     * design_agent(diff 저장) · verify(결과 갱신) 공용. (bundle, round, filePath) 기준 upsert.
+     * 검토 대기부터는 고정한다. 개발자가 본 diff 와 승인된 diff 가 같아야 한다.
+     */
     @Transactional
     public int upsertPatches(UUID taskId, List<PatchItem> items) {
-        AnalysisTask task = load(taskId);
-        if (task.getStatus().isTerminal()) throw conflict("종료된 작업입니다");
+        lockIn(taskId, "패치는", TaskStatus.DESIGNING, TaskStatus.VERIFYING);
         for (PatchItem i : nonNull(items)) {
             if (blank(i.bundle()) || i.round() == null || i.round() < 1 || blank(i.filePath())) {
                 throw bad("bundle, round(1 이상), filePath 는 필수입니다");
@@ -166,6 +165,15 @@ public class AgentResultService {
         AnalysisTask task = load(taskId);
         task.setEvaluation(evaluation);
         tasks.save(task);
+    }
+
+    /** 작업 행을 잠그고 상태를 확인한다. 상태 전이(TaskEventService)와 같은 잠금을 쓴다. */
+    private void lockIn(UUID taskId, String what, TaskStatus... allowed) {
+        AnalysisTask task = tasks.findForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
+        if (!Arrays.asList(allowed).contains(task.getStatus())) {
+            throw conflict(what + " " + Arrays.toString(allowed) + " 상태에서만 저장할 수 있습니다 (현재 " + task.getStatus() + ")");
+        }
     }
 
     private AnalysisTask load(UUID taskId) {

@@ -65,7 +65,7 @@ public class InternalTaskController {
     @PostMapping("/events")
     public Map<String, Object> event(@PathVariable UUID taskId, @RequestBody EventRequest req) {
         if (req.type() == null || req.type().isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type is required");
-        TaskEvent saved = events.append(taskId, req.type(), req.payload());
+        TaskEvent saved = events.appendFromAgent(taskId, req.type(), req.payload());
         return Map.<String, Object>of("seq", saved.getSeq());
     }
 
