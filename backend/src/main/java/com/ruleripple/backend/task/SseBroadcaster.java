@@ -11,7 +11,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** taskId 별 SseEmitter 레지스트리. 이벤트 저장 직후 연결된 클라이언트 전부에 전달한다. */
+/**
+ * taskId 별 SseEmitter 레지스트리.
+ * 메시지: id = seq, event = type, data = {seq, type, payload}. 작업이 종료 상태가 되면 스트림을 닫는다.
+ */
 @Slf4j
 @Component
 public class SseBroadcaster {
@@ -32,18 +35,13 @@ public class SseBroadcaster {
         return emitter;
     }
 
-    public void send(UUID taskId, TaskEvent event) {
+    public void send(UUID taskId, TaskEvent event, boolean complete) {
         List<SseEmitter> list = emitters.get(taskId);
         if (list == null) return;
         for (SseEmitter emitter : list) {
             try {
-                emitter.send(SseEmitter.event()
-                        .id(String.valueOf(event.getSeq()))
-                        .name(event.getType())
-                        .data(Map.<String, Object>of("seq", event.getSeq(), "type", event.getType(), "payload", event.getPayload())));
-                if ("DONE".equals(event.getType()) || "FAILED".equals(event.getType())) {
-                    emitter.complete();
-                }
+                sendTo(emitter, event);
+                if (complete) emitter.complete();
             } catch (IOException | IllegalStateException e) {
                 log.debug("sse send failed task={} : {}", taskId, e.getMessage());
                 list.remove(emitter);

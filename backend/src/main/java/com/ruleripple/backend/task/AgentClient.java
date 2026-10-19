@@ -7,15 +7,19 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * FastAPI Agent 호출. Agent 는 실행 중 진행 상황을 callbackUrl(/internal/tasks/{id}/events) 로 밀어준다.
+ * Spring → FastAPI Agent. 두 엔드포인트 모두 즉시 응답(202)하고, 실행 결과는
+ * {callbackBaseUrl}/events · /requirements · /change-specs · /test-cases · /patches · /report 로 밀어준다.
  *
- * Agent 측 계약:
- *   POST {agent}/run    {taskId, threadId, regulationId, oldVersion, newVersion, question, callbackUrl}
- *   POST {agent}/resume {taskId, threadId, step: REVIEW|PUBLISH, decision: APPROVE|REJECT, payload, callbackUrl}
+ *   POST {agent}/run    {taskId, threadId, title, documents:[{side, versionLabel, filename, sha256}], callbackBaseUrl}
+ *   POST {agent}/resume {taskId, threadId, step, decision, approvalId, payload, callbackBaseUrl}
+ *
+ * 규정 원문은 GET {callbackBaseUrl}/documents 로 가져간다.
  */
 @Slf4j
 @Component
@@ -38,32 +42,36 @@ public class AgentClient {
         this.callbackBase = props.internal().callbackBaseUrl();
     }
 
-    public void run(AnalysisTask task) {
-        Map<String, Object> body = Map.<String, Object>of(
-                "taskId", task.getId().toString(),
-                "threadId", task.getThreadId(),
-                "regulationId", task.getRegulationId(),
-                "oldVersion", task.getOldVersion(),
-                "newVersion", task.getNewVersion(),
-                "question", task.getQuestion() == null ? "" : task.getQuestion(),
-                "callbackUrl", callbackUrl(task.getId()));
+    public void run(AnalysisTask task, List<RegulationDocument> docs) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("taskId", task.getId().toString());
+        body.put("threadId", task.getThreadId());
+        body.put("title", task.getTitle());
+        body.put("documents", docs.stream().map(d -> Map.<String, Object>of(
+                "side", d.getSide().name(),
+                "versionLabel", d.getVersionLabel(),
+                "filename", d.getFilename(),
+                "sha256", d.getSha256())).toList());
+        body.put("callbackBaseUrl", callbackBaseUrl(task.getId()));
         client.post().uri("/run").body(body).retrieve().toBodilessEntity();
         log.info("agent run requested task={}", task.getId());
     }
 
-    public void resume(AnalysisTask task, Approval.Step step, Approval.Decision decision, Map<String, Object> payload) {
-        Map<String, Object> body = Map.<String, Object>of(
-                "taskId", task.getId().toString(),
-                "threadId", task.getThreadId(),
-                "step", step.name(),
-                "decision", decision.name(),
-                "payload", payload == null ? Map.<String, Object>of() : payload,
-                "callbackUrl", callbackUrl(task.getId()));
+    public void resume(AnalysisTask task, Approval approval) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("taskId", task.getId().toString());
+        body.put("threadId", task.getThreadId());
+        body.put("step", approval.getStep().name());
+        body.put("decision", approval.getDecision().name());
+        body.put("approvalId", approval.getId());
+        body.put("comment", approval.getComment());
+        body.put("payload", approval.getPayload());
+        body.put("callbackBaseUrl", callbackBaseUrl(task.getId()));
         client.post().uri("/resume").body(body).retrieve().toBodilessEntity();
-        log.info("agent resume requested task={} step={} decision={}", task.getId(), step, decision);
+        log.info("agent resume requested task={} step={} decision={}", task.getId(), approval.getStep(), approval.getDecision());
     }
 
-    private String callbackUrl(UUID taskId) {
-        return callbackBase + "/internal/tasks/" + taskId + "/events";
+    private String callbackBaseUrl(UUID taskId) {
+        return callbackBase + "/internal/tasks/" + taskId;
     }
 }

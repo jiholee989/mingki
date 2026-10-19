@@ -29,11 +29,9 @@ public class LoanContract {
     @Column(nullable = false)
     private BigDecimal principal;
 
-    @Column(name = "rate_pct", nullable = false)
-    private BigDecimal ratePct;
-
-    @Column(name = "contracted_at", nullable = false)
-    private LocalDate contractedAt;
+    /** 신청일 — 경과조치(시행일 이후 신청분부터 적용) 판단 기준. */
+    @Column(name = "applied_at", nullable = false)
+    private LocalDate appliedAt;
 
     @Column(name = "maturity_at", nullable = false)
     private LocalDate maturityAt;

@@ -52,14 +52,14 @@ services:
   #   environment:
   #     BACKEND_BASE_URL: http://backend:8080
   #     INTERNAL_TOKEN: rr-internal-dev-token
-  #     RAG_MCP_URL: http://rag-mcp:8001/mcp
+  #     REGULATION_MCP_URL: http://regulation-mcp:8001/mcp
   #     CODE_MCP_URL: http://code-mcp:8002/mcp
   #     BUSINESS_MCP_URL: http://business-mcp:8003/mcp
   #     OPENAI_API_KEY: ${OPENAI_API_KEY}
   #   depends_on: [backend]
 
-  # rag-mcp:
-  #   build: ./mcp/rag-mcp
+  # regulation-mcp:
+  #   build: ./mcp/regulation-mcp
   # code-mcp:
   #   build: ./mcp/code-mcp
   # business-mcp:

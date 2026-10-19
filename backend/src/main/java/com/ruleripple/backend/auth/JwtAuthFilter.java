@@ -14,7 +14,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
-/** Authorization: Bearer <jwt> 를 읽어 AuthUser 를 principal 로 올린다. */
+/**
+ * Authorization: Bearer <jwt> 를 읽어 AuthUser 를 principal 로 올린다.
+ * 브라우저 EventSource 는 헤더를 못 보내므로 SSE 경로(/stream)에 한해 ?access_token= 도 받는다.
+ */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
@@ -27,10 +30,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String header = request.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ") && SecurityContextHolder.getContext().getAuthentication() == null) {
+        String token = resolveToken(request);
+        if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
-                Claims claims = jwtService.parse(header.substring(7));
+                Claims claims = jwtService.parse(token);
                 User.Role role = User.Role.valueOf(claims.get("role", String.class));
                 AuthUser principal = new AuthUser(
                         ((Number) claims.get("uid")).longValue(),
@@ -41,9 +44,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (Exception ignored) {
-                // 잘못된 토큰은 익명으로 통과시키고, 보호된 경로에서 401 처리
+                // 잘못된 토큰은 익명으로 두고, 보호된 경로에서 401 처리
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private static String resolveToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) return header.substring(7);
+        if (request.getRequestURI().endsWith("/stream")) {
+            String q = request.getParameter("access_token");
+            if (q != null && !q.isBlank()) return q;
+        }
+        return null;
     }
 }

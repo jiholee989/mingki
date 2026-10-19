@@ -10,14 +10,21 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * interrupt 기록. 쓰기 도구(create_draft_pr, create_work_ticket)는 이 id 를 approval_id 로 받아
+ * 서버가 다시 검증한다 — 그래프의 interrupt 만 믿지 않는다.
+ */
 @Entity
 @Table(name = "approvals")
 @Getter
 @NoArgsConstructor
 public class Approval {
 
-    public enum Step { REVIEW, PUBLISH }
-    public enum Decision { APPROVE, REJECT }
+    /** REQUIREMENTS: interrupt ① 요건 확정 (OFFICER). REVIEW: interrupt ② 검토·승인 (DEVELOPER). */
+    public enum Step { REQUIREMENTS, REVIEW }
+
+    /** REQUIREMENTS → CONFIRM | HOLD.  REVIEW → APPROVE | REJECT | REQUEST_CHANGES. */
+    public enum Decision { CONFIRM, HOLD, APPROVE, REJECT, REQUEST_CHANGES }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,7 +38,7 @@ public class Approval {
     private Step step;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
+    @Column(nullable = false, length = 20)
     private Decision decision;
 
     @Column(name = "approver_id", nullable = false)
@@ -41,7 +48,7 @@ public class Approval {
     private String comment;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
+    @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> payload;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
@@ -53,6 +60,6 @@ public class Approval {
         this.decision = decision;
         this.approverId = approverId;
         this.comment = comment;
-        this.payload = payload;
+        this.payload = payload == null ? Map.of() : payload;
     }
 }

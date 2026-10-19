@@ -8,7 +8,7 @@ import lombok.Setter;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/** business-mcp 의 create_work_ticket 결과. Jira 대체(사내 작업 티켓). */
+/** create_work_ticket 결과. Jira 대신 사내 작업 티켓으로 둔다. */
 @Entity
 @Table(name = "work_tickets")
 @Getter
@@ -16,7 +16,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class WorkTicket {
 
-    public enum Type { CODE, DB, DOC, TEST }
+    public enum Type { CODE, CONFIG, DB, DOC, TEST }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -43,6 +43,9 @@ public class WorkTicket {
 
     @Column(nullable = false, length = 16)
     private String status = "OPEN";
+
+    @Column(name = "approval_id")
+    private Long approvalId;
 
     @Column(name = "created_by", nullable = false, length = 64)
     private String createdBy;

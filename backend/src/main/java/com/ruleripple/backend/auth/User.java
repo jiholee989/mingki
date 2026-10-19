@@ -12,7 +12,11 @@ import java.time.OffsetDateTime;
 @NoArgsConstructor
 public class User {
 
-    public enum Role { DEVELOPER, LEAD }
+    /**
+     * OFFICER: 준법감시·상품기획 담당자 — 규정 업로드, interrupt ① 요건 확정
+     * DEVELOPER: 개발자 — interrupt ② 검토·승인
+     */
+    public enum Role { OFFICER, DEVELOPER }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

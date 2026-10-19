@@ -11,6 +11,10 @@ spring:
     open-in-view: false
     properties:
       hibernate.jdbc.time_zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 1MB        # 규정 파일 1개
+      max-request-size: 3MB
   flyway:
     enabled: true
     locations: classpath:db/migration

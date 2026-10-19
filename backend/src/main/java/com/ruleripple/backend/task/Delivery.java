@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/** Draft PR / 티켓 등 외부로 나간 결과 (시연에서는 목 링크). */
+/** publish 결과: Draft PR / 작업 티켓 링크. */
 @Entity
 @Table(name = "deliveries")
 @Getter
@@ -33,16 +33,17 @@ public class Delivery {
     @Column(length = 512)
     private String url;
 
-    @Column(nullable = false, length = 16)
-    private String status = "CREATED";
+    @Column(name = "approval_id")
+    private Long approvalId;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    public Delivery(UUID taskId, Kind kind, String externalRef, String url) {
+    public Delivery(UUID taskId, Kind kind, String externalRef, String url, Long approvalId) {
         this.taskId = taskId;
         this.kind = kind;
         this.externalRef = externalRef;
         this.url = url;
+        this.approvalId = approvalId;
     }
 }

@@ -1,90 +1,115 @@
 package com.ruleripple.backend.task;
 
 import com.ruleripple.backend.auth.AuthUser;
-
-import lombok.extern.slf4j.Slf4j;
+import com.ruleripple.backend.auth.User;
 import org.springframework.http.HttpStatus;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
 
-@Slf4j
+/** 공개 API 의 업무 로직: 작업 생성, 화면별 조회, interrupt ①② 처리. */
 @Service
 public class TaskService {
 
+    private static final long MAX_FILE_BYTES = 1024 * 1024;
+    private static final Set<String> ALLOWED_EXT = Set.of("md", "markdown", "txt");
+
     private final AnalysisTaskRepository tasks;
-    private final TaskEventRepository events;
-    private final TaskArtifactRepository artifacts;
+    private final RegulationDocumentRepository documents;
+    private final RequirementRepository requirements;
+    private final ChangeSpecRepository changeSpecs;
+    private final CodePatchRepository patches;
+    private final TestCaseRepository testCases;
     private final ApprovalRepository approvals;
     private final DeliveryRepository deliveries;
-    private final AgentClient agent;
-    private final SseBroadcaster sse;
+    private final TaskEventService events;
 
-    public TaskService(AnalysisTaskRepository tasks, TaskEventRepository events, TaskArtifactRepository artifacts,
-                       ApprovalRepository approvals, DeliveryRepository deliveries, AgentClient agent, SseBroadcaster sse) {
+    public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
+                       RequirementRepository requirements, ChangeSpecRepository changeSpecs,
+                       CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
+                       DeliveryRepository deliveries, TaskEventService events) {
         this.tasks = tasks;
-        this.events = events;
-        this.artifacts = artifacts;
+        this.documents = documents;
+        this.requirements = requirements;
+        this.changeSpecs = changeSpecs;
+        this.patches = patches;
+        this.testCases = testCases;
         this.approvals = approvals;
         this.deliveries = deliveries;
-        this.agent = agent;
-        this.sse = sse;
+        this.events = events;
     }
 
-    // ---------- 접수 (202) ----------
+    // ===================== 생성 =====================
 
+    /** 규정 v3(구) · v4(신) 파일을 받아 작업을 만든다. Agent 호출은 커밋 뒤 AgentDispatcher 가 한다. */
     @Transactional
-    public AnalysisTask create(AuthUser me, String regulationId, String oldVersion, String newVersion, String question) {
-        AnalysisTask task = tasks.save(AnalysisTask.create(me.id(), regulationId, oldVersion, newVersion, question));
-        appendEvent(task.getId(), "STEP", Map.<String, Object>of("step", "queued", "message", "작업이 접수되었습니다"));
+    public AnalysisTask create(AuthUser me, MultipartFile oldFile, MultipartFile newFile,
+                               String title, String oldVersion, String newVersion) {
+        String oldText = readText(oldFile, "oldFile");
+        String newText = readText(newFile, "newFile");
+        if (sha256(oldText).equals(sha256(newText))) {
+            throw bad("신·구 규정 파일 내용이 같습니다");
+        }
+        String oldLabel = blankToDefault(oldVersion, "v3");
+        String newLabel = blankToDefault(newVersion, "v4");
+        String taskTitle = blankToDefault(title, stripExt(newFile.getOriginalFilename()) + " " + oldLabel + " → " + newLabel);
+
+        AnalysisTask task = tasks.save(AnalysisTask.create(me.id(), taskTitle));
+        documents.save(new RegulationDocument(task.getId(), RegulationDocument.Side.OLD, oldLabel,
+                safeName(oldFile), oldText, sha256(oldText)));
+        documents.save(new RegulationDocument(task.getId(), RegulationDocument.Side.NEW, newLabel,
+                safeName(newFile), newText, sha256(newText)));
+        events.append(task.getId(), "STEP", Map.<String, Object>of("node", "requirement_agent", "message", "규정 업로드 완료, 요건 추출을 시작합니다"));
         return task;
     }
 
-    /** 트랜잭션 커밋 후 비동기로 Agent 에 실행 요청. 실패하면 FAILED 로 기록. */
-    @Async
-    public void dispatch(UUID taskId) {
-        AnalysisTask task = tasks.findById(taskId).orElseThrow();
-        try {
-            agent.run(task);
-            updateStatus(taskId, AnalysisTask.Status.RUNNING, "requirement_agent", null);
-        } catch (Exception e) {
-            log.warn("agent dispatch failed task={} : {}", taskId, e.getMessage());
-            updateStatus(taskId, AnalysisTask.Status.FAILED, null, "agent unreachable: " + e.getMessage());
-            appendEvent(taskId, "FAILED", Map.<String, Object>of("reason", "agent unreachable", "detail", String.valueOf(e.getMessage())));
-        }
-    }
-
-    // ---------- 조회 ----------
+    // ===================== 조회 =====================
 
     @Transactional(readOnly = true)
-    public AnalysisTask get(UUID taskId, AuthUser me) {
-        AnalysisTask task = tasks.findById(taskId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
-        if (!me.isLead() && !task.getRequesterId().equals(me.id())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not your task");
-        }
-        return task;
+    public AnalysisTask get(UUID taskId) {
+        return tasks.findById(taskId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
     }
 
     @Transactional(readOnly = true)
     public List<AnalysisTask> list(AuthUser me, boolean mine) {
-        if (mine || !me.isLead()) return tasks.findByRequesterIdOrderByCreatedAtDesc(me.id());
-        return tasks.findAllByOrderByCreatedAtDesc();
+        return mine ? tasks.findByRequesterIdOrderByCreatedAtDesc(me.id()) : tasks.findAllByOrderByCreatedAtDesc();
     }
 
     @Transactional(readOnly = true)
-    public List<TaskEvent> eventsAfter(UUID taskId, int afterSeq) {
-        return events.findByTaskIdAndSeqGreaterThanOrderBySeqAsc(taskId, afterSeq);
+    public List<RegulationDocument> documents(UUID taskId) {
+        get(taskId);
+        return documents.findByTaskIdOrderBySideAsc(taskId);
     }
 
     @Transactional(readOnly = true)
-    public List<TaskArtifact> artifacts(UUID taskId) {
-        return artifacts.findByTaskIdOrderByIdAsc(taskId);
+    public List<Requirement> requirements(UUID taskId) {
+        get(taskId);
+        return requirements.findByTaskIdOrderByIdAsc(taskId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChangeSpec> changeSpecs(UUID taskId) {
+        get(taskId);
+        return changeSpecs.findByTaskIdOrderByIdAsc(taskId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodePatch> patches(UUID taskId) {
+        get(taskId);
+        return patches.findByTaskIdOrderByRoundAscIdAsc(taskId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TestCase> testCases(UUID taskId) {
+        get(taskId);
+        return testCases.findByTaskIdOrderByIdAsc(taskId);
     }
 
     @Transactional(readOnly = true)
@@ -97,107 +122,182 @@ public class TaskService {
         return deliveries.findByTaskIdOrderByIdAsc(taskId);
     }
 
-    // ---------- 승인 (interrupt ① REVIEW / ② PUBLISH) ----------
-
-    @Transactional
-    public Approval approve(UUID taskId, AuthUser me, Approval.Step step, Approval.Decision decision,
-                            String comment, Map<String, Object> payload) {
-        AnalysisTask task = get(taskId, me);
-
-        AnalysisTask.Status expected = step == Approval.Step.REVIEW
-                ? AnalysisTask.Status.WAITING_REVIEW : AnalysisTask.Status.WAITING_PUBLISH;
-        if (task.getStatus() != expected) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "task is " + task.getStatus() + ", expected " + expected);
+    /** (bundle, file) 마다 가장 높은 회차의 패치 = 현재 패치. */
+    public static List<CodePatch> latestPatches(List<CodePatch> all) {
+        Map<String, CodePatch> latest = new LinkedHashMap<>();
+        for (CodePatch p : all) {
+            String key = p.getBundle() + "::" + p.getFilePath();
+            CodePatch cur = latest.get(key);
+            if (cur == null || p.getRound() >= cur.getRound()) latest.put(key, p);
         }
-        // PUBLISH(PR·티켓 생성) 승인은 LEAD 만 가능
-        if (step == Approval.Step.PUBLISH && !me.isLead()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "PUBLISH approval requires LEAD role");
-        }
-
-        Approval saved = approvals.save(new Approval(taskId, step, decision, me.id(), comment, payload));
-
-        if (decision == Approval.Decision.REJECT) {
-            task.setStatus(AnalysisTask.Status.REJECTED);
-            task.setCurrentStep("rejected");
-            appendEvent(taskId, "STEP", Map.<String, Object>of("step", "rejected", "by", me.username(), "at", step.name()));
-        } else {
-            task.setStatus(step == Approval.Step.REVIEW ? AnalysisTask.Status.RUNNING : AnalysisTask.Status.PUBLISHING);
-            task.setCurrentStep(step == Approval.Step.REVIEW ? "publish" : "create_draft_pr");
-            appendEvent(taskId, "RESUMED", Map.<String, Object>of("step", step.name(), "by", me.username()));
-        }
-        tasks.save(task);
-
-        try {
-            agent.resume(task, step, decision, payload);
-        } catch (Exception e) {
-            log.warn("agent resume failed task={} : {}", taskId, e.getMessage());
-            task.setStatus(AnalysisTask.Status.FAILED);
-            task.setErrorMessage("agent unreachable on resume: " + e.getMessage());
-            appendEvent(taskId, "FAILED", Map.<String, Object>of("reason", "agent unreachable on resume"));
-        }
-        return saved;
+        return new ArrayList<>(latest.values());
     }
 
-    // ---------- Agent 콜백 (/internal) ----------
+    // ===================== interrupt ① 요건 확정 (OFFICER) =====================
 
-    /** Agent 가 보낸 이벤트를 저장하고 SSE 로 흘려보낸다. 상태 전이가 필요한 이벤트는 여기서 반영. */
+    public record RequirementDecision(Long requirementId, Requirement.Status decision) {}
+
     @Transactional
-    public TaskEvent appendEvent(UUID taskId, String type, Map<String, Object> payload) {
-        int seq = events.maxSeq(taskId) + 1;
-        TaskEvent saved = events.save(new TaskEvent(taskId, seq, type, payload));
+    public Approval approveRequirements(UUID taskId, AuthUser me, List<RequirementDecision> decisions, String comment) {
+        requireRole(me, User.Role.OFFICER, "요건 확정은 준법감시·상품기획 담당자만 할 수 있습니다");
+        AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REQUIREMENT_APPROVAL);
 
-        tasks.findById(taskId).ifPresent(task -> {
-            switch (type) {
-                case "STEP" -> {
-                    Object step = payload == null ? null : payload.get("step");
-                    if (step != null) task.setCurrentStep(step.toString());
-                    if (task.getStatus() == AnalysisTask.Status.QUEUED && step != null && !"queued".equals(step)) {
-                        task.setStatus(AnalysisTask.Status.RUNNING);
-                    }
-                }
-                case "APPROVAL_REQUIRED" -> {
-                    Object step = payload == null ? null : payload.get("step");
-                    task.setStatus("PUBLISH".equals(String.valueOf(step))
-                            ? AnalysisTask.Status.WAITING_PUBLISH : AnalysisTask.Status.WAITING_REVIEW);
-                    task.setCurrentStep("waiting_" + String.valueOf(step).toLowerCase());
-                }
-                case "DONE" -> {
-                    task.setStatus(AnalysisTask.Status.DONE);
-                    task.setCurrentStep("done");
-                }
-                case "FAILED" -> {
-                    task.setStatus(AnalysisTask.Status.FAILED);
-                    task.setCurrentStep("failed");
-                    if (payload != null && payload.get("reason") != null) task.setErrorMessage(payload.get("reason").toString());
-                }
-                default -> { /* TOKEN, TOOL_START, TOOL_END, RESUMED: 상태 변화 없음 */ }
+        List<Requirement> reqs = requirements.findByTaskIdOrderByIdAsc(taskId);
+        if (reqs.isEmpty()) throw conflict("확정할 요건이 없습니다");
+        Map<Long, Requirement.Status> byId = new HashMap<>();
+        for (RequirementDecision d : decisions == null ? List.<RequirementDecision>of() : decisions) {
+            if (d.decision() != Requirement.Status.CONFIRMED && d.decision() != Requirement.Status.HELD) {
+                throw bad("decision 은 CONFIRMED 또는 HELD 입니다");
             }
-            tasks.save(task);
-        });
+            byId.put(d.requirementId(), d.decision());
+        }
+        List<Map<String, Object>> recorded = new ArrayList<>();
+        List<String> confirmedKeys = new ArrayList<>();
+        for (Requirement r : reqs) {
+            Requirement.Status s = byId.remove(r.getId());
+            if (s == null) throw bad("요건 " + r.getReqKey() + "(id " + r.getId() + ")에 대한 결정이 없습니다");
+            r.setStatus(s);
+            requirements.save(r);
+            recorded.add(Map.<String, Object>of("requirementId", r.getId(), "reqKey", r.getReqKey(), "decision", s.name()));
+            if (s == Requirement.Status.CONFIRMED) confirmedKeys.add(r.getReqKey());
+        }
+        if (!byId.isEmpty()) throw bad("이 작업에 없는 요건 id: " + byId.keySet());
 
-        sse.send(taskId, saved);
+        Approval.Decision overall = confirmedKeys.isEmpty() ? Approval.Decision.HOLD : Approval.Decision.CONFIRM;
+        Approval saved = approvals.save(new Approval(taskId, Approval.Step.REQUIREMENTS, overall, me.id(), comment,
+                Map.<String, Object>of("decisions", recorded, "confirmedReqKeys", confirmedKeys)));
+
+        // 전부 보류 → 바로 HELD (Agent 는 report 만 만들고 끝낸다). 일부라도 확정 → 영향 위치 탐색.
+        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "REQUIREMENTS", "decision", overall.name(),
+                "by", me.username(), "approvalId", saved.getId()));
+        if (overall == Approval.Decision.HOLD) {
+            events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.HELD.name()));
+        } else {
+            events.append(taskId, "STEP", Map.<String, Object>of("node", "locate_agent"));
+        }
         return saved;
     }
 
-    @Transactional
-    public TaskArtifact saveArtifact(UUID taskId, String kind, int round, Map<String, Object> payload) {
-        if (!tasks.existsById(taskId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found");
-        return artifacts.save(new TaskArtifact(taskId, kind, round, payload));
-    }
+    // ===================== interrupt ② 검토 · 승인 (DEVELOPER) =====================
 
     @Transactional
-    public Delivery saveDelivery(UUID taskId, Delivery.Kind kind, String externalRef, String url) {
-        return deliveries.save(new Delivery(taskId, kind, externalRef, url));
+    public Approval review(UUID taskId, AuthUser me, Approval.Decision decision, String comment, List<String> excludedSpecKeys) {
+        requireRole(me, User.Role.DEVELOPER, "검토·승인은 개발자만 할 수 있습니다");
+        if (decision != Approval.Decision.APPROVE && decision != Approval.Decision.REJECT
+                && decision != Approval.Decision.REQUEST_CHANGES) {
+            throw bad("decision 은 APPROVE | REJECT | REQUEST_CHANGES 입니다");
+        }
+        AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REVIEW);
+        List<String> excluded = excludedSpecKeys == null ? List.of() : List.copyOf(excludedSpecKeys);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("excludedSpecKeys", excluded);
+
+        switch (decision) {
+            case APPROVE -> {
+                // 제외하지 않은 패치만 publish 대상. 그중 검증을 통과하지 못한 패치가 있으면 차단 (예외 없음).
+                List<CodePatch> targets = latestPatches(patches.findByTaskIdOrderByRoundAscIdAsc(taskId)).stream()
+                        .filter(p -> p.getSpecKeys().isEmpty() || !excluded.containsAll(p.getSpecKeys()))
+                        .toList();
+                if (targets.isEmpty()) throw conflict("승인할 패치가 없습니다. 전부 제외하려면 REJECT 를 쓰세요");
+                List<String> notPassed = targets.stream()
+                        .filter(p -> p.getVerifyStatus() != CodePatch.VerifyStatus.PASSED)
+                        .map(p -> p.getBundle() + ":" + p.getFilePath() + "(" + p.getVerifyStatus() + ")")
+                        .toList();
+                if (!notPassed.isEmpty()) {
+                    throw conflict("검증을 통과하지 못한 패치가 있어 승인할 수 없습니다: " + notPassed
+                            + " — 해당 위치를 제외하거나 수정 요청하세요");
+                }
+                payload.put("approvedPatchIds", targets.stream().map(CodePatch::getId).toList());
+            }
+            case REQUEST_CHANGES -> {
+                if (comment == null || comment.isBlank()) throw bad("수정 요청에는 comment 가 필요합니다");
+            }
+            default -> { /* REJECT */ }
+        }
+
+        Approval saved = approvals.save(new Approval(taskId, Approval.Step.REVIEW, decision, me.id(), comment, payload));
+        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "REVIEW", "decision", decision.name(),
+                "by", me.username(), "approvalId", saved.getId()));
+        switch (decision) {
+            case APPROVE -> events.append(taskId, "STEP", Map.<String, Object>of("node", "publish"));
+            case REJECT -> events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.REJECTED.name()));
+            // 사람이 고친 내용도 다시 검증한다: design 으로 돌아가 반영 → verify
+            default -> events.append(taskId, "STEP", Map.<String, Object>of("node", "design_agent", "message", "수정 요청 반영 후 재검증"));
+        }
+        return saved;
     }
 
-    @Transactional
-    public void updateStatus(UUID taskId, AnalysisTask.Status status, String step, String error) {
-        tasks.findById(taskId).ifPresent(t -> {
-            t.setStatus(status);
-            if (step != null) t.setCurrentStep(step);
-            if (error != null) t.setErrorMessage(error);
-            tasks.save(t);
-        });
+    // ===================== helpers =====================
+
+    private AnalysisTask lockAndExpect(UUID taskId, TaskStatus expected) {
+        AnalysisTask task = tasks.findForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
+        if (task.getStatus() != expected) {
+            throw conflict("작업 상태가 " + task.getStatus() + " 입니다 (필요: " + expected + ")");
+        }
+        return task;
+    }
+
+    private static void requireRole(AuthUser me, User.Role role, String message) {
+        if (me.role() != role) throw new ResponseStatusException(HttpStatus.FORBIDDEN, message);
+    }
+
+    private static String readText(MultipartFile file, String field) {
+        if (file == null || file.isEmpty()) throw bad(field + " 파일이 필요합니다");
+        if (file.getSize() > MAX_FILE_BYTES) throw bad(field + " 는 1MB 이하여야 합니다");
+        String ext = extOf(file.getOriginalFilename());
+        if (!ALLOWED_EXT.contains(ext)) throw bad(field + " 는 .md / .txt 파일이어야 합니다");
+        try {
+            String text = new String(file.getBytes(), StandardCharsets.UTF_8);
+            if (text.isBlank()) throw bad(field + " 내용이 비어 있습니다");
+            return text;
+        } catch (IOException e) {
+            throw bad(field + " 를 읽을 수 없습니다");
+        }
+    }
+
+    static String sha256(String text) {
+        try {
+            byte[] h = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(h);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String safeName(MultipartFile f) {
+        String n = f.getOriginalFilename();
+        if (n == null || n.isBlank()) return "regulation.md";
+        n = n.replace('\\', '/');
+        n = n.substring(n.lastIndexOf('/') + 1);
+        return n.length() > 255 ? n.substring(0, 255) : n;
+    }
+
+    private static String extOf(String name) {
+        if (name == null) return "";
+        int i = name.lastIndexOf('.');
+        return i < 0 ? "" : name.substring(i + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private static String stripExt(String name) {
+        if (name == null || name.isBlank()) return "규정";
+        String n = name.replace('\\', '/');
+        n = n.substring(n.lastIndexOf('/') + 1);
+        int i = n.lastIndexOf('.');
+        return i <= 0 ? n : n.substring(0, i);
+    }
+
+    private static String blankToDefault(String v, String def) {
+        if (v == null || v.isBlank()) return def;
+        String t = v.trim();
+        return t.length() > 200 ? t.substring(0, 200) : t;
+    }
+
+    private static ResponseStatusException bad(String m) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, m);
+    }
+
+    private static ResponseStatusException conflict(String m) {
+        return new ResponseStatusException(HttpStatus.CONFLICT, m);
     }
 }

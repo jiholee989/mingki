@@ -12,8 +12,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 대기열 작업 이력. type: CHECK_PATCH | CREATE_DRAFT_PR | CREATE_TICKET
- * status: QUEUED → RUNNING → DONE | RETRYING → ... | DEAD
+ * 대기열 작업. status: QUEUED → RUNNING → DONE | RETRYING → … | DEAD
+ * 쓰기 작업(CREATE_DRAFT_PR, CREATE_TICKET)은 approvalId 와 idempotencyKey 가 필수다.
  */
 @Entity
 @Table(name = "jobs")
@@ -24,18 +24,35 @@ public class Job {
 
     public enum Status { QUEUED, RUNNING, RETRYING, DONE, DEAD }
 
+    public enum Type {
+        CHECK_PATCH(false), CREATE_DRAFT_PR(true), CREATE_TICKET(true);
+
+        private final boolean write;
+
+        Type(boolean write) { this.write = write; }
+
+        public boolean isWrite() { return write; }
+    }
+
     @Id
     private UUID id;
 
     @Column(name = "task_id")
     private UUID taskId;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
-    private String type;
+    private Type type;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> payload;
+
+    @Column(name = "approval_id")
+    private Long approvalId;
+
+    @Column(name = "idempotency_key", length = 128, unique = true)
+    private String idempotencyKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -60,12 +77,14 @@ public class Job {
     @PreUpdate
     void touch() { this.updatedAt = OffsetDateTime.now(); }
 
-    public static Job create(UUID taskId, String type, Map<String, Object> payload) {
+    public static Job create(UUID taskId, Type type, Map<String, Object> payload, Long approvalId, String idempotencyKey) {
         Job j = new Job();
         j.id = UUID.randomUUID();
         j.taskId = taskId;
         j.type = type;
-        j.payload = payload == null ? Map.<String, Object>of() : payload;
+        j.payload = payload == null ? Map.of() : payload;
+        j.approvalId = approvalId;
+        j.idempotencyKey = idempotencyKey;
         j.status = Status.QUEUED;
         return j;
     }
