@@ -1,0 +1,65 @@
+package com.ruleripple.backend.task;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.OffsetDateTime;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * interrupt 기록. 쓰기 도구(create_draft_pr, create_work_ticket)는 이 id 를 approval_id 로 받아
+ * 서버가 다시 검증한다 — 그래프의 interrupt 만 믿지 않는다.
+ */
+@Entity
+@Table(name = "approvals")
+@Getter
+@NoArgsConstructor
+public class Approval {
+
+    /** REQUIREMENTS: interrupt ① 요건 확정 (OFFICER). REVIEW: interrupt ② 검토·승인 (DEVELOPER). */
+    public enum Step { REQUIREMENTS, REVIEW }
+
+    /** REQUIREMENTS → CONFIRM | HOLD.  REVIEW → APPROVE | REJECT | REQUEST_CHANGES. */
+    public enum Decision { CONFIRM, HOLD, APPROVE, REJECT, REQUEST_CHANGES }
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "task_id", nullable = false)
+    private UUID taskId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Step step;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Decision decision;
+
+    @Column(name = "approver_id", nullable = false)
+    private Long approverId;
+
+    @Column(columnDefinition = "text")
+    private String comment;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> payload;
+
+    @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+    private OffsetDateTime createdAt;
+
+    public Approval(UUID taskId, Step step, Decision decision, Long approverId, String comment, Map<String, Object> payload) {
+        this.taskId = taskId;
+        this.step = step;
+        this.decision = decision;
+        this.approverId = approverId;
+        this.comment = comment;
+        this.payload = payload == null ? Map.of() : payload;
+    }
+}

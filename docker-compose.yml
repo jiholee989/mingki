@@ -1,0 +1,82 @@
+# Rule Ripple — 전체 스택
+# 공개 포트는 frontend(:80) / backend(:8080) 뿐. 나머지는 docker network 안에서만 통신한다.
+# agent / mcp / frontend 서비스는 각 담당자가 Dockerfile 을 올리면 주석을 풀면 된다.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ruleripple
+      POSTGRES_USER: ruleripple
+      POSTGRES_PASSWORD: ruleripple
+    ports:
+      - "5432:5432"      # 로컬 개발 편의용. 제출 시 제거 가능
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ruleripple -d ruleripple"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"      # 로컬 개발 편의용 (gradle bootRun). 제출 시 제거 가능
+      - "15672:15672"    # 관리 콘솔 (guest/guest) — 시연에서 재시도·DLQ 보여줄 때 사용
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DB_HOST: postgres
+      RABBIT_HOST: rabbitmq
+      AGENT_BASE_URL: http://agent:8000
+      CALLBACK_BASE_URL: http://backend:8080
+      INTERNAL_TOKEN: rr-internal-dev-token
+      JWT_SECRET: rule-ripple-demo-secret-key-change-me-please-32b
+      JOB_FAILURE_RATE: "0.3"
+      BUSINESS_DATA_DIR: /data/business
+    volumes:
+      - ./data/business:/data/business:ro   # 샘플 업무 시드 JSON
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # agent:
+  #   build: ./agent
+  #   environment:
+  #     BACKEND_BASE_URL: http://backend:8080
+  #     INTERNAL_TOKEN: rr-internal-dev-token
+  #     REGULATION_MCP_URL: http://regulation-mcp:8001/mcp
+  #     CODE_MCP_URL: http://code-mcp:8002/mcp
+  #     BUSINESS_MCP_URL: http://business-mcp:8003/mcp
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #   depends_on: [backend]
+
+  # regulation-mcp:
+  #   build: ./mcp/regulation-mcp
+  # code-mcp:
+  #   build: ./mcp/code-mcp
+  # business-mcp:
+  #   build: ./mcp/business-mcp
+  #   environment:
+  #     BACKEND_BASE_URL: http://backend:8080
+  #     INTERNAL_TOKEN: rr-internal-dev-token
+
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "80:80"
+  #   depends_on: [backend]
+
+volumes:
+  pgdata:
