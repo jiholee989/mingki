@@ -1,0 +1,29 @@
+[
+  {
+    "product_id": "P001",
+    "name": "리플 직장인 신용대출",
+    "description": "근로소득자 대상 일반 신용대출",
+    "repayment_types": ["AMORTIZING", "BULLET"],
+    "min_term_months": 12,
+    "max_term_months": 60,
+    "status": "ON_SALE"
+  },
+  {
+    "product_id": "P002",
+    "name": "리플 시니어 든든대출",
+    "description": "고령자 전용 신용대출. 연금소득자 신청 가능",
+    "repayment_types": ["AMORTIZING"],
+    "min_term_months": 12,
+    "max_term_months": 36,
+    "status": "ON_SALE"
+  },
+  {
+    "product_id": "P003",
+    "name": "리플 프리미엄 신용대출",
+    "description": "우량 신용 고객 대상. 운영기준보다 엄격한 DSR 적용",
+    "repayment_types": ["AMORTIZING", "BULLET"],
+    "min_term_months": 12,
+    "max_term_months": 60,
+    "status": "ON_SALE"
+  }
+]
