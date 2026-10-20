@@ -206,10 +206,11 @@ def test_backend_contract_and_camel_case_payload():
     payload = product_proposals_payload(out["proposals"])
     assert payload["items"][0]["proposalKey"] == "REQ-8:P001"
     assert payload["items"][0]["version"] == 1
-    request = ResumeRequest.model_validate({"taskId": "T1", "threadId": "T1", "step": "REVIEW", "payload": {"decisions": [decision(p) for p in out["proposals"]], "finish": True}})
-    assert runner.resume_backend(request)["result"].status == "APPROVED"
-    with pytest.raises(ValueError):
-        ResumeRequest(taskId="T1", threadId="T1", step="REQUIREMENTS").to_decision()
+    # 백엔드 경로는 APPROVE · REJECT 만 받는다. 승인은 apply 를 거쳐야 하므로 여기서는 거절로 종료만 확인한다.
+    request = ResumeRequest.model_validate({"taskId": "T1", "threadId": "T1", "step": "REVIEW", "decision": "REJECT", "comment": "보류"})
+    assert runner.resume_backend(request)["result"].status == "REJECTED"
+    with pytest.raises(DecisionError):
+        runner.backend_decision(ResumeRequest(taskId="T1", threadId="T1", step="REQUIREMENTS", decision="REJECT"))
 
 
 def test_cli_selectors_edits_and_removed_demo_mode():

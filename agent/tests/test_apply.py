@@ -1,6 +1,7 @@
 """실제 DB 쓰기 없이 승인 경계·멱등키·큐 완료·실패를 확인한다."""
 import pytest
-from app.backend import ResumeRequest, rule_proposals_payload
+from app.backend import ResumeRequest, proposal_rows
+from app.bridge import review_decision
 from app.graph import build_graph
 from app.nodes.apply import make_apply
 from app.runner import AgentRunner, DecisionError
@@ -122,10 +123,11 @@ def test_rule_export_and_rule_level_exclusion_within_one_proposal():
     # 두 번째 상품은 별도 행이다. 첫 번째 상품에 두 번째 규칙 행을 추가해 경계 변환만 확인한다.
     p = out["proposals"][0].model_copy(deep=True)
     p.changes.append(RuleChange(rule_id="R2", rule_key="OTHER_DSR", current_value="0.4", proposed_value="0.35", unit="ratio"))
-    command = request(["P001:DSR_LIMIT"], ["P001:OTHER_DSR", "P002:DSR_LIMIT"]).to_decision([p, out["proposals"][1]])
+    req = request(["P001:DSR_LIMIT"], ["P001:OTHER_DSR", "P002:DSR_LIMIT"])
+    command = review_decision([p, out["proposals"][1]], req.decision, req.payload, approval_id=req.approval_id)
     assert command["apply_approval"]["proposal_keys"] == ["P001:DSR_LIMIT"]
     assert command["decisions"][0]["action"] == "approve"
-    rows = rule_proposals_payload([p])["items"]
+    rows = proposal_rows(p)
     assert [row["proposalKey"] for row in rows] == ["P001:DSR_LIMIT", "P001:OTHER_DSR"]
     assert rows[0]["currentValue"] == "0.40" and rows[0]["verifyStatus"] == "PASSED"
 

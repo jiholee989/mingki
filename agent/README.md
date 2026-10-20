@@ -93,16 +93,19 @@ uv run uvicorn app.server:create_app --factory --port 8000
 | 파일 | 역할 |
 |---|---|
 | `app/server.py` | FastAPI `/run` · `/resume` · `/health`, 토큰 검사 |
-| `app/bridge.py` | 노드 시작 · 완료를 Spring 콜백으로. Agent 제안(상품 × 요건, `changes[]`)을 백엔드 행(상품 × 규칙)으로 펼치고, 유지 판정은 `keep` 행으로 보낸다 |
-| `app/spring.py` | Spring `/internal/**` 클라이언트 |
+| `app/bridge.py` | 노드 시작 · 완료를 Spring 콜백으로. 백엔드 확인을 제안별 결정 + `apply` 승인으로 바꾼다 |
+| `app/backend.py` | Agent 제안(상품 × 요건, `changes[]`)을 백엔드 행(상품 × 규칙)으로 펼친다. 유지 판정은 `keep` 행 |
+| `app/spring.py` | Spring `/internal/**` 클라이언트. 연결 실패 · 5xx 는 짧게 재시도, 4xx 는 바로 실패 |
 | `app/checkpoint.py` | Postgres 체크포인터 |
 
-사람 확인은 1번이다 (SIMPLIFICATION v2). 백엔드의 `APPROVE + excludedProposalKeys`를 제안별 `approve` · `reject` + `finish`로 바꿔 넘긴다. 수정 요청 · 직접 편집은 CLI에서만 쓰고 백엔드 경로에서는 쓰지 않는다.
+사람 확인은 1번이다 (SIMPLIFICATION v2). 백엔드의 `APPROVE + approvedProposalKeys · excludedProposalKeys`를 제안별 `approve` · `reject` + `finish`로 바꾸고, `approvalId`와 반영 키를 `apply_approval`로 넘긴다. 승인 · 제외 키는 Agent가 보낸 현재 변경 제안 행과 정확히 같아야 한다(아니면 400). 검토 대기 중이 아닌 thread는 409. 수정 요청 · 직접 편집은 CLI에서만 쓰고 백엔드 경로에서는 쓰지 않는다.
 
-판정 · 상태 대응: `no_change → keep`, `needs_review → needs_check`, 리포트 `APPROVED` · `PARTIALLY_APPROVED → DONE`, `NO_ACTION → NO_CHANGE`, `REJECTED → REJECTED`.
+승인 뒤 `apply` 노드가 반영 키마다 business-mcp `apply_rule_version`을 부르고(멱등키 `{taskId}:apply:{proposalKey}`), 이 요청의 콜백 주소로 `/internal/jobs/{id}`를 `DONE` · `DEAD`까지 조회한다. 큐 조회 함수는 그래프가 아니라 재개할 때 `config["configurable"]["job_reader"]`로 넘긴다.
 
-아직 없는 것: 승인 뒤 상품 규칙에 실제로 반영하는 `apply` 노드(`apply_rule_version` 호출 → `/internal/jobs/{id}` 완료 대기). 지금은 승인 즉시 `DONE`으로 끝난다.
+판정 · 상태 대응: `no_change → keep`, `needs_review → needs_check`, 리포트 `DONE → DONE`, `FAILED → FAILED {reason}`, `NO_ACTION → NO_CHANGE`, `REJECTED → REJECTED`. 반영 없이 `APPROVED`로 끝나면 종료 상태가 아니라 `FAILED`로 보고한다.
 
-`tests/test_server.py`가 가짜 Spring으로 콜백 순서 · 제안 펼치기 · 확인 번역 · 종료 상태를 확인한다.
+재작성 회차에서 빠진 규칙 행은 백엔드가 현재 제안에서 제외한다(`Proposals.latest`: 묶음 `reqKey × productId`마다 최고 회차). 같은 상품 · 규칙을 두 요건이 함께 바꾸면 백엔드 행 하나로 보낼 수 없어 `FAILED`로 끝낸다.
+
+`tests/test_server.py`가 가짜 Spring으로 콜백 순서 · 제안 펼치기 · 확인 번역 · 반영 · 종료 상태 · 재시도를 확인한다.
 
 커밋은 매번 사용자의 명시적인 허락을 받은 뒤 수행한다.

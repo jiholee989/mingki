@@ -26,17 +26,19 @@ def approved_rows(proposals, approval):
     return {key: eligible[key] for key in keys}
 
 
-def make_apply(tools, job_reader, *, timeout=60, poll_interval=1, clock=time.monotonic, sleep=time.sleep):
-    """job_reader는 백엔드 어댑터의 SpringClient.job을 주입한다. CLI 검토에는 쓰지 않는다."""
+def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, clock=time.monotonic, sleep=time.sleep):
+    """job_reader: 큐 작업 조회 함수 (SpringClient.job). 백엔드 어댑터는 요청마다 다른 콜백 주소를 쓰므로
+    그래프를 만들 때가 아니라 재개할 때 config["configurable"]["job_reader"] 로 넘긴다. CLI 검토에는 쓰지 않는다."""
     if timeout <= 0 or poll_interval <= 0:
         raise ValueError("반영 완료 대기 시간과 조회 간격은 양수여야 합니다")
 
-    def apply(state):
+    def apply(state, config=None):
         results, error = [], None
+        reader = (config or {}).get("configurable", {}).get("job_reader") or job_reader
         try:
             approval = ApplyApproval.model_validate(state.get("apply_approval"))
             rows = approved_rows(state["proposals"], approval)
-            if tools.is_local or job_reader is None:
+            if tools.is_local or reader is None:
                 raise ValueError("실제 반영에는 MCP와 백엔드 작업 조회(job_reader) 연결이 필요합니다")
             for proposal in state["proposals"]:
                 if any(row["proposalKey"] in rows for row in proposal_rows(proposal)):
@@ -59,7 +61,7 @@ def make_apply(tools, job_reader, *, timeout=60, poll_interval=1, clock=time.mon
                 for item in results:
                     if item.status not in ("QUEUED", "RUNNING", "RETRYING"):
                         continue
-                    job = job_reader(item.job_id)
+                    job = reader(item.job_id)
                     if job.get("id", item.job_id) != item.job_id or job.get("taskId", state["task_id"]) != state["task_id"]:
                         raise ValueError("조회된 큐 작업이 반영 요청과 다릅니다")
                     status = job.get("status")

@@ -23,8 +23,9 @@ from fastapi import FastAPI, Header, HTTPException  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 from app.backend import ResumeRequest, RunRequest  # noqa: E402
-from app.bridge import SpringBridge, review_decision  # noqa: E402
+from app.bridge import SpringBridge  # noqa: E402
 from app.data import DATA_DIR  # noqa: E402
+from app.runner import DecisionError, NotWaitingError  # noqa: E402
 from app.spring import INTERNAL_TOKEN, SpringClient  # noqa: E402
 
 log = logging.getLogger(__name__)
@@ -124,15 +125,17 @@ def create_app(
     def resume(body: dict, x_internal_token: str | None = Header(default=None)):
         authorize(x_internal_token)
         req = parse(ResumeRequest, body)
-        if req.step != "REVIEW":
-            raise HTTPException(400, "사람 확인은 REVIEW 한 번입니다")
-        # 백엔드 확인(APPROVE + 제외 목록)을 제안별 결정으로 바꾼다. 검토 대기 중인 제안이 없으면 Agent 가 거부한다.
+        # 백엔드 확인(APPROVE + 승인 · 제외 목록)을 제안별 결정과 apply 승인으로 바꾼다.
+        # 검토 대기 중이 아니면 409, 키가 현재 제안과 다르면 400. 그래프를 돌리기 전에 거부한다.
         try:
-            decision = review_decision(runner.current_proposals(req.thread_id), req.decision, req.payload, req.comment)
-        except ValueError as exc:
+            decision = runner.backend_decision(req)
+        except NotWaitingError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except DecisionError as exc:
             raise HTTPException(400, str(exc)) from exc
+        # apply 노드는 이 요청의 콜백 주소로 큐 작업을 조회한다.
         submit(execute, req, lambda spring, bridge: runner.resume(
-            req.thread_id, decision, task_id=req.task_id, step=req.step, listener=bridge))
+            req.thread_id, decision, task_id=req.task_id, step=req.step, listener=bridge, job_reader=spring.job))
         return {"taskId": req.task_id, "accepted": True}
 
     return app
