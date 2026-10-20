@@ -18,6 +18,10 @@ final class RuleVersions {
         boolean validOn(LocalDate day) {
             return !effectiveFrom.isAfter(day) && (effectiveTo == null || !effectiveTo.isBefore(day));
         }
+
+        boolean startsOnOrAfter(LocalDate day) {
+            return !effectiveFrom.isBefore(day);
+        }
     }
 
     /** 값은 숫자로 비교한다 (0.4 = 0.40). 숫자가 아니면(bool 등) 글자 그대로 비교한다. */
@@ -32,12 +36,12 @@ final class RuleVersions {
 
     /**
      * 반영할 수 없으면 이유, 반영할 수 있으면 null.
-     * 기존 규칙(ruleId 있음): 그 행이 오늘 유효하고 값이 제안 당시 값과 같으며, 시행일 기준 새 행이 아직 없어야 한다.
-     * 새 규칙(ruleId 없음): 오늘이나 시행일에 유효한 같은 키의 행이 없어야 한다.
+     * 기존 규칙(ruleId 있음): 그 행이 오늘 유효하고 값이 제안 당시 값과 같으며, 시행일 이후에 유효하거나 시작하는 다른 행이 없어야 한다.
+     * 새 규칙(ruleId 없음): 오늘이나 시행일 이후에 유효하거나 시작하는 같은 키의 행이 없어야 한다.
      */
     static String problem(String ruleId, String currentValue, LocalDate effectiveDate, List<Row> rows, LocalDate today) {
         if (ruleId == null) {
-            return rows.stream().filter(r -> r.validOn(today) || r.validOn(effectiveDate)).findFirst()
+            return rows.stream().filter(r -> r.validOn(today) || r.validOn(effectiveDate) || r.startsOnOrAfter(effectiveDate)).findFirst()
                     .map(r -> "같은 상품 · 규칙 키의 유효한 행이 이미 있습니다 (" + r.ruleId() + ")")
                     .orElse(null);
         }
@@ -53,7 +57,9 @@ final class RuleVersions {
         if (!row.effectiveFrom().isBefore(effectiveDate)) {
             return "시행일 " + effectiveDate + "이 " + ruleId + " 시작일보다 빠르거나 같습니다";
         }
-        return rows.stream().filter(r -> !r.ruleId().equals(ruleId) && r.validOn(effectiveDate)).findFirst()
+        // 시행일에 유효한 행뿐 아니라 시행일 뒤에 시작하는 행(이미 반영된 미래 버전)도 본다.
+        // 새 행은 effective_to 가 null 이라, 미래 행을 두고 넣으면 그 날부터 두 행이 동시에 유효해진다.
+        return rows.stream().filter(r -> !r.ruleId().equals(ruleId) && (r.validOn(effectiveDate) || r.startsOnOrAfter(effectiveDate))).findFirst()
                 .map(r -> "시행일 기준 새 행이 이미 있습니다 (" + r.ruleId() + ")")
                 .orElse(null);
     }

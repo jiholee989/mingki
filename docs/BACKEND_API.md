@@ -348,11 +348,12 @@ POST /internal/product-rules/versions
 1. `approvalId`가 이 작업의 REVIEW/APPROVE 기록이고, 가장 최근 REVIEW 결정이다 (403)
 2. 작업 상태가 `PUBLISHING`이다 (409)
 3. `proposalKey`가 `approvedProposalKeys`에 있고, 현재 제안이 `change_required` · `PASSED`다 (403)
-4. 기존 규칙이면 그 행이 지금 유효하고 값이 `currentValue`와 같다. 새 규칙이면 같은 상품 · 규칙 키의 유효한 행이 없다. 아니면 409 "이미 바뀐 규칙". 값은 **숫자로 비교**한다 (`0.4` = `0.40`)
-5. 같은 `idempotencyKey`면 새로 만들지 않고 기존 `jobId`를 `duplicate:true`로 돌려준다
+4. 기존 규칙이면 그 행이 지금 유효하고 값이 `currentValue`와 같고, 시행일 이후에 유효하거나 시작하는 다른 행(이미 반영된 미래 버전)이 없다. 새 규칙이면 같은 상품 · 규칙 키에 그런 행이 없다. 아니면 409 "이미 바뀐 규칙". 값은 **숫자로 비교**한다 (`0.4` = `0.40`)
+5. 같은 `idempotencyKey`면 새로 만들지 않고 기존 `jobId`를 `duplicate:true`로 돌려준다. 그 작업의 `taskId` · `approvalId` · `proposalKey`가 요청과 다르면 409 (키는 호출자가 정하므로 다른 제안에 같은 키를 쓴 실수를 막는다)
 
 대기열 작업 `APPLY_RULE_VERSION` (8절 큐 · 재시도 · DLQ 그대로)
 - 행을 잠그고 4번을 다시 검사한다. 다르면 **재시도하지 않고 바로 `DEAD`** (`lastError` = "이미 바뀐 규칙"). 다시 해도 결과가 같기 때문이다.
+- 규칙 행 · 전달 기록 · 작업 완료(`DONE`, `result`)를 한 트랜잭션에 커밋한다. 커밋 뒤 워커가 죽어 메시지를 다시 받아도 작업이 `DONE`이라 반영을 반복하지 않는다.
 - 기존 행: `effective_to = effectiveDate - 1일`
 - 새 행: `rule_id` = 기존 최대 번호 다음(`R083`부터), `value = proposedValue`, `unit`, `effective_from = effectiveDate`, `effective_to = null`
 - 새 규칙은 닫는 행 없이 새 행만 추가한다.

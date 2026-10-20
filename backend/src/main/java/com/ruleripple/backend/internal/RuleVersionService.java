@@ -15,6 +15,8 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -43,12 +45,25 @@ public class RuleVersionService {
         this.jdbc = jdbc;
     }
 
-    /** 접수. 검사를 통과하면 큐 작업을 만든다. 같은 멱등키 재요청은 반영 뒤라도 기존 작업을 돌려준다. */
+    /**
+     * 접수. 검사를 통과하면 큐 작업을 만든다. 같은 멱등키 재요청은 반영 뒤라도 기존 작업을 돌려준다.
+     * 단 그 작업이 같은 작업 · 승인 · 제안의 것이어야 한다. 멱등키는 호출자가 정하므로, 다른 제안에 같은 키를 쓰면
+     * 두 번째 제안이 반영되지 않았는데 접수된 것처럼 보인다.
+     */
     public JobPublisher.Enqueued enqueue(ApplyRequest r) {
         if (r.proposalKey() == null || r.proposalKey().isBlank()) throw bad("proposalKey 는 필수입니다");
         if (r.idempotencyKey() == null || r.idempotencyKey().isBlank()) throw bad("idempotencyKey 는 필수입니다");
-        if (jobs.findByIdempotencyKey(r.idempotencyKey()).isPresent()) {
-            return publisher.publish(r.taskId(), Job.Type.APPLY_RULE_VERSION, Map.of(), r.approvalId(), r.idempotencyKey());
+        Optional<Job> existing = jobs.findByIdempotencyKey(r.idempotencyKey());
+        if (existing.isPresent()) {
+            Job j = existing.get();
+            boolean same = j.getType() == Job.Type.APPLY_RULE_VERSION && Objects.equals(r.taskId(), j.getTaskId())
+                    && Objects.equals(r.approvalId(), j.getApprovalId())
+                    && r.proposalKey().equals(j.getPayload().get("proposalKey"));
+            if (!same) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "같은 idempotencyKey 가 다른 제안 · 승인에 쓰였습니다: " + r.idempotencyKey());
+            }
+            return new JobPublisher.Enqueued(j.getId(), j.getStatus(), true);
         }
 
         Approval approval = guard.check(r.taskId(), r.approvalId(), null);
@@ -75,6 +90,8 @@ public class RuleVersionService {
     /**
      * 워커가 부른다. 테이블을 잠그고 다시 검사한 뒤 기존 행을 닫고 새 행을 넣는다.
      * 검사에서 걸리면 다시 해도 같으므로 PermanentJobFailure (재시도 없이 DEAD).
+     * 규칙 행 · 전달 기록 · 작업 완료(DONE, result)를 한 트랜잭션에 커밋한다. 커밋 뒤 워커가 죽어 메시지를 다시
+     * 받아도 작업이 DONE 이라 반영을 반복하지 않는다 (반복하면 "이미 바뀐 규칙" 으로 DEAD 가 됐다).
      */
     @Transactional
     public Map<String, Object> apply(Job job) {
@@ -104,6 +121,10 @@ public class RuleVersionService {
         result.put("closedRuleId", p.getRuleId());
         result.put("newRuleId", newRuleId);
         result.put("effectiveFrom", p.getEffectiveDate().toString());
+        job.setStatus(Job.Status.DONE);
+        job.setResult(result);
+        job.setLastError(null);
+        jobs.save(job);
         return result;
     }
 
