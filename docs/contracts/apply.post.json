@@ -1,0 +1,13 @@
+{
+  "request": {
+    "taskId": "7c7593e7-2a9c-47b3-8607-23f690f223d4",
+    "approvalId": 12,
+    "proposalKey": "P001:DSR_LIMIT",
+    "idempotencyKey": "7c7593e7-2a9c-47b3-8607-23f690f223d4:apply:P001:DSR_LIMIT"
+  },
+  "response": {
+    "jobId": "4f1c2b8e-0d3a-4b6e-9a51-2f7d8c9e1a03",
+    "status": "QUEUED",
+    "duplicate": false
+  }
+}

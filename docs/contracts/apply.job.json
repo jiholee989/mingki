@@ -1,0 +1,14 @@
+{
+  "id": "4f1c2b8e-0d3a-4b6e-9a51-2f7d8c9e1a03",
+  "type": "APPLY_RULE_VERSION",
+  "status": "DONE",
+  "attempts": 1,
+  "lastError": null,
+  "result": {
+    "proposalKey": "P001:DSR_LIMIT",
+    "productId": "P001",
+    "closedRuleId": "R001",
+    "newRuleId": "R083",
+    "effectiveFrom": "2026-12-01"
+  }
+}
