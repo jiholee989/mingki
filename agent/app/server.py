@@ -33,6 +33,8 @@ log = logging.getLogger(__name__)
 
 AGENT_MODE = os.getenv("AGENT_MODE", "llm")
 REGULATION_ID = os.getenv("REGULATION_ID", "credit-loan-ops")
+# 분석할 조항을 제한한다 (쉼표 구분, 예: "8"). 비어 있으면 바뀐 조항 전부. SIMPLIFICATION 8절 M1 · M2 는 DSR(제8조) 하나로 끝까지 간다.
+ARTICLE_IDS = [a.strip() for a in os.getenv("AGENT_ARTICLE_IDS", "").split(",") if a.strip()]
 
 
 def build_runner(mode=AGENT_MODE):
@@ -76,6 +78,7 @@ def create_app(
     submit=None,
     spring_factory=SpringClient,
     regulation_id=REGULATION_ID,
+    article_ids=ARTICLE_IDS,
     token=INTERNAL_TOKEN,
 ):
     runner = runner or build_runner()
@@ -119,7 +122,7 @@ def create_app(
 
         def work(spring, bridge):
             check_documents(spring.documents(), regulation_id)
-            return runner.start_backend(req, regulation_id=regulation_id, listener=bridge)
+            return runner.start_backend(req, regulation_id=regulation_id, article_ids=article_ids, listener=bridge)
 
         submit(execute, req, work)
         return {"taskId": req.task_id, "accepted": True}
