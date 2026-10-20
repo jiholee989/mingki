@@ -7,7 +7,5 @@ import java.util.List;
 public interface ProductRuleRepository extends JpaRepository<ProductRule, String> {
     List<ProductRule> findByProductIdOrderByRuleKeyAscEffectiveFromDesc(String productId);
 
-    List<ProductRule> findByRuleKeyOrderByProductIdAscEffectiveFromDesc(String ruleKey);
-
     List<ProductRule> findAllByOrderByRuleKeyAscProductIdAscEffectiveFromDesc();
 }

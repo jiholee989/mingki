@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 
@@ -17,10 +18,11 @@ import java.util.*;
  * business-mcp → Spring. 업무 규칙은 여기 한 곳에만 둔다 (MCP 는 복제하지 않음).
  *
  * 읽기 (get_product_rules, get_db_schema)
- *   GET  /internal/products
- *   GET  /internal/product-rules?key=ELIGIBLE_MIN_AGE  key 없으면 전체
+ *   GET  /internal/products?status=ON_SALE
+ *   GET  /internal/product-rules?key=DSR_LIMIT&productId=P001&asOf=2026-10-20   조건 없으면 전체
+ *   GET  /internal/product-rules/keys?asOf=2026-10-20                          규칙 키 목록 (기본 오늘)
  *   GET  /internal/products/{id}/rules
- *   GET  /internal/contracts/impact?ageFrom=60&ageTo=64&appliedBefore=2026-12-01   신청일 기준 만 나이 · 경과조치 판단
+ *   GET  /internal/contracts/impact?dsrFrom=0.35&dsrTo=0.40&appliedBefore=2026-12-01   나이 · DSR 구간, 경과조치 판단
  *   GET  /internal/db/schema
  * 쓰기 · 승인 필요 (create_work_ticket)
  *   POST /internal/work-tickets   {taskId, approvalId, idempotencyKey, title, description?, type, targetRef?, specKeys?, assignee?}
@@ -56,15 +58,23 @@ public class InternalBusinessController {
     // ---------- 읽기 ----------
 
     @GetMapping("/products")
-    public List<Product> products() {
-        return products.findAll();
+    public List<Product> products(@RequestParam(required = false) String status) {
+        List<Product> all = products.findAll(Sort.by("productId"));
+        return blank(status) ? all : all.stream().filter(p -> p.getStatus().equals(status)).toList();
     }
 
+    /** asOf 를 주면 그날 유효한 행만. effectiveTo 가 null 이어도 시작 전인 행은 유효하지 않다. */
     @GetMapping("/product-rules")
-    public List<ProductRule> productRules(@RequestParam(required = false) String key) {
-        return key == null || key.isBlank()
-                ? rules.findAllByOrderByRuleKeyAscProductIdAscEffectiveFromDesc()
-                : rules.findByRuleKeyOrderByProductIdAscEffectiveFromDesc(key);
+    public List<ProductRule> productRules(@RequestParam(required = false) String key,
+                                          @RequestParam(required = false) String productId,
+                                          @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return BusinessQueries.rules(rules.findAllByOrderByRuleKeyAscProductIdAscEffectiveFromDesc(),
+                blank(key) ? null : key, blank(productId) ? null : productId, asOf);
+    }
+
+    @GetMapping("/product-rules/keys")
+    public List<BusinessQueries.RuleKey> ruleKeys(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return BusinessQueries.ruleKeys(rules.findAll(), asOf == null ? LocalDate.now() : asOf);
     }
 
     @GetMapping("/products/{id}/rules")
@@ -73,48 +83,14 @@ public class InternalBusinessController {
         return rules.findByProductIdOrderByRuleKeyAscEffectiveFromDesc(id);
     }
 
-    /**
-     * 신청일 기준 만 나이가 [ageFrom, ageTo] 인 유효 계약 · 신청. 거절 건과 만기 지난 계약은 뺀다.
-     * appliedBefore(시행일)를 주면 그 전에 신청한 건을 경과조치 대상(종전 기준 유지)으로 센다.
-     */
     @GetMapping("/contracts/impact")
     public Map<String, Object> contractImpact(@RequestParam(defaultValue = "0") int ageFrom,
                                               @RequestParam(defaultValue = "200") int ageTo,
+                                              @RequestParam(required = false) BigDecimal dsrFrom,
+                                              @RequestParam(required = false) BigDecimal dsrTo,
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate appliedBefore) {
-        LocalDate today = LocalDate.now();
-        Map<String, Long> byProduct = new TreeMap<>();
-        List<Map<String, Object>> items = new ArrayList<>();
-        long grandfathered = 0;
-        for (LoanContract c : contracts.findAll(Sort.by("contractId"))) {
-            if ("REJECTED".equals(c.getStatus())) continue;
-            if (c.getMaturityDate() != null && !c.getMaturityDate().isAfter(today)) continue;
-            int age = c.ageAtApplication();
-            if (age < ageFrom || age > ageTo) continue;
-
-            boolean beforeEffective = appliedBefore != null && c.getAppliedAt().isBefore(appliedBefore);
-            if (beforeEffective) grandfathered++;
-            byProduct.merge(c.getProductId(), 1L, Long::sum);
-
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("contractId", c.getContractId());
-            item.put("productId", c.getProductId());
-            item.put("status", c.getStatus());
-            item.put("appliedAt", c.getAppliedAt().toString());
-            item.put("ageAtApplication", age);
-            if (appliedBefore != null) item.put("grandfathered", beforeEffective);
-            items.add(item);
-        }
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ageFrom", ageFrom);
-        out.put("ageTo", ageTo);
-        out.put("total", items.size());
-        out.put("byProduct", byProduct);
-        if (appliedBefore != null) {
-            out.put("appliedBefore", appliedBefore.toString());
-            out.put("grandfathered", grandfathered);   // 경과조치로 종전 기준 유지
-        }
-        out.put("contracts", items);
-        return out;
+        return BusinessQueries.contractImpact(contracts.findAll(),
+                new BusinessQueries.ImpactQuery(ageFrom, ageTo, dsrFrom, dsrTo, appliedBefore), LocalDate.now());
     }
 
     @GetMapping("/db/schema")
@@ -155,5 +131,9 @@ public class InternalBusinessController {
         payload.put("assignee", req.assignee());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(jobs.publish(req.taskId(), Job.Type.CREATE_TICKET, payload, req.approvalId(), req.idempotencyKey()));
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
     }
 }
