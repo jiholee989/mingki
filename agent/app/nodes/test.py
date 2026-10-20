@@ -16,7 +16,7 @@ def make_test_agent(tools, reasoner):
         return {
             "test_cases": cases,
             "events": [
-                Event(node="test_agent", message=f"테스트 명세 {len(cases)}건 고정")
+                Event(node="test_agent", message=f"테스트 명세 {len(cases)}건 고정 / 실행 코드 {sum(bool(t.code) for t in cases)}건")
             ],
         }
 

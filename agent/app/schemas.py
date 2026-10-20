@@ -13,6 +13,7 @@ class Requirement(BaseModel):
     change: Literal["modified", "added", "removed"]
     summary: str
     target: str
+    behavior_change: str = Field(default="", description="변경 전후 시스템 동작의 차이")
     old_value: str | None = None
     new_value: str | None = None
     old_text: str | None = None
@@ -44,6 +45,9 @@ class ChangeSpec(BaseModel):
     kind: Literal["config", "code", "db", "product_rule", "ui", "new"]
     is_target: bool
     reason: str
+    before: str = Field(default="", description="현재 동작 또는 현재 값")
+    after: str = Field(default="", description="요건 반영 후 필요한 동작 또는 값")
+    needs_review: bool = Field(default=False, description="관련성 근거가 부족해 추가 확인이 필요한 후보")
 
     @property
     def location(self) -> str:

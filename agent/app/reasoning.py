@@ -5,8 +5,18 @@ from pydantic import BaseModel
 from app.schemas import ChangeSpec, Requirement, TestCase
 
 
+class RequirementCandidate(Requirement):
+    is_material: bool
+    behavior_change: str
+
+
+
 class RequirementsOutput(BaseModel):
-    items: list[Requirement]
+    items: list[RequirementCandidate]
+
+
+class BehaviorOutput(BaseModel):
+    behavior_change: str
 
 
 class LocationsOutput(BaseModel):

@@ -55,7 +55,14 @@ def main():
         if args.mode == "live":
             from app.tools.mcp_client import McpTools
 
+            mcp_logger = logging.getLogger("app.tools.mcp_client")
+            mcp_logger.setLevel(logging.INFO)
+            mcp_handler = logging.StreamHandler()
+            mcp_handler.setFormatter(logging.Formatter("[MCP] %(message)s"))
+            mcp_logger.addHandler(mcp_handler)
+            mcp_logger.propagate = False
             tools = McpTools()
+            print("[LIVE] 실제 LLM + MCP 서버 조회·검증. 외부 발행은 별도 승인.", flush=True)
         else:
             from app.tools.mock import MockTools
 
@@ -89,9 +96,13 @@ def main():
                         f"- {req['id']} {req['summary']} | 근거 {req['article_ref']} | 시행 {req['effective_date']}"
                     )
                 for spec in value["change_specs"]:
+                    label = "확인 필요" if spec["needs_review"] else "대상" if spec["is_target"] else "비대상"
+                    line = spec["line"] or ("신규" if spec["kind"] == "new" else "미확인")
                     print(
-                        f"  [{'대상' if spec['is_target'] else '제외'}] {spec['file']}:{spec['line']} {spec['symbol']}: {spec['reason']}"
+                        f"  [{label}] {spec['file']}:{line} {spec['symbol']}: {spec['reason']}"
                     )
+                    if spec["before"] or spec["after"]:
+                        print(f"    변경 전: {spec['before']} → 변경 후: {spec['after']}")
                 choice = ask(
                     "수정 대상을 확정할까요? a=확정 r=보류", ("a", "r"), args.auto
                 )

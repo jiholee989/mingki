@@ -6,13 +6,17 @@
 """
 
 import asyncio
+import logging
 import os
 import threading
+import time
 from typing import Any
 
 from fastmcp import Client
 
 from app.tools.base import ToolBelt
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_URLS = {
     "regulation": "http://localhost:8001/mcp",
@@ -100,6 +104,7 @@ class McpTools:
             for server in sorted(
                 {TOOL_SERVER[n] for n in names if n != "read_resource"}
             ):
+                logger.info("%s-mcp 도구 목록 조회", server)
                 async with Client(self.urls[server], timeout=self.timeout) as client:
                     for tool in await client.list_tools():
                         if tool.name in names:
@@ -148,7 +153,16 @@ class McpTools:
     def call(self, name: str, **kwargs) -> Any:
         args = {k: v for k, v in kwargs.items() if v is not None}
         self.calls.append((name, args))
-        return self._run(self._call_tool(TOOL_SERVER[name], name, args))
+        server = TOOL_SERVER[name]
+        started = time.monotonic()
+        logger.info("%s-mcp tool=%s 요청", server, name)
+        try:
+            result = self._run(self._call_tool(server, name, args))
+        except Exception:
+            logger.warning("%s-mcp tool=%s 실패", server, name)
+            raise
+        logger.info("%s-mcp tool=%s 완료 (%.2fs)", server, name, time.monotonic() - started)
+        return result
 
     def read_resource(self, uri: str) -> str:
         """reg://{regulation_id}/{version}[/{article_id}]"""
@@ -159,7 +173,10 @@ class McpTools:
                 contents = await c.read_resource(uri)
             return "".join(getattr(b, "text", "") for b in contents)
 
-        return self._run(read())
+        logger.info("regulation-mcp resource 읽기 요청")
+        result = self._run(read())
+        logger.info("regulation-mcp resource 읽기 완료")
+        return result
 
     def __getattr__(self, name: str):
         if name not in TOOL_SERVER:

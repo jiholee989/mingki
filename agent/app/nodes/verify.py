@@ -18,6 +18,8 @@ def make_verify(tools):
                 p.model_copy(update={"status": "unverified"}) if p in code else p
                 for p in patches
             ]
+        elif not patches:
+            errors = ["검증할 수정안이 없습니다. 확인 필요 후보와 수정 범위를 먼저 검토하세요"]
         elif not code:
             updated = patches
         elif any(p.status == "patch_failed" for p in code):
@@ -74,13 +76,20 @@ def make_verify(tools):
                     for p in code
                 ]
             updated += [p for p in patches if p.status == "ticket_only"]
+        included = {sid for patch in updated for sid in patch.spec_ids}
+        covered = {s.requirement_id for s in state.get("change_specs", []) if s.is_target and s.id in included}
+        missing = {r.id for r in state.get("requirements", [])} - covered
+        if missing:
+            errors.append(f"수정안 또는 작업 명세에 빠진 확정 요건: {sorted(missing)}")
         return {
             "code_patches": updated,
             "system_errors": errors,
             "events": [
                 Event(
                     node="verify",
-                    message=f"테스트 실행 {executed}건 / {'미검증·실패' if errors or any(p.status == 'patch_failed' for p in updated) else '검증 완료'}",
+                    message=("작업 명세만 생성: 코드 패치·테스트 검증 대상 없음"
+                             if patches and not code and not errors else
+                             f"테스트 실행 {executed}건 / {'미검증·실패' if errors or any(p.status == 'patch_failed' for p in updated) else '검증 완료'}"),
                 )
             ],
         }

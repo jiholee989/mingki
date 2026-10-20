@@ -68,7 +68,7 @@ async with Client("http://code-mcp:8002/mcp") as c:
 - `kind`: `code` · `config` · `ui` · `test`. `symbol`: 그 줄이 속한 함수 · 클래스 · 상수 · 설정 키.
 - `diff` 형식: `"@@ 파일:줄 @@\n-원래 줄\n+새 줄"` (design 노드 형식, hunk 여러 개 가능) 또는 unified diff.
   줄은 앞뒤 공백을 무시하고 비교하며, 줄 번호가 어긋나도 같은 내용이 파일에 한 곳뿐이면 그 위치에 적용한다.
-- `check_patch`: 샘플 레포 **복사본**에서 묶음별(적용 → 문법 → pytest) 검증 후, 통과한 묶음을 합쳐 통합 검증. 원본은 바뀌지 않는다.
+- `check_patch`: 샘플 레포 **복사본**에서 묶음별(적용 → 문법 → 기존 pytest) 검증 후, 통과한 묶음을 합쳐 생성 테스트까지 통합 검증. 원본은 바뀌지 않는다.
   - pytest 환경 변수는 PATH 등 최소한만 넘긴다 (토큰 없음), 60초 제한.
   - `tests.executed`는 통합 실행의 pytest 결과에서 건너뜀·설정 오류를 제외한 건수다. 0건이면 검증 성공으로 처리하지 않는다.
   - `test_cases` 중 `code`(pytest 소스) 가 있는 것만 실행한다. `kind: system` 은 통합 검증에서만 돈다.
@@ -115,3 +115,11 @@ uv run python run.py --mode live
 ```
 
 Agent의 `.env`는 `.env.example`을 참고한다. `llm` 모드는 계속 MCP 없이 로컬 샘플로 실행된다.
+
+
+### 생성 테스트의 검증 근거
+
+`check_patch`는 생성 테스트를 원본에서도 실행한다. 원본에서 실제 테스트가 실패하고,
+수정본에서는 통과해야 새 기준을 확인한 것으로 본다(`tests.baseline_failed`).
+생성 테스트가 원본에서도 모두 통과하거나 실행되지 않으면 `system.ok=false`다.
+여러 파일에 걸친 생성 테스트는 파일별 검증에 넣지 않고 모든 패치를 합친 뒤 실행한다.

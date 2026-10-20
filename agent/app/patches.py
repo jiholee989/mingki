@@ -1,6 +1,5 @@
 """code-mcp와 공유하는 @@ file:line @@ 형식. 승인 범위 밖 수정은 거부한다."""
 
-
 def validate_diff(diff, specs):
     allowed = {}
     for spec in specs:

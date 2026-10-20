@@ -18,7 +18,10 @@ def make_locate_agent(tools, reasoner):
             key = (item.requirement_id, item.file, item.line, item.symbol)
             if key in seen:
                 continue
-            specs.append(item.model_copy(update={"id": f"SPEC-{len(specs)+1}"}))
+            specs.append(item.model_copy(update={
+                "id": f"SPEC-{len(specs)+1}",
+                "is_target": item.is_target and not item.needs_review,
+            }))
             seen.add(key)
         return {
             "change_specs": specs,

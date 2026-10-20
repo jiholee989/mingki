@@ -490,3 +490,55 @@ def test_cli_does_not_repeat_approval_when_model_execution_fails(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["run.py", "--mode", "llm", "--auto"])
     with pytest.raises(ValueError, match="모델 출력 형식"):
         run.main()
+
+
+def test_confirming_scope_does_not_turn_uncertain_location_into_patch():
+    class Uncertain(DemoReasoner):
+        def locate(self, state, tools):
+            items = super().locate(state, tools)
+            for item in items:
+                if item.is_target and item.kind in ("code", "config", "ui"):
+                    item.needs_review = True
+            return items
+
+    runner, out, _ = start(reasoner=Uncertain())
+    uncertain = {s.id for s in out["change_specs"] if s.needs_review}
+    assert uncertain
+    assert all(not s.is_target for s in out["change_specs"] if s.needs_review)
+    out = runner.resume("T1", {"action": "approve"})
+    assert all(not uncertain.intersection(p.spec_ids) for p in out["code_patches"])
+
+
+@pytest.mark.parametrize("decision, action", [("CONFIRMED", "approve"), ("HELD", "reject")])
+def test_main_requirement_decision_names(decision, action):
+    request = ResumeRequest.model_validate({
+        "taskId": "T1", "threadId": "T1", "step": "REQUIREMENTS",
+        "decision": decision, "payload": {"confirmedReqKeys": ["REQ-8"]},
+    })
+    assert request.to_decision()["action"] == action
+
+
+def test_empty_patch_set_is_not_reported_as_verified():
+    from app.nodes.verify import make_verify
+    result = make_verify(MockTools())({"code_patches": [], "demo": False})
+    assert result["system_errors"]
+    assert "검증 완료" not in result["events"][0].message
+
+
+def test_ticket_only_review_does_not_claim_test_success():
+    from app.nodes.verify import make_verify
+    from app.schemas import PatchResult
+    patch = PatchResult(bundle_id="B:new", files=["new.py"], spec_ids=["S1"], locations=[], diff="", status="ticket_only")
+    result = make_verify(MockTools())({"code_patches": [patch], "demo": False})
+    assert not result["system_errors"]
+    assert "검증 대상 없음" in result["events"][0].message
+
+
+def test_verified_subset_does_not_hide_missing_confirmed_requirement():
+    from app.nodes.verify import make_verify
+    from app.schemas import PatchResult
+    reqs = DemoReasoner().requirements(MockTools().diff_versions("credit-loan-ops", "v3", "v4"))
+    patch = PatchResult(bundle_id="B:new", files=["new.py"], spec_ids=["S1"], locations=[], diff="", status="ticket_only")
+    location = ChangeSpec(id="S1", requirement_id=reqs[0].id, file="new.py", line=0, symbol="new", snippet="", kind="new", is_target=True, reason="new")
+    result = make_verify(MockTools())({"code_patches": [patch], "requirements": reqs, "change_specs": [location], "demo": False})
+    assert any("빠진 확정 요건" in error for error in result["system_errors"])

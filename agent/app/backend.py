@@ -47,10 +47,11 @@ class ResumeRequest(BaseModel):
 
     def to_decision(self):
         if self.step == "REQUIREMENTS":
-            if self.decision not in ("CONFIRM", "HOLD"):
-                raise ValueError("요건 결정은 CONFIRM/HOLD입니다")
+            # main의 최신 계약을 사용하되 기존 호출 이름도 호환한다.
+            if self.decision not in ("CONFIRMED", "HELD", "CONFIRM", "HOLD"):
+                raise ValueError("요건 결정은 CONFIRMED/HELD입니다")
             return {
-                "action": "approve" if self.decision == "CONFIRM" else "reject",
+                "action": "approve" if self.decision in ("CONFIRMED", "CONFIRM") else "reject",
                 "confirmed_req_keys": self.payload.get("confirmedReqKeys", []),
                 "comment": self.comment,
             }
@@ -119,7 +120,11 @@ def change_specs_payload(items):
                 "target": s.is_target,
                 "reason": s.reason,
                 "bundle": f"B:{s.file}",
-                "detail": {},
+                "detail": {
+                    "before": s.before,
+                    "after": s.after,
+                    "needsReview": s.needs_review,
+                },
             }
             for s in items
         ]

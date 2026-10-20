@@ -193,7 +193,7 @@ def write_generated_tests(repo: Path, test_cases: list[dict], kinds: set[str] | 
     return n
 
 
-def run_tests(repo: Path) -> tuple[bool, list[str], int]:
+def run_tests(repo: Path, *, generated_only: bool = False) -> tuple[bool, list[str], int]:
     """pytest 실행. 비밀값 없는 최소 환경 변수, 시간 제한. (통과 여부, 실패 요약)"""
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -203,9 +203,10 @@ def run_tests(repo: Path) -> tuple[bool, list[str], int]:
     }
     report = repo / ".rr-test-results.xml"
     report.unlink(missing_ok=True)
+    targets = ["tests/rr_generated"] if generated_only else []
     try:
         res = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--no-header", "-rf", "--tb=line", f"--junitxml={report}"],
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--no-header", "-rf", "--tb=line", f"--junitxml={report}", *targets],
             cwd=repo, env=env, text=True, capture_output=True, timeout=TEST_TIMEOUT_SEC,
         )
     except subprocess.TimeoutExpired:
@@ -241,6 +242,12 @@ def check_patch(patches: list[dict], test_cases: list[dict], root: Path = SAMPLE
     """묶음별(개별) 검증 + 통과한 묶음을 모두 합친 통합 검증."""
     require_isolation()
     results, applicable = [], []
+    baseline_failed = False
+    if any(tc.get("code") for tc in test_cases):
+        with sandbox(root) as repo:
+            write_generated_tests(repo, test_cases)
+            baseline_ok, baseline_errors, baseline_count = run_tests(repo, generated_only=True)
+            baseline_failed = not baseline_ok and baseline_count > 0 and any("FAILED" in error for error in baseline_errors)
     for p in patches:
         bundle_id = p.get("bundle_id") or "?"
         with sandbox(root) as repo:
@@ -251,7 +258,7 @@ def check_patch(patches: list[dict], test_cases: list[dict], root: Path = SAMPLE
                 continue
             errors = syntax_errors(repo, changed)
             if not errors:
-                write_generated_tests(repo, test_cases, kinds={"unit", "boundary", "effective_date"})
+                # 생성 테스트는 모든 파일이 반영된 통합본에서 실행한다.
                 ok, failures, _ = run_tests(repo)
                 errors = [] if ok else [f"테스트 실패: {f}" for f in failures]
             results.append({"bundle_id": bundle_id, "ok": not errors, "errors": errors, "files": changed})
@@ -260,6 +267,8 @@ def check_patch(patches: list[dict], test_cases: list[dict], root: Path = SAMPLE
 
     with sandbox(root) as repo:
         integration_errors = []
+        if any(tc.get("code") for tc in test_cases) and not baseline_failed:
+            integration_errors.append("생성 테스트가 수정 전 코드와 수정 후 코드를 구분하지 못합니다 (원본에서 실제 실패 필요)")
         for p in applicable:
             try:
                 apply_patch(repo, p["diff"])
@@ -280,6 +289,7 @@ def check_patch(patches: list[dict], test_cases: list[dict], root: Path = SAMPLE
         "tests": {
             "generated": generated,
             "executed": executed,
+            "baseline_failed": baseline_failed,
             "skipped_without_code": sum(1 for tc in test_cases if not tc.get("code")),
         },
     }
