@@ -9,7 +9,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from regulation_mcp.regulations import RegulationError
+from regulation_mcp.regulations import RegulationError, split_frontmatter
 
 
 def _default_dir() -> Path:
@@ -52,9 +52,7 @@ def doc_path(product_id: str, root: Path = PRODUCT_DOCS_DIR) -> Path:
 @lru_cache
 def load(product_id: str, root: Path = PRODUCT_DOCS_DIR) -> dict:
     """{"meta": {frontmatter}, "sections": [{"no", "section", "text"}]}"""
-    raw = doc_path(product_id, root).read_text(encoding="utf-8")
-    _, front, body = raw.split("---", 2)
-    meta = dict(line.split(": ", 1) for line in front.strip().splitlines() if ": " in line)
+    meta, body = split_frontmatter(doc_path(product_id, root).read_text(encoding="utf-8"), f"{product_id}.md")
 
     sections: list[dict] = []
     for line in body.splitlines():

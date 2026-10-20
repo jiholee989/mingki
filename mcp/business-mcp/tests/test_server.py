@@ -204,3 +204,69 @@ async def test_list_rule_keys_matches_contract_shape(spring):
     contract_fields = set().union(*contract)
     assert all(contract_fields <= set(k) for k in keys), contract_fields
     assert all(set(k) <= contract_fields | {"upcomingRows"} for k in keys)
+
+
+@pytest.mark.parametrize("args, reason", [
+    ({"product_id": ""}, "잘못된 product_id"),     # 빈 값이 전체 조회로 새지 않는다
+    ({"rule_key": ""}, "rule_key가 비어"),
+    ({"as_of": ""}, "잘못된 as_of"),
+    ({"as_of": "2026-02-30"}, "잘못된 as_of"),     # 없는 날짜
+])
+async def test_rule_inputs_are_rejected(spring, args, reason):
+    with pytest.raises(ToolError, match=reason):
+        await call("get_product_rules", args)
+    assert spring.requests == []
+
+
+def _respond(monkeypatch, response):
+    monkeypatch.setattr(server, "backend", Backend("http://spring", "t", transport=httpx.MockTransport(lambda req: response)))
+
+
+@pytest.mark.parametrize("rule, field", [
+    ({**RULES[1], "effectiveFrom": None}, "effectiveFrom"),
+    ({**RULES[1], "effectiveTo": "31/12/2026"}, "effectiveTo"),
+    ({**RULES[1], "unit": None}, "unit"),
+    ({k: v for k, v in RULES[1].items() if k != "ruleKey"}, "ruleKey"),
+])
+@pytest.mark.parametrize("tool", ["get_product_rules", "list_rule_keys"])
+async def test_malformed_rule_from_backend_names_row_and_field(monkeypatch, rule, field, tool):
+    _respond(monkeypatch, httpx.Response(200, json=[RULES[0], rule]))
+    with pytest.raises(ToolError, match=f"R011의 {field}"):
+        await call(tool, {"as_of": "2026-10-20"})
+
+
+@pytest.mark.parametrize("response, reason", [
+    (httpx.Response(200, text="<html>"), "JSON이 아닙니다"),
+    (httpx.Response(200, json={"error": "x"}), "목록 형식이 아닙니다"),
+    (httpx.Response(500, text="<h1>boom</h1>"), "500"),
+])
+@pytest.mark.parametrize("tool", ["get_products", "get_product_rules", "list_rule_keys"])
+async def test_unexpected_backend_response_is_tool_error(monkeypatch, response, reason, tool):
+    _respond(monkeypatch, response)
+    with pytest.raises(ToolError, match=reason):
+        await call(tool)
+
+
+async def test_backend_timeout_is_tool_error(monkeypatch):
+    def slow(req):
+        raise httpx.ReadTimeout("slow")
+    monkeypatch.setattr(server, "backend", Backend("http://spring", "t", transport=httpx.MockTransport(slow)))
+    with pytest.raises(ToolError, match="연결할 수 없습니다"):
+        await call("list_rule_keys")
+
+
+async def test_empty_rules_give_empty_keys(monkeypatch):
+    _respond(monkeypatch, httpx.Response(200, json=[]))
+    assert await call("list_rule_keys") == []
+
+
+@pytest.mark.parametrize("tool, args", [
+    ("get_products", {"status": "DELETED"}),
+    ("get_contract_impact", {"age_from": "육십"}),
+    ("get_products", {"unknown": 1}),
+])
+async def test_bad_arguments_are_rejected_by_schema(spring, tool, args):
+    async with Client(server.mcp) as c:
+        r = await c.call_tool(tool, args, raise_on_error=False)
+    assert r.is_error
+    assert spring.requests == []

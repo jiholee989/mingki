@@ -50,8 +50,33 @@ def get_products(status: Literal["ON_SALE", "SALE_ENDED"] | None = None) -> list
     Returns:
         [{productId, name, description, repaymentTypes, minTermMonths, maxTermMonths, status}]
     """
-    products = _call(backend.get, "/internal/products")
+    products = _list_of_dicts(_call(backend.get, "/internal/products"), "상품")
     return [p for p in products if status is None or p.get("status") == status]
+
+
+def _list_of_dicts(data, what: str) -> list[dict]:
+    if not isinstance(data, list) or not all(isinstance(x, dict) for x in data):
+        raise ToolError(f"백엔드 {what} 응답이 목록 형식이 아닙니다: {str(data)[:100]}")
+    return data
+
+
+def _iso(value) -> bool:
+    try:
+        date.fromisoformat(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _rules(data) -> list[dict]:
+    """상품 규칙 응답이 계약(BACKEND_API 9 · 10.5)과 맞는지 확인. 날짜 계산 전에 어떤 행이 왜 틀렸는지 알린다."""
+    for r in _list_of_dicts(data, "상품 규칙"):
+        bad = [f for f in ("ruleKey", "unit") if not isinstance(r.get(f), str) or not r.get(f)]
+        bad += [] if _iso(r.get("effectiveFrom")) else ["effectiveFrom"]
+        bad += [] if r.get("effectiveTo") is None or _iso(r.get("effectiveTo")) else ["effectiveTo"]
+        if bad:
+            raise ToolError(f"백엔드 상품 규칙 응답 형식 오류: {r.get('ruleId', '?')}의 {', '.join(bad)} 값이 잘못됐습니다")
+    return data
 
 
 def _today() -> date:
@@ -102,13 +127,15 @@ def get_product_rules(
     """
     day = _as_of(as_of)
     params = {"key": rule_key, "asOf": day.isoformat() if day else None}
-    if product_id:
-        # URL 경로에 들어가므로 ../ 같은 값으로 다른 /internal API에 닿지 못하게 막는다
+    if rule_key == "":
+        raise ToolError("rule_key가 비어 있습니다. 전체를 보려면 생략합니다")
+    if product_id is not None:
+        # URL 경로에 들어가므로 ../ 같은 값으로 다른 /internal API에 닿지 못하게 막는다. 빈 값도 전체 조회로 새지 않게 거절
         if not _PRODUCT_ID.match(product_id):
-            raise ToolError(f"잘못된 product_id: {product_id!r} (예: P002)")
-        rules = _call(backend.get, f"/internal/products/{product_id}/rules", params)
+            raise ToolError(f"잘못된 product_id: {product_id!r} (예: P002). 전체를 보려면 생략합니다")
+        rules = _rules(_call(backend.get, f"/internal/products/{product_id}/rules", params))
     else:
-        rules = _call(backend.get, "/internal/product-rules", params)
+        rules = _rules(_call(backend.get, "/internal/product-rules", params))
     # 백엔드가 asOf · key를 아직 지원하지 않아도 결과가 같도록 한 번 더 거른다 (지원하면 그대로 통과)
     return [
         r for r in rules
@@ -132,7 +159,7 @@ def list_rule_keys(as_of: str | None = None) -> list[dict]:
     """
     day = _as_of(as_of) or _today()
     keys: dict[str, dict] = {}
-    for r in _call(backend.get, "/internal/product-rules"):
+    for r in _rules(_call(backend.get, "/internal/product-rules")):
         k = keys.setdefault(r["ruleKey"], {"ruleKey": r["ruleKey"], "units": set(), "productIds": set(),
                                            "activeRows": 0, "closedRows": 0, "upcomingRows": 0})
         k["units"].add(r.get("unit"))
