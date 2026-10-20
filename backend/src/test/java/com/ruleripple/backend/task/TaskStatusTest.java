@@ -30,6 +30,7 @@ class TaskStatusTest {
     @Test
     void simplifiedNodesMapToStatuses() {
         assertThat(TaskStatus.fromNode("impact_agent")).isEqualTo(LOCATING);
+        assertThat(TaskStatus.fromNode("product_impact_agent")).isEqualTo(LOCATING);   // #27 노드 이름
         assertThat(TaskStatus.fromNode("proposal_agent")).isEqualTo(DESIGNING);
         assertThat(TaskStatus.fromNode("verify")).isEqualTo(VERIFYING);
         assertThat(TaskStatus.fromNode("apply")).isEqualTo(PUBLISHING);

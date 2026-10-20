@@ -47,7 +47,7 @@ public enum TaskStatus {
         if (node == null) return null;
         return switch (node) {
             case "requirement_agent" -> EXTRACTING;
-            case "impact_agent", "test_agent", "locate_agent" -> LOCATING;
+            case "impact_agent", "product_impact_agent", "test_agent", "locate_agent" -> LOCATING;
             case "proposal_agent", "design_agent", "plan", "db_change", "worker", "merge" -> DESIGNING;
             case "verify" -> VERIFYING;
             case "apply", "publish" -> PUBLISHING;

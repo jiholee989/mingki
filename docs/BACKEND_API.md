@@ -271,7 +271,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | 노드 (`STEP {node}`) | 상태 |
 |---|---|
 | `requirement_agent` | `EXTRACTING` |
-| `impact_agent` | `LOCATING` |
+| `impact_agent` (`product_impact_agent`도 받음) | `LOCATING` |
 | `proposal_agent` | `DESIGNING` |
 | `verify` (`round` 포함) | `VERIFYING` |
 | interrupt 직전 `APPROVAL_REQUIRED {step:"REVIEW"}` | `WAITING_REVIEW` |
