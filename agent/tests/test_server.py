@@ -8,8 +8,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.backend import proposal_keys, proposal_rows
-from app.bridge import review_decision
+from app.backend import ResumeRequest, proposal_keys, proposal_rows
+from app.bridge import SpringBridge, review_decision
 from app.data import DATA_DIR
 from app.graph import build_graph
 from app.runner import AgentRunner
@@ -284,6 +284,47 @@ def test_resume_rejects_bad_keys_before_running_and_missing_or_finished_threads_
     assert api.post("/resume", json=body, headers=HEADERS).status_code == 202
     assert spring.kinds()[-1] == "DONE:DONE"
     assert api.post("/resume", json=body, headers=HEADERS).status_code == 409   # 이미 끝난 thread
+
+
+class Crash(BaseException):
+    """프로세스가 죽은 것처럼. Exception 이 아니라 apply 노드가 잡지 않고 그래프 밖으로 나간다."""
+
+
+def test_continue_finishes_apply_after_a_crash_with_the_same_idempotency_key():
+    reads = []
+
+    def job(job_id):
+        reads.append(job_id)
+        if len(reads) == 1:
+            raise Crash
+        return completed(job_id)
+    tools, spring = QueueTools(), FakeSpring(job=job)
+    r = runner(tools=tools)
+    api = client(r, spring)
+    assert api.post("/run", json=run_body(), headers=HEADERS).status_code == 202
+    req = ResumeRequest.model_validate(resume_body("APPROVE", approved=["P001:DSR_LIMIT"], excluded=["P002:DSR_LIMIT"]))
+    with pytest.raises(Crash):   # 큐 조회 도중 죽음. 백엔드는 PUBLISHING 에 멈춘다
+        r.resume_backend(req, listener=SpringBridge(spring), job_reader=spring.job)
+    assert not any(k.startswith("DONE") or k.startswith("FAILED") for k in spring.kinds())
+    assert r.pending_nodes("T1") == ("apply",)
+    cont = {"taskId": "T1", "threadId": "T1", "callbackBaseUrl": CALLBACK}
+    spring.calls.clear()
+    assert api.post("/continue", json=cont, headers=HEADERS).status_code == 202
+    assert in_order(spring.kinds(), ["STEP:apply", "PUT report", "DONE:DONE"])
+    assert [r["idempotency_key"] for r in tools.requests] == ["T1:apply:P001:DSR_LIMIT"] * 2
+    assert api.post("/continue", json=cont, headers=HEADERS).status_code == 409           # 끝난 작업
+    api2, _, _ = started(tools=QueueTools())
+    assert api2.post("/continue", json=cont, headers=HEADERS).status_code == 409          # 승인 대기 중
+    assert api2.post("/continue", json={**cont, "threadId": "NOPE"}, headers=HEADERS).status_code == 409
+
+
+def test_threads_are_locked_independently():
+    r = runner(tools=QueueTools())
+    r.start("T1", "credit-loan-ops")
+    r.start("T2", "credit-loan-ops")
+    with r._lock("T1"):   # T1 이 LLM 호출 중이라고 치면
+        assert r.waiting_review("T2")
+        assert r.resume_backend(ResumeRequest(taskId="T2", threadId="T2", step="REVIEW", decision="REJECT"))["result"].status == "REJECTED"
 
 
 # ---------- 종료 · 실패 · 인증 ----------

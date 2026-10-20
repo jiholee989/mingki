@@ -87,20 +87,22 @@ uv run uvicorn app.server:create_app --factory --port 8000
 |---|---|---|
 | `AGENT_MODE` | `llm` | `llm`(로컬 자료) · `live`(MCP). 둘 다 실제 LLM 키 필요 |
 | `AGENT_CHECKPOINT_DB` | 없음 | 있으면 Postgres 체크포인터(`agent` 스키마). 승인 대기 중 재시작해도 재개된다 |
-| `INTERNAL_TOKEN` | `rr-internal-dev-token` | Spring과 주고받는 `X-Internal-Token` |
+| `INTERNAL_TOKEN` | `rr-internal-dev-token` | Spring과 주고받는 `X-Internal-Token`. 기본값은 공개된 개발용이라 운영에서는 반드시 바꾼다 (기본값이면 시작할 때 경고) |
 | `REGULATION_ID` | `credit-loan-ops` | 분석할 등록 규정. 업로드 원문 sha256이 로컬 원문과 다르면 FAILED |
 
 | 파일 | 역할 |
 |---|---|
-| `app/server.py` | FastAPI `/run` · `/resume` · `/health`, 토큰 검사 |
+| `app/server.py` | FastAPI `/run` · `/resume` · `/continue` · `/health`, 토큰 검사 |
 | `app/bridge.py` | 노드 시작 · 완료를 Spring 콜백으로. 백엔드 확인을 제안별 결정 + `apply` 승인으로 바꾼다 |
 | `app/backend.py` | Agent 제안(상품 × 요건, `changes[]`)을 백엔드 행(상품 × 규칙)으로 펼친다. 유지 판정은 `keep` 행 |
 | `app/spring.py` | Spring `/internal/**` 클라이언트. 연결 실패 · 5xx 는 짧게 재시도, 4xx 는 바로 실패 |
-| `app/checkpoint.py` | Postgres 체크포인터 |
+| `app/checkpoint.py` | Postgres 체크포인터 (연결 풀, 끊긴 연결은 꺼낼 때 검사해 다시 맺는다) |
 
 사람 확인은 1번이다 (SIMPLIFICATION v2). 백엔드의 `APPROVE + approvedProposalKeys · excludedProposalKeys`를 제안별 `approve` · `reject` + `finish`로 바꾸고, `approvalId`와 반영 키를 `apply_approval`로 넘긴다. 승인 · 제외 키는 Agent가 보낸 현재 변경 제안 행과 정확히 같아야 한다(아니면 400). 검토 대기 중이 아닌 thread는 409. 수정 요청 · 직접 편집은 CLI에서만 쓰고 백엔드 경로에서는 쓰지 않는다.
 
-승인 뒤 `apply` 노드가 반영 키마다 business-mcp `apply_rule_version`을 부르고(멱등키 `{taskId}:apply:{proposalKey}`), 이 요청의 콜백 주소로 `/internal/jobs/{id}`를 `DONE` · `DEAD`까지 조회한다. 큐 조회 함수는 그래프가 아니라 재개할 때 `config["configurable"]["job_reader"]`로 넘긴다.
+승인 뒤 `apply` 노드가 반영 키마다 business-mcp `apply_rule_version`을 부르고(멱등키 `{taskId}:apply:{proposalKey}`), 이 요청의 콜백 주소로 `/internal/jobs/{id}`를 `DONE` · `DEAD`까지 조회한다. 큐 조회 함수는 그래프가 아니라 재개할 때 `config["configurable"]["job_reader"]`로 넘긴다. 한 건이 접수에서 거절돼도 나머지 접수와 이미 접수된 작업의 확인은 계속하고, 조회가 잠깐 실패하면 다음 주기에 다시 조회한다(연속 3회면 포기). 반영 도중 Agent가 죽어 백엔드가 `PUBLISHING`에 멈추면 `POST /continue {taskId, threadId, callbackBaseUrl}`로 멈춘 노드부터 이어간다 — 같은 멱등키를 다시 쓰므로 큐 작업이 중복 생기지 않는다.
+
+잠금은 thread(작업) 단위다. 한 작업의 LLM 호출이 다른 작업의 시작 · 재개를 막지 않는다.
 
 판정 · 상태 대응: `no_change → keep`, `needs_review → needs_check`, 리포트 `DONE → DONE`, `FAILED → FAILED {reason}`, `NO_ACTION → NO_CHANGE`, `REJECTED → REJECTED`. 반영 없이 `APPROVED`로 끝나면 종료 상태가 아니라 `FAILED`로 보고한다.
 

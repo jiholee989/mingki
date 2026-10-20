@@ -56,6 +56,14 @@ class ResumeRequest(BaseModel):
     callback_base_url: str | None = Field(default=None, alias="callbackBaseUrl")
 
 
+class ContinueRequest(BaseModel):
+    """반영 도중 Agent 가 죽어 PUBLISHING 에 멈춘 작업을 이어가는 요청 (운영자 · 백엔드 재시도)."""
+    model_config = ConfigDict(populate_by_name=True)
+    task_id: str = Field(alias="taskId")
+    thread_id: str = Field(alias="threadId")
+    callback_base_url: str | None = Field(default=None, alias="callbackBaseUrl")
+
+
 def requirements_payload(items):
     return {
         "items": [

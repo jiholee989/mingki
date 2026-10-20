@@ -1,7 +1,8 @@
 """Spring ↔ Agent HTTP 어댑터. 계약은 docs/BACKEND_API.md 6절.
 
-    POST /run     {taskId, threadId, title, documents, callbackBaseUrl}         → 202
-    POST /resume  {taskId, threadId, step, decision, approvalId, payload, ...} → 202
+    POST /run       {taskId, threadId, title, documents, callbackBaseUrl}         → 202
+    POST /resume    {taskId, threadId, step, decision, approvalId, payload, ...} → 202
+    POST /continue  {taskId, threadId, callbackBaseUrl}                           → 202  (반영 도중 멈춘 작업 이어가기)
 
 둘 다 바로 202를 돌려주고 그래프는 백그라운드에서 돌린다. 진행 상황은 SpringBridge가 콜백으로 보낸다.
 
@@ -22,11 +23,11 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from fastapi import FastAPI, Header, HTTPException  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
-from app.backend import ResumeRequest, RunRequest  # noqa: E402
+from app.backend import ContinueRequest, ResumeRequest, RunRequest  # noqa: E402
 from app.bridge import SpringBridge  # noqa: E402
 from app.data import DATA_DIR  # noqa: E402
 from app.runner import DecisionError, NotWaitingError  # noqa: E402
-from app.spring import INTERNAL_TOKEN, SpringClient  # noqa: E402
+from app.spring import DEFAULT_INTERNAL_TOKEN, INTERNAL_TOKEN, SpringClient  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +79,8 @@ def create_app(
     token=INTERNAL_TOKEN,
 ):
     runner = runner or build_runner()
+    if token == DEFAULT_INTERNAL_TOKEN:
+        log.warning("INTERNAL_TOKEN 이 공개된 개발용 기본값입니다. 운영 배포에서는 반드시 바꾸세요")
     if submit is None:
         submit = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent-task").submit
     app = FastAPI(title="Rule Ripple Agent")
@@ -136,6 +139,20 @@ def create_app(
         # apply 노드는 이 요청의 콜백 주소로 큐 작업을 조회한다.
         submit(execute, req, lambda spring, bridge: runner.resume(
             req.thread_id, decision, task_id=req.task_id, step=req.step, listener=bridge, job_reader=spring.job))
+        return {"taskId": req.task_id, "accepted": True}
+
+    @app.post("/continue", status_code=202)
+    def continue_(body: dict, x_internal_token: str | None = Header(default=None)):
+        authorize(x_internal_token)
+        req = parse(ContinueRequest, body)
+        # 승인 뒤 반영(apply) 도중 Agent 가 죽으면 interrupt 없이 다음 노드만 남는다. 그 자리부터 이어간다.
+        # apply 는 같은 멱등키를 다시 쓰므로 큐 작업이 중복 생기지 않는다.
+        if runner.waiting_review(req.thread_id):
+            raise HTTPException(409, "승인을 기다리는 중입니다. resume 을 사용하세요")
+        if not runner.pending_nodes(req.thread_id):
+            raise HTTPException(409, "이어갈 작업이 없습니다 (시작하지 않았거나 이미 끝났습니다)")
+        submit(execute, req, lambda spring, bridge: runner.continue_pending(
+            req.thread_id, task_id=req.task_id, listener=bridge, job_reader=spring.job))
         return {"taskId": req.task_id, "accepted": True}
 
     return app
