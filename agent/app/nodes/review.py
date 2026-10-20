@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from typing import Literal
 from langgraph.types import interrupt
-from app.schemas import ProductProposal, ProposalReviewRecord, Event
+from app.schemas import ProductProposal, ProposalReviewRecord, Event, ApplyApproval
 from app.nodes.proposal import changed_fields
 from app.validation import validate_proposal, validate_feedback
 
@@ -29,6 +29,7 @@ class ReviewCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decisions: list[ProposalDecision] = Field(default_factory=list)
     finish: bool = Field(default=False, strict=True)
+    apply_approval: ApplyApproval | None = None
 
 
 def validate_review(state, decision):
@@ -85,6 +86,11 @@ def validate_review(state, decision):
                                             snapshot=proposal.model_copy(deep=True)))
     if command.finish and any(p.status not in ("approved", "rejected") for p in updated.values()):
         raise ValueError("검토 대기·수정 요청 항목이 남아 있습니다. 승인 또는 제외 후 완료하세요")
+    if command.apply_approval:
+        from app.nodes.apply import approved_rows
+        if not command.finish:
+            raise ValueError("실제 반영은 검토 완료와 함께 요청해야 합니다")
+        approved_rows(list(updated.values()), command.apply_approval)
     return [updated[p.id] for p in state["proposals"]], history, command.finish
 
 
@@ -94,10 +100,13 @@ def review(state):
                           "unchanged": [i.model_dump(mode="json") for i in state["product_impacts"] if i.impact == "no_change"]})
     proposals, history, finish = validate_review(state, decision)
     return {"proposals": proposals, "review_history": history, "review_finish": finish,
+            "apply_approval": ReviewCommand.model_validate(decision).apply_approval,
             "events": [Event(node="review", message=f"제안 {len(history)}건 검토 반영")]}
 
 
 def route_after_review(state):
     if any(p.status == "revision_requested" for p in state["proposals"]):
         return "proposal_agent"
-    return "report" if state.get("review_finish") else "review"
+    if state.get("review_finish"):
+        return "apply" if state.get("apply_approval") else "report"
+    return "review"

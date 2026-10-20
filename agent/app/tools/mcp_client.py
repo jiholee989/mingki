@@ -32,6 +32,7 @@ TOOL_SERVER = {
     "get_article": "regulation",
     "get_products": "business",
     "get_product_rules": "business",
+    "apply_rule_version": "business",
 }
 
 
@@ -119,7 +120,7 @@ class McpTools:
             for server in self.urls:
                 async with Client(self.urls[server], timeout=self.timeout) as client:
                     available = {tool.name for tool in await client.list_tools()}
-                required = {name for name, owner in TOOL_SERVER.items() if owner == server}
+                required = {name for name, owner in TOOL_SERVER.items() if owner == server and name != "apply_rule_version"}
                 missing = required - available
                 if missing:
                     raise ValueError(f"{server}-mcp 도구 누락: {', '.join(sorted(missing))}. 최신 main의 MCP 서버를 다시 실행하세요")
@@ -186,6 +187,7 @@ _PARAMS = {
     "diff_versions": ("regulation_id", "old_version", "new_version"),
     "list_articles": ("regulation_id", "version"),
     "get_article": ("regulation_id", "version", "article_id"),
+    "apply_rule_version": ("task_id", "approval_id", "proposal_key", "idempotency_key"),
     "get_products": (),
     "get_product_rules": ("rule_key", "product_id", "as_of"),
 }

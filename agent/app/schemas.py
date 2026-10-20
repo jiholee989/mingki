@@ -126,11 +126,28 @@ class ProposalReviewRecord(BaseModel):
     snapshot: ProductProposal
 
 
+class ApplyApproval(BaseModel):
+    model_config = {"extra": "forbid"}
+    approval_id: int = Field(gt=0, strict=True)
+    proposal_keys: list[str] = Field(min_length=1)
+
+
+class ApplyResult(BaseModel):
+    proposal_key: str
+    job_id: str | None = None
+    status: Literal["QUEUED", "RUNNING", "RETRYING", "DONE", "DEAD", "FAILED", "TIMEOUT"] = "QUEUED"
+    result: dict = Field(default_factory=dict)
+    error: str | None = None
+
+
 class ProductReport(BaseModel):
-    status: Literal["NO_CHANGE", "NO_ACTION", "APPROVED", "PARTIALLY_APPROVED", "REJECTED", "IN_REVIEW"]
+    status: Literal["NO_CHANGE", "NO_ACTION", "APPROVED", "PARTIALLY_APPROVED", "REJECTED", "IN_REVIEW", "DONE", "FAILED"]
     mode: Literal["llm", "live"]
     summary: str
     proposals: list[ProductProposal]
     unchanged: list[ProductImpact]
     approved_count: int
     rejected_count: int
+
+    apply_results: list[ApplyResult] = Field(default_factory=list)
+    apply_error: str | None = None
