@@ -150,5 +150,5 @@ class AgentRunner:
         return self.resume(request.thread_id, self.backend_decision(request), task_id=request.task_id,
                            step=request.step, listener=listener, job_reader=job_reader)
 
-    def start_backend(self, request: RunRequest, *, regulation_id, listener=None):
-        return self.start(**request.to_input(regulation_id), listener=listener)
+    def start_backend(self, request: RunRequest, *, regulation_id, article_ids=None, listener=None):
+        return self.start(**request.to_input(regulation_id), article_ids=article_ids, listener=listener)

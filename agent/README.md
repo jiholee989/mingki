@@ -89,6 +89,7 @@ uv run uvicorn app.server:create_app --factory --port 8000
 | `AGENT_CHECKPOINT_DB` | 없음 | 있으면 Postgres 체크포인터(`agent` 스키마). 승인 대기 중 재시작해도 재개된다 |
 | `INTERNAL_TOKEN` | `rr-internal-dev-token` | Spring과 주고받는 `X-Internal-Token`. 기본값은 공개된 개발용이라 운영에서는 반드시 바꾼다 (기본값이면 시작할 때 경고) |
 | `REGULATION_ID` | `credit-loan-ops` | 분석할 등록 규정. 업로드 원문 sha256이 로컬 원문과 다르면 FAILED |
+| `AGENT_ARTICLE_IDS` | 없음 (전부) | 분석할 조항 제한, 쉼표 구분 (예: `8` = DSR 제8조만). M1 · M2 시연용 |
 
 | 파일 | 역할 |
 |---|---|
