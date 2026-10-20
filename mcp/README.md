@@ -91,13 +91,19 @@ async with Client("http://code-mcp:8002/mcp") as c:
 |---|---|---|---|
 | `get_products` | 읽기 | `GET /internal/products` (+`status` 필터) | `[{productId, name, description, …}]` |
 | `get_product_rules` | 읽기 | `GET /internal/product-rules?key=` · `GET /internal/products/{id}/rules` (+`asOf`) | `[{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]` |
-| `list_rule_keys` | 읽기 | `GET /internal/product-rules` 를 MCP에서 집계 (`GET /internal/product-rules/keys` 생기면 교체) | `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]` |
+| `list_rule_keys` | 읽기 | `GET /internal/product-rules/keys?asOf=` (기본 오늘) | `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]` |
 | `get_db_schema` | 읽기 | `GET /internal/db/schema` | `[{table, columns: [{name, type, nullable}]}]` |
 | `get_contract_impact` | 읽기 | `GET /internal/contracts/impact` | `{ageFrom, ageTo, total, byProduct, grandfathered?, contracts}` |
-| `create_work_ticket` | 쓰기 · 승인 | `POST /internal/work-tickets` | `{jobId, status, duplicate}` |
+| `apply_rule_version` | 쓰기 · 승인 | `POST /internal/product-rules/versions` | `{jobId, status, duplicate}` |
+| `get_job` | 읽기 | `GET /internal/jobs/{jobId}` | `{jobId, type, status, attempts, result, lastError}` |
+| `create_work_ticket` | 쓰기 · 승인 (옛 흐름) | `POST /internal/work-tickets` | `{jobId, status, duplicate}` |
 
 - **유효 여부는 날짜로 판단한다** (`effectiveTo == null` 아님, BACKEND_API 10.5). `as_of`에 유효 = `effectiveFrom ≤ as_of ≤ effectiveTo`(없으면 무한). 반영 직후 기존 행은 종료일이 미래라 아직 유효하고, 새 행은 시작일이 미래라 `upcoming`이다.
-- `status` · `as_of` 필터와 `list_rule_keys` 집계는 지금 있는 API 응답을 MCP에서 거른다. 백엔드에 필터 · `GET /internal/product-rules/keys` 가 생기면 (SIMPLIFICATION 9절) 도구 입출력은 그대로 두고 내부만 바꾼다.
+- `status` · `asOf`는 백엔드로 넘기고(#25), `get_product_rules`는 같은 조건으로 한 번 더 거른다. 규칙 키 집계는 Spring 한 곳에서 한다.
+- **반영 (10.4)**: `apply_rule_version(task_id, approval_id, proposal_key)`는 값을 보내지 않는다. 백엔드가 저장된 제안에서 값을 꺼내므로 사용자가 확인한 값만 들어간다. 멱등키를 생략하면 `{task_id}:apply:{proposal_key}`.
+  거절 이유(403 승인 · 409 "이미 바뀐 규칙")는 `ToolError`로 그대로 전달한다. 결과는 `get_job`을 `DONE` · `DEAD`까지 반복 호출해 확인한다 (`DEAD`면 `lastError`).
+- `get_job`은 작업 응답에서 `payload` · 멱등키 같은 내부 값을 빼고 상태 · 결과 · 오류만 돌려준다.
+- `task_id` · `job_id`는 UUID 형식만 받는다 (URL 경로 우회 방지). 테스트는 `docs/contracts/*.json` 예시를 그대로 읽는다.
 - 같은 개념이라도 상품마다 키 이름 · 단위가 다르다 (예: `DSR_LIMIT` 이 `ratio` 0.40 과 `percent` 40 으로 섞여 있음, `MAX_DSR_RATIO`). `list_rule_keys` 의 `units` 로 확인한다.
 
 ## Agent mock(`app/tools/mock.py`)과 다른 점
