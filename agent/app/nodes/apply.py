@@ -26,7 +26,11 @@ def approved_rows(proposals, approval):
     return {key: eligible[key] for key in keys}
 
 
-def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, clock=time.monotonic, sleep=time.sleep):
+PENDING = ("QUEUED", "RUNNING", "RETRYING")
+
+
+def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, max_read_failures=3,
+               clock=time.monotonic, sleep=time.sleep):
     """job_reader: 큐 작업 조회 함수 (SpringClient.job). 백엔드 어댑터는 요청마다 다른 콜백 주소를 쓰므로
     그래프를 만들 때가 아니라 재개할 때 config["configurable"]["job_reader"] 로 넘긴다. CLI 검토에는 쓰지 않는다."""
     if timeout <= 0 or poll_interval <= 0:
@@ -47,21 +51,37 @@ def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, clock=tim
                         raise ValueError("반영 직전 제안 검사 실패: " + "; ".join(errors))
             # 재개·재시도해도 같은 큐 작업을 가리키도록 승인 ID와 별개로 안정적인 키를 쓴다.
             for key in rows:
-                response = tools.apply_rule_version(
-                    task_id=state["task_id"], approval_id=approval.approval_id,
-                    proposal_key=key, idempotency_key=f"{state['task_id']}:apply:{key}")
-                job_id = response.get("jobId")
-                if not isinstance(job_id, str) or not job_id:
-                    raise ValueError(f"{key}: 반영 접수 응답에 jobId가 없습니다")
-                if any(item.job_id == job_id for item in results):
-                    raise ValueError("서로 다른 제안에 같은 작업 ID가 반환되었습니다")
-                results.append(ApplyResult(proposal_key=key, job_id=job_id))
+                item = ApplyResult(proposal_key=key)
+                results.append(item)
+                try:
+                    response = tools.apply_rule_version(
+                        task_id=state["task_id"], approval_id=approval.approval_id,
+                        proposal_key=key, idempotency_key=f"{state['task_id']}:apply:{key}")
+                    job_id = response.get("jobId")
+                    if not isinstance(job_id, str) or not job_id:
+                        raise ValueError("반영 접수 응답에 jobId가 없습니다")
+                    if any(other.job_id == job_id for other in results if other is not item):
+                        raise ValueError("서로 다른 제안에 같은 작업 ID가 반환되었습니다")
+                    item.job_id = job_id
+                except Exception as exc:
+                    # 한 건이 접수에서 거절돼도(이미 바뀐 규칙 등) 나머지 접수와 이미 접수된 작업의 확인은 계속한다.
+                    # 결과에는 어느 건이 왜 실패했는지 남고, 최종 판정은 FAILED 다.
+                    item.status, item.error = "FAILED", str(exc) or type(exc).__name__
             deadline = clock() + timeout
-            while any(item.status in ("QUEUED", "RUNNING", "RETRYING") for item in results):
+            read_failures = 0
+            while any(item.status in PENDING for item in results):
                 for item in results:
-                    if item.status not in ("QUEUED", "RUNNING", "RETRYING"):
+                    if item.status not in PENDING:
                         continue
-                    job = reader(item.job_id)
+                    try:
+                        job = reader(item.job_id)
+                    except Exception as exc:
+                        # 백엔드가 잠깐 흔들린 것으로 보고 다음 주기에 다시 조회한다. 연속으로 반복되면 포기한다.
+                        read_failures += 1
+                        if read_failures >= max_read_failures:
+                            raise ValueError(f"큐 작업 조회 실패가 {read_failures}회 반복됩니다: {exc}") from exc
+                        break
+                    read_failures = 0
                     if job.get("id", item.job_id) != item.job_id or job.get("taskId", state["task_id"]) != state["task_id"]:
                         raise ValueError("조회된 큐 작업이 반영 요청과 다릅니다")
                     status = job.get("status")
@@ -75,7 +95,7 @@ def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, clock=tim
                     elif status == "DEAD":
                         item.error = job.get("lastError") or "큐 작업이 DEAD로 종료되었습니다"
                     item.status = status
-                pending = [item for item in results if item.status in ("QUEUED", "RUNNING", "RETRYING")]
+                pending = [item for item in results if item.status in PENDING]
                 if not pending:
                     break
                 remaining = deadline - clock()

@@ -15,18 +15,23 @@ def make_checkpointer(url=CHECKPOINT_DB):
     """
     if not url:
         return None
-    import psycopg
     from langgraph.checkpoint.postgres import PostgresSaver
     from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
 
-    conn = psycopg.connect(
+    # 연결 하나를 프로세스 수명 내내 쓰면 DB 재시작 · idle 끊김 뒤 모든 호출이 실패해 Agent 를 재시작해야 한다.
+    # 풀은 꺼낼 때 연결을 검사해(check) 끊긴 연결을 버리고 새로 맺는다.
+    pool = ConnectionPool(
         url,
-        autocommit=True,
-        prepare_threshold=0,
-        row_factory=dict_row,
-        options=f"-c search_path={SCHEMA}",
+        min_size=1,
+        max_size=4,
+        open=True,
+        check=ConnectionPool.check_connection,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row,
+                "options": f"-c search_path={SCHEMA}"},
     )
-    conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-    saver = PostgresSaver(conn, serde=SERDE)
+    with pool.connection() as conn:
+        conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+    saver = PostgresSaver(pool, serde=SERDE)
     saver.setup()
     return saver

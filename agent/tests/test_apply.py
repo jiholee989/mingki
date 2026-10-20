@@ -151,18 +151,54 @@ def test_local_source_cannot_apply_even_with_approval_metadata():
     assert "MCP" in delta["apply_error"] and not delta["apply_results"]
 
 
+def test_one_rejected_submission_does_not_skip_the_others():
+    runner, out, tools = running()
+
+    def submit(**kw):
+        tools.requests.append(kw)
+        if kw["proposal_key"] == "P001:DSR_LIMIT":
+            raise RuntimeError("백엔드 409 ERROR: 이미 바뀐 규칙: R001 값이 0.40이 아니라 0.38입니다")
+        return {"jobId": kw["proposal_key"]}
+    tools.apply_rule_version = submit
+    result = runner.resume_backend(request(["P001:DSR_LIMIT", "P002:DSR_LIMIT"], []))["result"]
+    assert result.status == "FAILED"
+    assert [(r.proposal_key, r.status) for r in result.apply_results] == [("P001:DSR_LIMIT", "FAILED"), ("P002:DSR_LIMIT", "DONE")]
+    assert "이미 바뀐 규칙" in result.apply_results[0].error and "P002" not in result.apply_error
+
+
+def test_transient_read_errors_are_retried_then_given_up():
+    reads = []
+
+    def flaky(job_id):
+        reads.append(job_id)
+        if len(reads) <= 2:
+            raise RuntimeError("503 Service Unavailable")
+        return completed(job_id)
+    runner, _, _ = running(flaky)
+    assert runner.resume_backend(request())["result"].status == "DONE" and len(reads) == 3
+
+    def down(job_id):
+        raise RuntimeError("503 Service Unavailable")
+    runner, _, _ = running(down)
+    result = runner.resume_backend(request())["result"]
+    assert result.status == "FAILED" and "조회 실패" in result.apply_error
+    assert result.apply_results[0].status == "QUEUED" and result.apply_results[0].job_id   # 접수된 작업은 기록에 남는다
+
+
 def test_write_failure_keeps_already_queued_job_and_reports_failed():
     runner, out, tools = running()
     def submit(**kw):
         tools.requests.append(kw)
         if len(tools.requests) == 2:
             raise RuntimeError("두 번째 요청 연결 실패")
-        return {"jobId": "job-accepted"}
+        return {"jobId": kw["proposal_key"]}
     tools.apply_rule_version = submit
     result = runner.resume_backend(request(["P001:DSR_LIMIT", "P002:DSR_LIMIT"], []))["result"]
     assert result.status == "FAILED"
-    assert result.apply_results[0].job_id == "job-accepted"
-    assert "연결 실패" in result.apply_error
+    first, second = result.apply_results
+    assert (first.job_id, first.status) == ("P001:DSR_LIMIT", "DONE")      # 접수된 작업은 끝까지 확인한다
+    assert (second.job_id, second.status) == (None, "FAILED") and "연결 실패" in second.error
+    assert "연결 실패" in result.apply_error and "P001" not in result.apply_error
 
 
 def test_mcp_write_contract_over_real_protocol_without_database():
@@ -196,6 +232,7 @@ def test_missing_mcp_write_tool_is_failure_without_http_write_fallback():
     tools = McpTools({"business": FastMCP("no-apply-tool")})
     try:
         delta = make_apply(tools, lambda job: reads.append(job))(state)
-        assert delta["apply_error"] and not delta["apply_results"] and not reads
+        assert delta["apply_error"] and not reads
+        assert all(r.status == "FAILED" and r.job_id is None for r in delta["apply_results"])
     finally:
         tools.close()

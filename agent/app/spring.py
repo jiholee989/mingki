@@ -5,7 +5,8 @@ import time
 
 import httpx
 
-INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "rr-internal-dev-token")
+DEFAULT_INTERNAL_TOKEN = "rr-internal-dev-token"   # 공개된 개발용 값. 운영에서는 INTERNAL_TOKEN 을 반드시 바꾼다
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", DEFAULT_INTERNAL_TOKEN)
 
 
 class SpringError(RuntimeError):
