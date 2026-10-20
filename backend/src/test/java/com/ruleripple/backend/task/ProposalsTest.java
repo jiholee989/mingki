@@ -74,6 +74,20 @@ class ProposalsTest {
     }
 
     @Test
+    void latestDropsRulesThatVanishedInTheRewrittenRound() {
+        // 1회차 LLM 이 대상이 아닌 규칙(EXTRA)을 끼워 넣어 검사에 실패하고, 2회차에서 뺐다.
+        var all = List.of(row("P001:DSR_LIMIT", 1, "change_required", RuleProposal.VerifyStatus.FAILED),
+                row("P001:EXTRA", 1, "change_required", RuleProposal.VerifyStatus.FAILED),
+                row("P001:DSR_LIMIT", 2, "change_required", RuleProposal.VerifyStatus.PASSED),
+                row("P002:DSR_LIMIT", 1, "change_required", RuleProposal.VerifyStatus.PASSED));
+        List<RuleProposal> latest = Proposals.latest(all);
+        assertThat(latest).extracting(RuleProposal::getProposalKey, RuleProposal::getRound)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("P001:DSR_LIMIT", 2),
+                        org.assertj.core.groups.Tuple.tuple("P002:DSR_LIMIT", 1));
+        assertThat(Proposals.canApprove(TaskStatus.WAITING_REVIEW, latest)).isTrue();
+    }
+
+    @Test
     void canApproveOnlyWhenEveryChangePassed() {
         var passed = row("P001:DSR_LIMIT", 2, "change_required", RuleProposal.VerifyStatus.PASSED);
         var failed = row("P005:DSR_LIMIT", 1, "change_required", RuleProposal.VerifyStatus.FAILED);
@@ -100,6 +114,8 @@ class ProposalsTest {
     private static RuleProposal row(String key, int round, String impact, RuleProposal.VerifyStatus status) {
         RuleProposal p = new RuleProposal();
         p.setProposalKey(key);
+        p.setReqKey("REQ-8");
+        p.setProductId(key.substring(0, key.indexOf(':')));
         p.setRound(round);
         p.setImpact(impact);
         p.setVerifyStatus(status);

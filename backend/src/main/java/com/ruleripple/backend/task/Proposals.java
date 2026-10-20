@@ -40,11 +40,23 @@ public final class Proposals {
         return null;
     }
 
-    /** 제안 키마다 가장 높은 회차. 키 순서. */
+    /**
+     * 현재 제안. Agent 제안 묶음(reqKey × productId)마다 가장 높은 회차의 행만 남긴다. 키 순서.
+     * 재작성 회차에서 빠진 규칙 행은 이전 회차에 남지만 현재 제안이 아니다. 키마다 최고 회차를 고르면
+     * 1회차에만 있던 FAILED 행이 계속 남아 canApprove 를 영원히 막는다.
+     */
     public static List<RuleProposal> latest(List<RuleProposal> all) {
+        Map<String, Integer> topRound = new HashMap<>();
+        for (RuleProposal p : all) topRound.merge(bundle(p), p.getRound(), Math::max);
         Map<String, RuleProposal> byKey = new TreeMap<>();
-        for (RuleProposal p : all) byKey.merge(p.getProposalKey(), p, (a, b) -> a.getRound() >= b.getRound() ? a : b);
+        for (RuleProposal p : all) {
+            if (p.getRound() == topRound.get(bundle(p))) byKey.put(p.getProposalKey(), p);
+        }
         return List.copyOf(byKey.values());
+    }
+
+    private static String bundle(RuleProposal p) {
+        return p.getReqKey() + "|" + p.getProductId();
     }
 
     public static List<String> changeKeys(List<RuleProposal> latest) {

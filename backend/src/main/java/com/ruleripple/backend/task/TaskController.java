@@ -144,12 +144,15 @@ public class TaskController {
             keys(a.getPayload(), "approvedProposalKeys").forEach(k -> decisions.put(k, "APPLY"));
             keys(a.getPayload(), "excludedProposalKeys").forEach(k -> decisions.put(k, "EXCLUDE"));
         });
+        Map<String, ApplyResult> applied = service.applyResults(id);
         int latestRound = all.stream().mapToInt(RuleProposal::getRound).max().orElse(0);
         return new ProposalsResponse(TaskSummary.of(t), MAX_VERIFY_ROUNDS, latestRound,
                 Proposals.canApprove(t.getStatus(), latest),
                 all.stream().map(p -> {
                     boolean isLatest = latestIds.contains(p.getId());
-                    return ProposalView.of(p, isLatest, isLatest ? decisions.get(p.getProposalKey()) : null, null);
+                    return isLatest
+                            ? ProposalView.of(p, true, decisions.get(p.getProposalKey()), applied.get(p.getProposalKey()))
+                            : ProposalView.of(p, false, null, null);
                 }).toList());
     }
 

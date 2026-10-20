@@ -264,14 +264,14 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 
 ```
 EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW ─(APPROVE)─▶ PUBLISHING ─▶ DONE
-     │                                                    └(REJECT)▶ REJECTED
-     └▶ NO_CHANGE                                    어디서든 오류 ▶ FAILED
+     │            │                                       └(REJECT)▶ REJECTED
+     └▶ NO_CHANGE ┘ (전 상품 유지)                    어디서든 오류 ▶ FAILED
 ```
 
 | 노드 (`STEP {node}`) | 상태 |
 |---|---|
 | `requirement_agent` | `EXTRACTING` |
-| `impact_agent` | `LOCATING` |
+| `impact_agent` (`product_impact_agent`도 받음) | `LOCATING` |
 | `proposal_agent` | `DESIGNING` |
 | `verify` (`round` 포함) | `VERIFYING` |
 | interrupt 직전 `APPROVAL_REQUIRED {step:"REVIEW"}` | `WAITING_REVIEW` |
@@ -311,6 +311,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 **화면** `GET /api/ai/tasks/{id}/proposals`
 - `{task, maxVerifyRounds, latestRound, canApprove, proposals[]}`
 - `proposals`는 회차 전체이고 현재 것은 `latest:true`. 서버가 `decision`(`APPLY` · `EXCLUDE` · null)과 반영 결과 `apply {jobId, status, closedRuleId, newRuleId}`를 붙인다.
+- 현재 제안 = 제안 묶음(`reqKey` × `productId`)마다 가장 높은 `round`의 행. 재작성 회차에서 빠진 규칙 행은 이전 회차에 남지만 현재 제안이 아니다 (키마다 최고 회차를 고르면 1회차에만 있던 `FAILED` 행이 `canApprove`를 영원히 막는다).
 - `canApprove`: `WAITING_REVIEW` + 현재 `change_required` 제안이 1건 이상 + 모두 `PASSED`.
 
 ### 10.3 사용자 확인
@@ -328,7 +329,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 
 - 수정 요청(`REQUEST_CHANGES`)은 없다.
 - 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction.role`은 항상 null이고, `counts.proposals`(현재 회차 제안 수)가 붙는다.
-- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다.
+- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다. Agent는 그래프를 돌리기 전에 거부할 수 있다: 검토 대기 중인 thread가 아니면(없거나 이미 끝남) 409, `approvedProposalKeys ∪ excludedProposalKeys`가 Agent가 보낸 현재 `change_required` 키와 다르거나 APPROVE에 `approvalId`가 없으면 400. 202 뒤에는 `apply` → `report` → `DONE` 또는 `FAILED`가 콜백으로 온다.
 
 ### 10.4 반영 (쓰기 도구 · 승인 필요)
 
@@ -357,6 +358,7 @@ POST /internal/product-rules/versions
 - 새 규칙은 닫는 행 없이 새 행만 추가한다.
 - 결과 `GET /internal/jobs/{jobId}` → `{status, result: {proposalKey, productId, closedRuleId, newRuleId, effectiveFrom}}` ([예시](./contracts/apply.job.json)). 새 규칙이면 `closedRuleId: null`.
 - 전달 기록(`deliveries`)에 `RULE_VERSION`으로 남긴다.
+- 일반 큐 API `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않는다 (400). 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
 
 Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/jobs/{jobId}`가 `DONE` · `DEAD`가 될 때까지 기다린다. 모두 `DONE`이면 `DONE {outcome:"DONE"}`, 하나라도 `DEAD`면 `FAILED {reason}`.
 

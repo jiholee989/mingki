@@ -24,7 +24,10 @@ import java.util.*;
  *   GET  /internal/products/{id}/rules
  *   GET  /internal/contracts/impact?dsrFrom=0.35&dsrTo=0.40&appliedBefore=2026-12-01   나이 · DSR 구간, 경과조치 판단
  *   GET  /internal/db/schema
- * 쓰기 · 승인 필요 (create_work_ticket)
+ * 쓰기 · 승인 필요 (apply_rule_version, v2 10.4)
+ *   POST /internal/product-rules/versions   {taskId, approvalId, proposalKey, idempotencyKey}
+ *                                           → 확인 기록 · 제안 · 지금 값 검증 → 큐 APPLY_RULE_VERSION → 202 {jobId, status, duplicate}
+ * 쓰기 · 승인 필요 (create_work_ticket, 옛 흐름)
  *   POST /internal/work-tickets   {taskId, approvalId, idempotencyKey, title, description?, type, targetRef?, specKeys?, assignee?}
  *                                 → ApprovalGuard 검증 → 큐 → 202 {jobId, status, duplicate}
  */
@@ -43,16 +46,18 @@ public class InternalBusinessController {
     private final JdbcTemplate jdbc;
     private final JobPublisher jobs;
     private final ApprovalGuard guard;
+    private final RuleVersionService ruleVersions;
 
     public InternalBusinessController(ProductRepository products, ProductRuleRepository rules,
                                       LoanContractRepository contracts, JdbcTemplate jdbc,
-                                      JobPublisher jobs, ApprovalGuard guard) {
+                                      JobPublisher jobs, ApprovalGuard guard, RuleVersionService ruleVersions) {
         this.products = products;
         this.rules = rules;
         this.contracts = contracts;
         this.jdbc = jdbc;
         this.jobs = jobs;
         this.guard = guard;
+        this.ruleVersions = ruleVersions;
     }
 
     // ---------- 읽기 ----------
@@ -115,6 +120,11 @@ public class InternalBusinessController {
     }
 
     // ---------- 쓰기 (승인 필요) ----------
+
+    @PostMapping("/product-rules/versions")
+    public ResponseEntity<JobPublisher.Enqueued> applyRuleVersion(@RequestBody RuleVersionService.ApplyRequest req) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ruleVersions.enqueue(req));
+    }
 
     @PostMapping("/work-tickets")
     public ResponseEntity<JobPublisher.Enqueued> createTicket(@RequestBody TicketRequest req) {
