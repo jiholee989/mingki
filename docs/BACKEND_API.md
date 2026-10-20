@@ -311,6 +311,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 **화면** `GET /api/ai/tasks/{id}/proposals`
 - `{task, maxVerifyRounds, latestRound, canApprove, proposals[]}`
 - `proposals`는 회차 전체이고 현재 것은 `latest:true`. 서버가 `decision`(`APPLY` · `EXCLUDE` · null)과 반영 결과 `apply {jobId, status, closedRuleId, newRuleId}`를 붙인다.
+- 현재 제안 = 제안 묶음(`reqKey` × `productId`)마다 가장 높은 `round`의 행. 재작성 회차에서 빠진 규칙 행은 이전 회차에 남지만 현재 제안이 아니다 (키마다 최고 회차를 고르면 1회차에만 있던 `FAILED` 행이 `canApprove`를 영원히 막는다).
 - `canApprove`: `WAITING_REVIEW` + 현재 `change_required` 제안이 1건 이상 + 모두 `PASSED`.
 
 ### 10.3 사용자 확인
@@ -328,7 +329,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 
 - 수정 요청(`REQUEST_CHANGES`)은 없다.
 - 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction.role`은 항상 null이고, `counts.proposals`(현재 회차 제안 수)가 붙는다.
-- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다.
+- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다. Agent는 그래프를 돌리기 전에 거부할 수 있다: 검토 대기 중인 thread가 아니면(없거나 이미 끝남) 409, `approvedProposalKeys ∪ excludedProposalKeys`가 Agent가 보낸 현재 `change_required` 키와 다르거나 APPROVE에 `approvalId`가 없으면 400. 202 뒤에는 `apply` → `report` → `DONE` 또는 `FAILED`가 콜백으로 온다.
 
 ### 10.4 반영 (쓰기 도구 · 승인 필요)
 
