@@ -1,0 +1,56 @@
+# 검색 평가셋: search_regulation · search_product_docs (Agent에 노출 금지)
+#
+# 각 질의를 키워드(BM25) · 의미(Vector) · 혼합으로 실행해 채점한다.
+#   scope     : 생략하면 전체 규정 최신 버전 (규정) / 전체 상품 (문서). regulation_id[/version] 또는 product_id
+#   expected  : 이 중 하나라도 상위 k개 안에 있으면 hit. 규정은 "{regulation_id}/{article_id}", 문서는 product_id
+#   not_top1  : 1위로 나오면 안 되는 결과 (같은 숫자 · 같은 단어, 다른 의미)
+#   type      : paraphrase(원문 단어를 피한 질의), cross(규정 사이에서 골라야 함), exact(숫자 · 조항 번호)
+# 지표: recall@k, MRR, not_top1 위반 건수
+# 실행: uv run --project mcp/regulation-mcp --with pyyaml python eval/run_retrieval.py
+
+k: 3
+
+regulation:
+  - { id: Q01, query: 금리 우대를 받는 고령자 나이 기준, expected: [credit-loan-ops/15], not_top1: [credit-loan-ops/7] }
+  - { id: Q02, query: DSR 상한 비율, expected: [credit-loan-ops/8, dsr-management/8], not_top1: [credit-loan-ops/10] }
+  - { id: Q03, query: 주택담보대출 담보인정비율 기준, expected: [credit-loan-ops/10] }
+  - { id: Q04, query: 소득 추정할 때 남은 근로기간 계산, expected: [credit-loan-ops/7] }
+  - { id: Q05, query: 시행일 전에 신청한 대출에 적용할 기준, scope: credit-loan-ops, expected: [credit-loan-ops/supp-2] }
+  - { id: Q06, query: 고령자에게 계약 전에 설명하고 확인해야 하는 의무, expected: [credit-loan-ops/15-2] }
+  - { id: Q07, query: 고령자 금리 우대와 중도상환수수료 면제, expected: [credit-loan-ops/16] }
+  - { id: Q08, query: 대출 신청 화면에 표시해야 하는 항목, expected: [credit-loan-ops/17, consumer-explanation/4, consumer-explanation/9] }
+  - { id: Q09, query: 기존 대출 기간을 연장할 때 적용하는 기준, expected: [credit-loan-ops/supp-2, credit-loan-ops/12, dsr-management/12] }
+  - { id: Q10, query: 대출을 신청할 수 있는 최소 나이, expected: [credit-loan-ops/4] }
+  - { id: Q11, query: 고령자로 보는 나이 기준, scope: credit-loan-ops/v3, expected: [credit-loan-ops/15], not_top1: [credit-loan-ops/7], note: 버전 필터 }
+  - { id: Q12, query: 개정 기준은 언제부터 시행되는지, scope: credit-loan-ops, expected: [credit-loan-ops/supp-1] }
+
+  - { id: Q13, type: paraphrase, query: 노인으로 분류되는 연령, expected: [credit-loan-ops/15, senior-protection/2] }
+  - { id: Q14, type: paraphrase, query: 벌이에 비해 빚 갚는 돈이 얼마까지 허용되나, expected: [credit-loan-ops/8, dsr-management/8] }
+  - { id: Q15, type: paraphrase, query: 어르신 고객이 조건을 이해했는지 확인하는 절차, expected: [credit-loan-ops/15-2, senior-protection/5, consumer-explanation/6] }
+  - { id: Q16, type: paraphrase, query: 예전 기준 그대로 처리되는 대출, expected: [credit-loan-ops/supp-2, dsr-management/supp-2] }
+  - { id: Q17, type: paraphrase, query: 돈 빌린 뒤 마음이 바뀌어 없던 일로 할 수 있는 기간, expected: [consumer-explanation/8] }
+  - { id: Q18, type: paraphrase, query: 나이 많은 손님이 큰돈을 받은 직후 송금을 잠시 막는 것, expected: [senior-protection/8] }
+
+  - { id: Q19, type: cross, query: 녹취해야 하는 고령 고객의 나이, expected: [senior-protection/5, senior-protection/2], not_top1: [credit-loan-ops/15] }
+  - { id: Q20, type: cross, query: 마이너스통장 DSR 계산할 때 기준 금액, expected: [dsr-management/6], not_top1: [credit-loan-ops/22] }
+  - { id: Q21, type: cross, query: 300만원 이하 소액 대출에 DSR 한도 적용 여부, expected: [dsr-management/10, dsr-management/2] }
+  - { id: Q22, type: cross, query: 개인사업자 사업자금 대출에도 DSR 규제가 적용되나, expected: [dsr-management/3] }
+  - { id: Q23, type: cross, query: 설명 기록 보관 기간, expected: [consumer-explanation/7] }
+  - { id: Q24, type: cross, query: 대출 광고에 쓰면 안 되는 표현, expected: [consumer-explanation/10] }
+
+  - { id: Q25, type: exact, query: 100분의 5, expected: [dsr-management/11] }
+  - { id: Q26, type: exact, query: 금 삼백만원, expected: [dsr-management/2] }
+  - { id: Q27, type: exact, query: 연 0.1%p 우대, expected: [credit-loan-ops/23] }
+  - { id: Q28, type: exact, query: 3영업일 연체 통지, expected: [credit-loan-ops/19] }
+
+product_docs:
+  - { id: D01, query: 화면에 DSR 40% 안내 문구가 있는 상품, expected: [P001, P005, P008, P011, P012] }
+  - { id: D02, query: 고령 고객의 지정 조력자에게 신청 사실을 알리는 상품, expected: [P002] }
+  - { id: D03, query: 소액이라 DSR 한도를 적용하지 않는 상품, expected: [P006] }
+  - { id: D04, query: 약정 한도 전액을 기준으로 DSR을 계산하는 상품, expected: [P007] }
+  - { id: D05, query: 외국어 번역 설명서를 주는 상품, expected: [P011] }
+  - { id: D06, query: 판매가 종료된 상품, expected: [P012] }
+  - { id: D07, query: DSR 기준이 아직 정해지지 않은 상품, expected: [P010] }
+  - { id: D08, query: 사업자금 용도로만 쓸 수 있는 상품, expected: [P009] }
+  - { id: D09, type: paraphrase, query: 사회초년생도 빌릴 수 있는 상품, expected: [P005] }
+  - { id: D10, type: paraphrase, query: 의사나 변호사 전용 대출, expected: [P004] }

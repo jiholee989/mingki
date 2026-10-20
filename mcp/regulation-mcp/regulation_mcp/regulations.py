@@ -123,10 +123,30 @@ def diff_versions(regulation_id: str, old_version: str, new_version: str, root: 
     }
 
 
+def latest_version(regulation_id: str, root: Path = REGULATIONS_DIR) -> str:
+    if not _REGULATION_ID.match(regulation_id):
+        raise RegulationError(f"잘못된 regulation_id: {regulation_id!r} (소문자 · 숫자 · 하이픈만)")
+    versions = list_versions(root)
+    if regulation_id not in versions:
+        raise RegulationError(f"규정이 없습니다: {regulation_id} (가능: {list(versions)})")
+    return versions[regulation_id][-1]
+
+
+def resolve_scope(regulation_id: str | None, version: str | None, root: Path = REGULATIONS_DIR) -> list[tuple[str, str]]:
+    """검색할 (regulation_id, version) 목록. ID가 없으면 모든 규정의 최신 버전, 버전이 없으면 그 규정의 최신 버전."""
+    if regulation_id is None:
+        if version is not None:
+            raise RegulationError("version은 regulation_id와 함께 지정합니다")
+        return [(rid, versions[-1]) for rid, versions in list_versions(root).items()]
+    version = version or latest_version(regulation_id, root)
+    regulation_path(regulation_id, version, root)  # 허용 범위 검사
+    return [(regulation_id, version)]
+
+
 def search(query: str, regulation_id: str, version: str, root: Path = REGULATIONS_DIR) -> list[dict]:
     """키워드 검색. 공백으로 나눈 단어가 모두 제목이나 본문에 있는 조항.
 
-    TODO(데이터 팀원 Vector DB): 의미 검색이 준비되면 여기만 교체한다. 반환 형식은 그대로 둔다.
+    search_regulation은 search.py(의미 + BM25 혼합 검색)를 쓴다. 이 함수는 단순 포함 검색으로, 비교 기준으로만 남긴다.
     """
     terms = query.split()
     if not terms:

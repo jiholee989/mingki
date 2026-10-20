@@ -41,19 +41,24 @@ async with Client("http://code-mcp:8002/mcp") as c:
 
 ## 도구
 
-### regulation-mcp (읽기)
+### regulation-mcp (읽기, 평가표의 rag-mcp 역할)
 
 | 도구 | 입력 | 출력 |
 |---|---|---|
 | `diff_versions` | `regulation_id, old_version, new_version` | `{regulation_id, old_version, new_version, effective_from, changes: [{article_id, title, change, old_text, new_text, old_uri, new_uri}]}` |
-| `search_regulation` | `query, regulation_id="credit-loan-ops", version="v4"` | `[{uri, article_id, title, text}]` |
+| `search_regulation` | `query, regulation_id=None, version=None` | `[{uri, regulation_id, version, article_id, title, text}]` 관련도 순 최대 5개 |
+| `search_product_docs` | `query, product_id=None` | `[{uri, product_id, name, section, text, updated_at}]` 관련도 순 최대 5개 |
+| `get_product_doc` | `product_id` | `{uri, product_id, name, updated_at, sections: [{uri, section, text}]}` |
 | `get_article` | `regulation_id, version, article_id` | `{uri, article_id, title, text}` |
 | `list_articles` | `regulation_id, version` | `[{uri, article_id, title}]` |
 | Resource | `reg://{regulation_id}/{version}/{article_id}` | 조항 원문 (`reg://{id}/{version}` 은 규정 제목) |
+| Resource | `doc://{product_id}` | 상품설명서 · 업무 절차 문서 원문 |
 
 - `change`: `added` · `removed` · `modified`. 표현만 바뀐 조항도 나온다 (실질 여부는 Agent가 판단).
 - 조항 ID: `15`, `15-2`(제15조의2), `supp-2`(부칙 제2조). Agent `app/data.py` 와 같은 규칙.
-- `search_regulation` 은 지금 키워드 검색(공백으로 나눈 단어 모두 포함). Vector DB가 준비되면 반환 형식은 그대로 두고 내부만 바꾼다.
+- 검색 두 도구는 의미 검색(OpenAI `text-embedding-3-small` + 프로세스 안 Chroma)과 키워드 검색(BM25)을 0~1로 정규화해 반반 섞는다. `OPENAI_API_KEY` 가 없거나 임베딩 호출이 실패하면 BM25만 쓴다. 색인 규칙과 평가 결과는 `docs/VECTOR_INDEX.md`.
+- `search_regulation` 은 `regulation_id` 를 생략하면 모든 규정의 최신 버전에서 찾는다. 규정마다 같은 말(예: 고령자)을 다르게 정의할 수 있다. 위치 인자 `(query, regulation_id, version)` 호출은 그대로 동작한다.
+- 상품 문서는 `data/product-docs/P000.md` 만 읽는다 (`PRODUCT_DOCS_DIR`).
 
 ### code-mcp
 
