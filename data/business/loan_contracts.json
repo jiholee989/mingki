@@ -47,5 +47,683 @@
     "amount": 15000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
     "annual_income": 28000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
     "reject_reason": "AGE_UNDER_MIN"
+  },
+  {
+    "contract_id": "C0009", "product_id": "P001", "customer_id": "U0009", "birth_date": "1958-02-17",
+    "applied_at": "2026-06-28", "contracted_at": "2026-06-29", "status": "ACTIVE",
+    "amount": 32000000, "term_months": 48, "repayment_type": "BULLET", "maturity_date": "2030-06-28", "extension_count": 0,
+    "annual_income": 80000000, "dsr_at_approval": 0.24, "senior_applied": true, "rate_discount_pp": 0.4
+  },
+  {
+    "contract_id": "C0010", "product_id": "P005", "customer_id": "U0010", "birth_date": "1992-01-27",
+    "applied_at": "2026-11-17", "contracted_at": null, "status": "APPLIED",
+    "amount": 26000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 44000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0011", "product_id": "P011", "customer_id": "U0011", "birth_date": "1982-10-03",
+    "applied_at": "2025-09-04", "contracted_at": "2025-09-05", "status": "ACTIVE",
+    "amount": 15000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2027-09-05", "extension_count": 0,
+    "annual_income": 134000000, "dsr_at_approval": 0.26, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0012", "product_id": "P010", "customer_id": "U0012", "birth_date": "1975-10-18",
+    "applied_at": "2026-01-24", "contracted_at": "2026-01-25", "status": "ACTIVE",
+    "amount": 10000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2030-01-25", "extension_count": 0,
+    "annual_income": 174000000, "dsr_at_approval": 0.3, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0013", "product_id": "P001", "customer_id": "U0013", "birth_date": "1963-06-09",
+    "applied_at": "2025-10-11", "contracted_at": "2025-10-17", "status": "ACTIVE",
+    "amount": 42000000, "term_months": 24, "repayment_type": "BULLET", "maturity_date": "2027-10-17", "extension_count": 0,
+    "annual_income": 50000000, "dsr_at_approval": 0.16, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0014", "product_id": "P005", "customer_id": "U0014", "birth_date": "1995-09-19",
+    "applied_at": "2026-08-13", "contracted_at": "2026-08-16", "status": "ACTIVE",
+    "amount": 21000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2030-08-16", "extension_count": 0,
+    "annual_income": 78000000, "dsr_at_approval": 0.15, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0015", "product_id": "P007", "customer_id": "U0012", "birth_date": "1975-10-18",
+    "applied_at": "2026-08-02", "contracted_at": "2026-08-03", "status": "ACTIVE",
+    "amount": 22000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-08-03", "extension_count": 0,
+    "annual_income": 152000000, "dsr_at_approval": 0.16, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0016", "product_id": "P006", "customer_id": "U0013", "birth_date": "1963-06-09",
+    "applied_at": "2024-05-08", "contracted_at": "2024-05-09", "status": "ACTIVE",
+    "amount": 2000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-05-09", "extension_count": 2,
+    "annual_income": 82000000, "dsr_at_approval": 0.58, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0017", "product_id": "P002", "customer_id": "U0017", "birth_date": "1946-09-29",
+    "applied_at": "2024-08-02", "contracted_at": "2024-08-04", "status": "ACTIVE",
+    "amount": 21000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-08-04", "extension_count": 0,
+    "annual_income": 110000000, "dsr_at_approval": 0.38, "senior_applied": true, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0018", "product_id": "P005", "customer_id": "U0018", "birth_date": "2004-10-21",
+    "applied_at": "2026-03-21", "contracted_at": "2026-03-24", "status": "ACTIVE",
+    "amount": 18000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2027-03-24", "extension_count": 0,
+    "annual_income": 126000000, "dsr_at_approval": 0.13, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0019", "product_id": "P001", "customer_id": "U0019", "birth_date": "1962-02-14",
+    "applied_at": "2024-03-02", "contracted_at": "2024-03-03", "status": "ACTIVE",
+    "amount": 33000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": "2029-03-03", "extension_count": 0,
+    "annual_income": 124000000, "dsr_at_approval": 0.28, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0020", "product_id": "P004", "customer_id": "U0012", "birth_date": "1975-10-18",
+    "applied_at": "2025-05-17", "contracted_at": "2025-05-23", "status": "ACTIVE",
+    "amount": 28000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": "2030-05-23", "extension_count": 0,
+    "annual_income": 185000000, "dsr_at_approval": 0.26, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0021", "product_id": "P001", "customer_id": "U0011", "birth_date": "1982-10-03",
+    "applied_at": "2026-03-27", "contracted_at": "2026-03-30", "status": "ACTIVE",
+    "amount": 59000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": "2031-03-28", "extension_count": 0,
+    "annual_income": 104000000, "dsr_at_approval": 0.22, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0022", "product_id": "P002", "customer_id": "U0022", "birth_date": "1947-05-04",
+    "applied_at": "2025-01-12", "contracted_at": "2025-01-14", "status": "ACTIVE",
+    "amount": 22000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2027-01-14", "extension_count": 0,
+    "annual_income": 168000000, "dsr_at_approval": 0.31, "senior_applied": true, "rate_discount_pp": 0.5
+  },
+  {
+    "contract_id": "C0023", "product_id": "P011", "customer_id": "U0023", "birth_date": "1979-04-21",
+    "applied_at": "2026-09-16", "contracted_at": "2026-09-19", "status": "ACTIVE",
+    "amount": 10000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2028-09-19", "extension_count": 0,
+    "annual_income": 64000000, "dsr_at_approval": 0.27, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0024", "product_id": "P010", "customer_id": "U0024", "birth_date": "1988-04-01",
+    "applied_at": "2024-12-26", "contracted_at": null, "status": "REJECTED",
+    "amount": 38000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 136000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
+    "reject_reason": "CREDIT_SCORE_LOW"
+  },
+  {
+    "contract_id": "C0025", "product_id": "P009", "customer_id": "U0025", "birth_date": "1980-04-25",
+    "applied_at": "2026-11-25", "contracted_at": null, "status": "APPLIED",
+    "amount": 40000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 120000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0026", "product_id": "P001", "customer_id": "U0013", "birth_date": "1963-06-09",
+    "applied_at": "2024-09-13", "contracted_at": "2024-09-14", "status": "ACTIVE",
+    "amount": 89000000, "term_months": 48, "repayment_type": "BULLET", "maturity_date": "2028-09-14", "extension_count": 0,
+    "annual_income": 134000000, "dsr_at_approval": 0.35, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0027", "product_id": "P010", "customer_id": "U0027", "birth_date": "1976-10-11",
+    "applied_at": "2023-08-08", "contracted_at": "2023-08-12", "status": "ACTIVE",
+    "amount": 40000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2026-08-12", "extension_count": 0,
+    "annual_income": 150000000, "dsr_at_approval": 0.24, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0028", "product_id": "P006", "customer_id": "U0028", "birth_date": "1985-05-24",
+    "applied_at": "2024-06-11", "contracted_at": "2024-06-17", "status": "ACTIVE",
+    "amount": 3000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-06-17", "extension_count": 2,
+    "annual_income": 64000000, "dsr_at_approval": 0.55, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0029", "product_id": "P001", "customer_id": "U0029", "birth_date": "1965-07-21",
+    "applied_at": "2026-11-10", "contracted_at": null, "status": "APPLIED",
+    "amount": 26000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": null, "extension_count": 0,
+    "annual_income": 38000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0030", "product_id": "P002", "customer_id": "U0030", "birth_date": "1953-05-29",
+    "applied_at": "2024-11-23", "contracted_at": "2024-11-28", "status": "ACTIVE",
+    "amount": 10000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2026-11-28", "extension_count": 0,
+    "annual_income": 152000000, "dsr_at_approval": 0.33, "senior_applied": true, "rate_discount_pp": 0.4
+  },
+  {
+    "contract_id": "C0031", "product_id": "P005", "customer_id": "U0010", "birth_date": "1992-01-27",
+    "applied_at": "2024-10-03", "contracted_at": "2024-10-06", "status": "ACTIVE",
+    "amount": 17000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-10-06", "extension_count": 0,
+    "annual_income": 82000000, "dsr_at_approval": 0.15, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0032", "product_id": "P008", "customer_id": "U0024", "birth_date": "1988-04-01",
+    "applied_at": "2024-08-30", "contracted_at": "2024-08-31", "status": "ACTIVE",
+    "amount": 30000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-08-28", "extension_count": 0,
+    "annual_income": 106000000, "dsr_at_approval": 0.34, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0033", "product_id": "P012", "customer_id": "U0010", "birth_date": "1992-01-27",
+    "applied_at": "2025-03-06", "contracted_at": "2025-03-11", "status": "ACTIVE",
+    "amount": 79000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-03-11", "extension_count": 1,
+    "annual_income": 174000000, "dsr_at_approval": 0.14, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0034", "product_id": "P009", "customer_id": "U0034", "birth_date": "1961-06-09",
+    "applied_at": "2024-04-06", "contracted_at": "2024-04-09", "status": "ACTIVE",
+    "amount": 15000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-04-09", "extension_count": 0,
+    "annual_income": 134000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0035", "product_id": "P007", "customer_id": "U0035", "birth_date": "1971-07-25",
+    "applied_at": "2025-05-03", "contracted_at": "2025-05-04", "status": "ACTIVE",
+    "amount": 43000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-05-04", "extension_count": 1,
+    "annual_income": 116000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0036", "product_id": "P003", "customer_id": "U0036", "birth_date": "1990-08-04",
+    "applied_at": "2024-03-28", "contracted_at": null, "status": "REJECTED",
+    "amount": 16000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 80000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
+    "reject_reason": "INCOME_UNVERIFIED"
+  },
+  {
+    "contract_id": "C0037", "product_id": "P005", "customer_id": "U0010", "birth_date": "1992-01-27",
+    "applied_at": "2026-11-02", "contracted_at": null, "status": "APPLIED",
+    "amount": 25000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 96000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0038", "product_id": "P008", "customer_id": "U0038", "birth_date": "1970-04-03",
+    "applied_at": "2025-08-22", "contracted_at": "2025-08-25", "status": "ACTIVE",
+    "amount": 29000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2028-08-25", "extension_count": 0,
+    "annual_income": 158000000, "dsr_at_approval": 0.13, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0039", "product_id": "P003", "customer_id": "U0039", "birth_date": "1976-04-02",
+    "applied_at": "2025-03-26", "contracted_at": "2025-04-01", "status": "ACTIVE",
+    "amount": 56000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2028-04-01", "extension_count": 0,
+    "annual_income": 168000000, "dsr_at_approval": 0.26, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0040", "product_id": "P003", "customer_id": "U0012", "birth_date": "1975-10-18",
+    "applied_at": "2026-05-26", "contracted_at": "2026-05-29", "status": "ACTIVE",
+    "amount": 62000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2030-05-28", "extension_count": 0,
+    "annual_income": 178000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0041", "product_id": "P011", "customer_id": "U0041", "birth_date": "2002-11-09",
+    "applied_at": "2026-06-15", "contracted_at": "2026-06-21", "status": "ACTIVE",
+    "amount": 11000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2029-06-21", "extension_count": 0,
+    "annual_income": 106000000, "dsr_at_approval": 0.27, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0042", "product_id": "P007", "customer_id": "U0035", "birth_date": "1971-07-25",
+    "applied_at": "2024-03-08", "contracted_at": "2024-03-09", "status": "ACTIVE",
+    "amount": 9000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-03-09", "extension_count": 2,
+    "annual_income": 140000000, "dsr_at_approval": 0.35, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0043", "product_id": "P001", "customer_id": "U0043", "birth_date": "1987-11-02",
+    "applied_at": "2026-10-23", "contracted_at": "2026-10-26", "status": "ACTIVE",
+    "amount": 46000000, "term_months": 24, "repayment_type": "BULLET", "maturity_date": "2028-10-26", "extension_count": 0,
+    "annual_income": 76000000, "dsr_at_approval": 0.3, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0044", "product_id": "P012", "customer_id": "U0044", "birth_date": "1955-01-22",
+    "applied_at": "2024-06-26", "contracted_at": "2024-07-02", "status": "ACTIVE",
+    "amount": 50000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-07-02", "extension_count": 2,
+    "annual_income": 136000000, "dsr_at_approval": 0.28, "senior_applied": true, "rate_discount_pp": 0.5
+  },
+  {
+    "contract_id": "C0045", "product_id": "P004", "customer_id": "U0045", "birth_date": "1978-01-30",
+    "applied_at": "2024-03-27", "contracted_at": "2024-04-01", "status": "ACTIVE",
+    "amount": 15000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-04-01", "extension_count": 0,
+    "annual_income": 285000000, "dsr_at_approval": 0.26, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0046", "product_id": "P006", "customer_id": "U0046", "birth_date": "1977-10-21",
+    "applied_at": "2024-03-19", "contracted_at": "2024-03-20", "status": "ACTIVE",
+    "amount": 500000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2025-03-20", "extension_count": 0,
+    "annual_income": 26000000, "dsr_at_approval": 0.52, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0047", "product_id": "P008", "customer_id": "U0047", "birth_date": "1964-10-01",
+    "applied_at": "2026-02-21", "contracted_at": "2026-02-26", "status": "ACTIVE",
+    "amount": 43000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2030-02-26", "extension_count": 0,
+    "annual_income": 50000000, "dsr_at_approval": 0.29, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0048", "product_id": "P005", "customer_id": "U0048", "birth_date": "1997-05-11",
+    "applied_at": "2026-08-24", "contracted_at": "2026-08-25", "status": "ACTIVE",
+    "amount": 15000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2027-08-25", "extension_count": 0,
+    "annual_income": 160000000, "dsr_at_approval": 0.35, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0049", "product_id": "P003", "customer_id": "U0049", "birth_date": "1991-07-10",
+    "applied_at": "2024-02-17", "contracted_at": "2024-02-18", "status": "ACTIVE",
+    "amount": 8000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-02-18", "extension_count": 0,
+    "annual_income": 38000000, "dsr_at_approval": 0.16, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0050", "product_id": "P010", "customer_id": "U0038", "birth_date": "1970-04-03",
+    "applied_at": "2024-12-07", "contracted_at": "2024-12-12", "status": "ACTIVE",
+    "amount": 42000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2028-12-12", "extension_count": 0,
+    "annual_income": 48000000, "dsr_at_approval": 0.12, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0051", "product_id": "P008", "customer_id": "U0051", "birth_date": "1974-07-15",
+    "applied_at": "2026-11-19", "contracted_at": null, "status": "APPLIED",
+    "amount": 63000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 160000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0052", "product_id": "P005", "customer_id": "U0052", "birth_date": "1989-08-30",
+    "applied_at": "2024-06-06", "contracted_at": "2024-06-08", "status": "ACTIVE",
+    "amount": 18000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2025-06-08", "extension_count": 0,
+    "annual_income": 44000000, "dsr_at_approval": 0.33, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0053", "product_id": "P008", "customer_id": "U0053", "birth_date": "1974-05-08",
+    "applied_at": "2025-01-09", "contracted_at": "2025-01-13", "status": "ACTIVE",
+    "amount": 29000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2029-01-13", "extension_count": 0,
+    "annual_income": 104000000, "dsr_at_approval": 0.35, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0054", "product_id": "P001", "customer_id": "U0054", "birth_date": "1966-05-30",
+    "applied_at": "2025-08-29", "contracted_at": "2025-09-04", "status": "ACTIVE",
+    "amount": 64000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2026-09-04", "extension_count": 0,
+    "annual_income": 180000000, "dsr_at_approval": 0.14, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0055", "product_id": "P005", "customer_id": "U0055", "birth_date": "1999-07-03",
+    "applied_at": "2026-03-15", "contracted_at": "2026-03-16", "status": "ACTIVE",
+    "amount": 10000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2028-03-16", "extension_count": 0,
+    "annual_income": 84000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0056", "product_id": "P005", "customer_id": "U0056", "birth_date": "1998-10-19",
+    "applied_at": "2024-04-21", "contracted_at": "2024-04-27", "status": "ACTIVE",
+    "amount": 21000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-04-27", "extension_count": 0,
+    "annual_income": 70000000, "dsr_at_approval": 0.25, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0057", "product_id": "P002", "customer_id": "U0057", "birth_date": "1956-07-26",
+    "applied_at": "2026-10-23", "contracted_at": "2026-10-26", "status": "ACTIVE",
+    "amount": 7000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2028-10-26", "extension_count": 0,
+    "annual_income": 28000000, "dsr_at_approval": 0.15, "senior_applied": true, "rate_discount_pp": 0.4
+  },
+  {
+    "contract_id": "C0058", "product_id": "P006", "customer_id": "U0058", "birth_date": "1989-11-11",
+    "applied_at": "2025-08-07", "contracted_at": "2025-08-13", "status": "ACTIVE",
+    "amount": 2000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-08-13", "extension_count": 1,
+    "annual_income": 24000000, "dsr_at_approval": 0.31, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0059", "product_id": "P005", "customer_id": "U0059", "birth_date": "2002-02-07",
+    "applied_at": "2025-05-18", "contracted_at": "2025-05-24", "status": "ACTIVE",
+    "amount": 22000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2026-05-24", "extension_count": 0,
+    "annual_income": 76000000, "dsr_at_approval": 0.29, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0060", "product_id": "P001", "customer_id": "U0060", "birth_date": "1988-09-23",
+    "applied_at": "2026-05-12", "contracted_at": "2026-05-15", "status": "ACTIVE",
+    "amount": 69000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-05-15", "extension_count": 0,
+    "annual_income": 124000000, "dsr_at_approval": 0.33, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0061", "product_id": "P007", "customer_id": "U0060", "birth_date": "1988-09-23",
+    "applied_at": "2025-10-31", "contracted_at": null, "status": "REJECTED",
+    "amount": 20000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 156000000, "dsr_at_approval": 0.45, "senior_applied": null, "rate_discount_pp": null,
+    "reject_reason": "DSR_EXCEEDED"
+  },
+  {
+    "contract_id": "C0062", "product_id": "P002", "customer_id": "U0062", "birth_date": "1959-01-10",
+    "applied_at": "2024-03-17", "contracted_at": "2024-03-22", "status": "ACTIVE",
+    "amount": 15000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2025-03-22", "extension_count": 0,
+    "annual_income": 70000000, "dsr_at_approval": 0.37, "senior_applied": true, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0063", "product_id": "P001", "customer_id": "U0063", "birth_date": "1992-04-08",
+    "applied_at": "2026-07-05", "contracted_at": "2026-07-08", "status": "ACTIVE",
+    "amount": 26000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2031-07-08", "extension_count": 0,
+    "annual_income": 32000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0064", "product_id": "P001", "customer_id": "U0064", "birth_date": "1969-01-04",
+    "applied_at": "2026-11-13", "contracted_at": null, "status": "APPLIED",
+    "amount": 86000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 174000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0065", "product_id": "P010", "customer_id": "U0065", "birth_date": "1988-06-25",
+    "applied_at": "2026-11-25", "contracted_at": "2026-12-01", "status": "ACTIVE",
+    "amount": 23000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2031-12-01", "extension_count": 0,
+    "annual_income": 96000000, "dsr_at_approval": 0.36, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0066", "product_id": "P004", "customer_id": "U0066", "birth_date": "1992-03-09",
+    "applied_at": "2026-07-02", "contracted_at": "2026-07-08", "status": "ACTIVE",
+    "amount": 18000000, "term_months": 48, "repayment_type": "BULLET", "maturity_date": "2030-07-08", "extension_count": 0,
+    "annual_income": 175000000, "dsr_at_approval": 0.25, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0067", "product_id": "P004", "customer_id": "U0067", "birth_date": "1957-12-02",
+    "applied_at": "2024-06-27", "contracted_at": "2024-07-01", "status": "ACTIVE",
+    "amount": 47000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-07-01", "extension_count": 0,
+    "annual_income": 125000000, "dsr_at_approval": 0.28, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0068", "product_id": "P012", "customer_id": "U0068", "birth_date": "1968-02-15",
+    "applied_at": "2024-01-01", "contracted_at": "2024-01-05", "status": "ACTIVE",
+    "amount": 25000000, "term_months": 48, "repayment_type": "BULLET", "maturity_date": "2028-01-05", "extension_count": 0,
+    "annual_income": 44000000, "dsr_at_approval": 0.39, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0069", "product_id": "P012", "customer_id": "U0069", "birth_date": "1962-10-09",
+    "applied_at": "2024-12-29", "contracted_at": "2025-01-04", "status": "ACTIVE",
+    "amount": 21000000, "term_months": 36, "repayment_type": "BULLET", "maturity_date": "2028-01-04", "extension_count": 0,
+    "annual_income": 46000000, "dsr_at_approval": 0.18, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0070", "product_id": "P009", "customer_id": "U0070", "birth_date": "1964-06-07",
+    "applied_at": "2025-08-27", "contracted_at": "2025-09-02", "status": "ACTIVE",
+    "amount": 36000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2027-09-02", "extension_count": 0,
+    "annual_income": 60000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0071", "product_id": "P012", "customer_id": "U0071", "birth_date": "1979-07-24",
+    "applied_at": "2024-11-07", "contracted_at": "2024-11-12", "status": "ACTIVE",
+    "amount": 58000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-11-12", "extension_count": 0,
+    "annual_income": 78000000, "dsr_at_approval": 0.36, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0072", "product_id": "P008", "customer_id": "U0072", "birth_date": "1969-09-29",
+    "applied_at": "2026-11-23", "contracted_at": null, "status": "APPLIED",
+    "amount": 16000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 146000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0073", "product_id": "P009", "customer_id": "U0073", "birth_date": "1977-04-13",
+    "applied_at": "2024-03-16", "contracted_at": "2024-03-19", "status": "ACTIVE",
+    "amount": 35000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-03-19", "extension_count": 2,
+    "annual_income": 90000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0074", "product_id": "P012", "customer_id": "U0074", "birth_date": "1962-12-14",
+    "applied_at": "2024-03-18", "contracted_at": "2024-03-24", "status": "ACTIVE",
+    "amount": 20000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2025-03-24", "extension_count": 0,
+    "annual_income": 54000000, "dsr_at_approval": 0.13, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0075", "product_id": "P007", "customer_id": "U0075", "birth_date": "1988-01-17",
+    "applied_at": "2025-06-26", "contracted_at": "2025-06-29", "status": "ACTIVE",
+    "amount": 30000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-06-28", "extension_count": 1,
+    "annual_income": 116000000, "dsr_at_approval": 0.2, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0076", "product_id": "P007", "customer_id": "U0076", "birth_date": "1975-10-23",
+    "applied_at": "2026-11-07", "contracted_at": "2026-11-13", "status": "ACTIVE",
+    "amount": 9000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-11-13", "extension_count": 0,
+    "annual_income": 176000000, "dsr_at_approval": 0.25, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0077", "product_id": "P009", "customer_id": "U0077", "birth_date": "1969-02-24",
+    "applied_at": "2024-10-11", "contracted_at": "2024-10-15", "status": "ACTIVE",
+    "amount": 23000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-10-15", "extension_count": 0,
+    "annual_income": 176000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0078", "product_id": "P008", "customer_id": "U0078", "birth_date": "1981-07-25",
+    "applied_at": "2026-05-31", "contracted_at": "2026-06-05", "status": "ACTIVE",
+    "amount": 47000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2030-06-05", "extension_count": 0,
+    "annual_income": 126000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0079", "product_id": "P008", "customer_id": "U0079", "birth_date": "1963-12-11",
+    "applied_at": "2024-02-02", "contracted_at": "2024-02-06", "status": "ACTIVE",
+    "amount": 17000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-02-06", "extension_count": 0,
+    "annual_income": 44000000, "dsr_at_approval": 0.3, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0080", "product_id": "P012", "customer_id": "U0080", "birth_date": "1964-09-14",
+    "applied_at": "2025-02-27", "contracted_at": "2025-03-01", "status": "ACTIVE",
+    "amount": 79000000, "term_months": 24, "repayment_type": "BULLET", "maturity_date": "2027-03-01", "extension_count": 0,
+    "annual_income": 180000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0081", "product_id": "P010", "customer_id": "U0081", "birth_date": "1962-04-21",
+    "applied_at": "2023-03-16", "contracted_at": null, "status": "REJECTED",
+    "amount": 40000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 162000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
+    "reject_reason": "INCOME_UNVERIFIED"
+  },
+  {
+    "contract_id": "C0082", "product_id": "P006", "customer_id": "U0074", "birth_date": "1962-12-14",
+    "applied_at": "2024-02-03", "contracted_at": "2024-02-08", "status": "ACTIVE",
+    "amount": 500000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-02-08", "extension_count": 2,
+    "annual_income": 48000000, "dsr_at_approval": 0.45, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0083", "product_id": "P010", "customer_id": "U0083", "birth_date": "1998-04-26",
+    "applied_at": "2023-03-06", "contracted_at": "2023-03-10", "status": "ACTIVE",
+    "amount": 23000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2028-03-10", "extension_count": 0,
+    "annual_income": 68000000, "dsr_at_approval": 0.39, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0084", "product_id": "P004", "customer_id": "U0084", "birth_date": "1978-03-15",
+    "applied_at": "2026-11-16", "contracted_at": null, "status": "APPLIED",
+    "amount": 54000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 275000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0085", "product_id": "P006", "customer_id": "U0085", "birth_date": "1994-10-09",
+    "applied_at": "2024-07-28", "contracted_at": "2024-07-30", "status": "ACTIVE",
+    "amount": 500000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-07-28", "extension_count": 2,
+    "annual_income": 164000000, "dsr_at_approval": 0.46, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0086", "product_id": "P006", "customer_id": "U0086", "birth_date": "1987-02-21",
+    "applied_at": "2026-11-28", "contracted_at": null, "status": "APPLIED",
+    "amount": 1000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": null, "extension_count": 0,
+    "annual_income": 136000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0087", "product_id": "P003", "customer_id": "U0087", "birth_date": "1977-02-11",
+    "applied_at": "2024-04-14", "contracted_at": "2024-04-15", "status": "ACTIVE",
+    "amount": 46000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-04-15", "extension_count": 0,
+    "annual_income": 148000000, "dsr_at_approval": 0.32, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0088", "product_id": "P001", "customer_id": "U0088", "birth_date": "1983-05-25",
+    "applied_at": "2024-06-01", "contracted_at": "2024-06-07", "status": "ACTIVE",
+    "amount": 63000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2025-06-07", "extension_count": 0,
+    "annual_income": 108000000, "dsr_at_approval": 0.34, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0089", "product_id": "P002", "customer_id": "U0022", "birth_date": "1947-05-04",
+    "applied_at": "2025-09-25", "contracted_at": "2025-09-28", "status": "ACTIVE",
+    "amount": 12000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2028-09-28", "extension_count": 0,
+    "annual_income": 128000000, "dsr_at_approval": 0.38, "senior_applied": true, "rate_discount_pp": 0.5
+  },
+  {
+    "contract_id": "C0090", "product_id": "P011", "customer_id": "U0090", "birth_date": "1990-12-09",
+    "applied_at": "2026-03-15", "contracted_at": "2026-03-21", "status": "ACTIVE",
+    "amount": 4000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2027-03-21", "extension_count": 0,
+    "annual_income": 90000000, "dsr_at_approval": 0.28, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0091", "product_id": "P001", "customer_id": "U0078", "birth_date": "1981-07-25",
+    "applied_at": "2024-11-24", "contracted_at": "2024-11-27", "status": "ACTIVE",
+    "amount": 42000000, "term_months": 24, "repayment_type": "BULLET", "maturity_date": "2026-11-27", "extension_count": 0,
+    "annual_income": 54000000, "dsr_at_approval": 0.24, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0092", "product_id": "P002", "customer_id": "U0057", "birth_date": "1956-07-26",
+    "applied_at": "2026-11-04", "contracted_at": null, "status": "APPLIED",
+    "amount": 17000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 52000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0093", "product_id": "P012", "customer_id": "U0093", "birth_date": "1977-06-22",
+    "applied_at": "2024-02-01", "contracted_at": "2024-02-07", "status": "ACTIVE",
+    "amount": 57000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": "2029-02-07", "extension_count": 0,
+    "annual_income": 90000000, "dsr_at_approval": 0.2, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0094", "product_id": "P007", "customer_id": "U0094", "birth_date": "1964-07-21",
+    "applied_at": "2024-03-26", "contracted_at": "2024-03-28", "status": "ACTIVE",
+    "amount": 28000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2025-03-28", "extension_count": 0,
+    "annual_income": 112000000, "dsr_at_approval": 0.25, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0095", "product_id": "P009", "customer_id": "U0079", "birth_date": "1963-12-11",
+    "applied_at": "2024-04-10", "contracted_at": "2024-04-13", "status": "ACTIVE",
+    "amount": 25000000, "term_months": 24, "repayment_type": "BULLET", "maturity_date": "2026-04-13", "extension_count": 0,
+    "annual_income": 84000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0096", "product_id": "P009", "customer_id": "U0096", "birth_date": "1971-11-18",
+    "applied_at": "2025-09-26", "contracted_at": "2025-10-02", "status": "ACTIVE",
+    "amount": 24000000, "term_months": 36, "repayment_type": "BULLET", "maturity_date": "2028-10-02", "extension_count": 0,
+    "annual_income": 170000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0097", "product_id": "P003", "customer_id": "U0075", "birth_date": "1988-01-17",
+    "applied_at": "2024-04-14", "contracted_at": "2024-04-16", "status": "ACTIVE",
+    "amount": 15000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2028-04-16", "extension_count": 0,
+    "annual_income": 84000000, "dsr_at_approval": 0.23, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0098", "product_id": "P007", "customer_id": "U0098", "birth_date": "1993-11-13",
+    "applied_at": "2024-04-13", "contracted_at": "2024-04-17", "status": "ACTIVE",
+    "amount": 23000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-04-17", "extension_count": 2,
+    "annual_income": 166000000, "dsr_at_approval": 0.12, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0099", "product_id": "P001", "customer_id": "U0099", "birth_date": "1956-09-24",
+    "applied_at": "2026-02-10", "contracted_at": "2026-02-12", "status": "ACTIVE",
+    "amount": 59000000, "term_months": 48, "repayment_type": "BULLET", "maturity_date": "2030-02-12", "extension_count": 0,
+    "annual_income": 74000000, "dsr_at_approval": 0.26, "senior_applied": true, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0100", "product_id": "P006", "customer_id": "U0100", "birth_date": "1972-04-03",
+    "applied_at": "2024-06-28", "contracted_at": "2024-07-04", "status": "ACTIVE",
+    "amount": 2000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2025-07-04", "extension_count": 0,
+    "annual_income": 120000000, "dsr_at_approval": 0.49, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0101", "product_id": "P003", "customer_id": "U0101", "birth_date": "1961-07-27",
+    "applied_at": "2025-06-19", "contracted_at": "2025-06-24", "status": "ACTIVE",
+    "amount": 45000000, "term_months": 48, "repayment_type": "BULLET", "maturity_date": "2029-06-24", "extension_count": 0,
+    "annual_income": 86000000, "dsr_at_approval": 0.23, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0102", "product_id": "P001", "customer_id": "U0102", "birth_date": "1975-10-02",
+    "applied_at": "2026-11-22", "contracted_at": null, "status": "APPLIED",
+    "amount": 25000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": null, "extension_count": 0,
+    "annual_income": 28000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0103", "product_id": "P002", "customer_id": "U0103", "birth_date": "1943-04-22",
+    "applied_at": "2024-09-12", "contracted_at": "2024-09-16", "status": "ACTIVE",
+    "amount": 12000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2026-09-16", "extension_count": 0,
+    "annual_income": 166000000, "dsr_at_approval": 0.16, "senior_applied": true, "rate_discount_pp": 0.5
+  },
+  {
+    "contract_id": "C0104", "product_id": "P007", "customer_id": "U0104", "birth_date": "1982-03-31",
+    "applied_at": "2024-12-23", "contracted_at": "2024-12-27", "status": "ACTIVE",
+    "amount": 25000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2025-12-27", "extension_count": 0,
+    "annual_income": 166000000, "dsr_at_approval": 0.18, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0105", "product_id": "P004", "customer_id": "U0049", "birth_date": "1991-07-10",
+    "applied_at": "2026-11-07", "contracted_at": null, "status": "APPLIED",
+    "amount": 24000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": null, "extension_count": 0,
+    "annual_income": 160000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null
+  },
+  {
+    "contract_id": "C0106", "product_id": "P001", "customer_id": "U0106", "birth_date": "1986-09-03",
+    "applied_at": "2026-07-27", "contracted_at": "2026-07-28", "status": "ACTIVE",
+    "amount": 33000000, "term_months": 24, "repayment_type": "BULLET", "maturity_date": "2028-07-28", "extension_count": 0,
+    "annual_income": 50000000, "dsr_at_approval": 0.2, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0107", "product_id": "P002", "customer_id": "U0107", "birth_date": "1955-03-02",
+    "applied_at": "2025-12-18", "contracted_at": null, "status": "REJECTED",
+    "amount": 15000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 60000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
+    "reject_reason": "CREDIT_SCORE_LOW"
+  },
+  {
+    "contract_id": "C0108", "product_id": "P001", "customer_id": "U0108", "birth_date": "1960-09-06",
+    "applied_at": "2026-03-11", "contracted_at": "2026-03-16", "status": "ACTIVE",
+    "amount": 73000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2031-03-16", "extension_count": 0,
+    "annual_income": 98000000, "dsr_at_approval": 0.21, "senior_applied": true, "rate_discount_pp": 0.4
+  },
+  {
+    "contract_id": "C0109", "product_id": "P007", "customer_id": "U0048", "birth_date": "1997-05-11",
+    "applied_at": "2026-10-19", "contracted_at": "2026-10-20", "status": "ACTIVE",
+    "amount": 31000000, "term_months": 12, "repayment_type": "REVOLVING", "maturity_date": "2027-10-20", "extension_count": 0,
+    "annual_income": 48000000, "dsr_at_approval": 0.3, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0110", "product_id": "P011", "customer_id": "U0110", "birth_date": "1977-05-14",
+    "applied_at": "2023-08-03", "contracted_at": "2023-08-09", "status": "ACTIVE",
+    "amount": 6000000, "term_months": 12, "repayment_type": "AMORTIZING", "maturity_date": "2024-08-09", "extension_count": 0,
+    "annual_income": 84000000, "dsr_at_approval": 0.16, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0111", "product_id": "P012", "customer_id": "U0111", "birth_date": "1983-11-27",
+    "applied_at": "2024-04-18", "contracted_at": "2024-04-20", "status": "ACTIVE",
+    "amount": 22000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2028-04-20", "extension_count": 0,
+    "annual_income": 38000000, "dsr_at_approval": 0.16, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0112", "product_id": "P001", "customer_id": "U0112", "birth_date": "1990-11-13",
+    "applied_at": "2025-07-31", "contracted_at": "2025-08-04", "status": "ACTIVE",
+    "amount": 16000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-08-04", "extension_count": 1,
+    "annual_income": 122000000, "dsr_at_approval": 0.26, "senior_applied": false, "rate_discount_pp": 0.3
+  },
+  {
+    "contract_id": "C0113", "product_id": "P006", "customer_id": "U0113", "birth_date": "1956-06-27",
+    "applied_at": "2024-01-08", "contracted_at": "2024-01-12", "status": "ACTIVE",
+    "amount": 3000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-01-12", "extension_count": 2,
+    "annual_income": 60000000, "dsr_at_approval": 0.49, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0114", "product_id": "P003", "customer_id": "U0114", "birth_date": "1972-12-31",
+    "applied_at": "2025-03-12", "contracted_at": "2025-03-13", "status": "ACTIVE",
+    "amount": 49000000, "term_months": 60, "repayment_type": "BULLET", "maturity_date": "2030-03-13", "extension_count": 0,
+    "annual_income": 70000000, "dsr_at_approval": 0.17, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0115", "product_id": "P004", "customer_id": "U0115", "birth_date": "1973-01-21",
+    "applied_at": "2024-06-23", "contracted_at": "2024-06-27", "status": "ACTIVE",
+    "amount": 56000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": "2027-06-27", "extension_count": 0,
+    "annual_income": 300000000, "dsr_at_approval": 0.19, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0116", "product_id": "P012", "customer_id": "U0116", "birth_date": "1979-02-14",
+    "applied_at": "2025-05-19", "contracted_at": "2025-05-23", "status": "ACTIVE",
+    "amount": 67000000, "term_months": 48, "repayment_type": "AMORTIZING", "maturity_date": "2029-05-23", "extension_count": 0,
+    "annual_income": 84000000, "dsr_at_approval": 0.29, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0117", "product_id": "P009", "customer_id": "U0117", "birth_date": "1989-12-08",
+    "applied_at": "2025-04-04", "contracted_at": "2025-04-07", "status": "ACTIVE",
+    "amount": 45000000, "term_months": 24, "repayment_type": "AMORTIZING", "maturity_date": "2027-04-07", "extension_count": 0,
+    "annual_income": 70000000, "dsr_at_approval": null, "senior_applied": false, "rate_discount_pp": 0.1
+  },
+  {
+    "contract_id": "C0118", "product_id": "P010", "customer_id": "U0101", "birth_date": "1961-07-27",
+    "applied_at": "2024-05-15", "contracted_at": "2024-05-19", "status": "ACTIVE",
+    "amount": 43000000, "term_months": 60, "repayment_type": "AMORTIZING", "maturity_date": "2029-05-19", "extension_count": 0,
+    "annual_income": 146000000, "dsr_at_approval": 0.38, "senior_applied": false, "rate_discount_pp": 0.2
+  },
+  {
+    "contract_id": "C0119", "product_id": "P006", "customer_id": "U0119", "birth_date": "1965-03-10",
+    "applied_at": "2024-06-26", "contracted_at": "2024-06-29", "status": "ACTIVE",
+    "amount": 1000000, "term_months": 12, "repayment_type": "BULLET", "maturity_date": "2027-06-28", "extension_count": 2,
+    "annual_income": 96000000, "dsr_at_approval": 0.52, "senior_applied": false, "rate_discount_pp": 0
+  },
+  {
+    "contract_id": "C0120", "product_id": "P011", "customer_id": "U0120", "birth_date": "1982-09-18",
+    "applied_at": "2026-11-23", "contracted_at": null, "status": "REJECTED",
+    "amount": 7000000, "term_months": 36, "repayment_type": "AMORTIZING", "maturity_date": null, "extension_count": 0,
+    "annual_income": 48000000, "dsr_at_approval": null, "senior_applied": null, "rate_discount_pp": null,
+    "reject_reason": "CREDIT_SCORE_LOW"
   }
 ]

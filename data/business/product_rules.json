@@ -19,5 +19,80 @@
   { "rule_id": "R016", "product_id": "P003", "rule_key": "MAX_AMOUNT", "value": "100000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
   { "rule_id": "R017", "product_id": "P003", "rule_key": "MIN_CREDIT_SCORE", "value": "850", "unit": "score", "effective_from": "2024-01-01", "effective_to": null },
   { "rule_id": "R018", "product_id": "P003", "rule_key": "MORTGAGE_LTV_LIMIT", "value": "0.40", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
-  { "rule_id": "R019", "product_id": "P003", "rule_key": "SENIOR_RATE_DISCOUNT", "value": "0.3", "unit": "percent_point", "effective_from": "2024-01-01", "effective_to": null }
+  { "rule_id": "R019", "product_id": "P003", "rule_key": "SENIOR_RATE_DISCOUNT", "value": "0.3", "unit": "percent_point", "effective_from": "2024-01-01", "effective_to": null },
+
+  { "rule_id": "R020", "product_id": "P001", "rule_key": "DSR_ASSUMED_TERM_MONTHS", "value": "60", "unit": "months", "effective_from": "2025-07-01", "effective_to": null },
+  { "rule_id": "R021", "product_id": "P001", "rule_key": "ESTIMATED_INCOME_RATIO", "value": "90", "unit": "percent", "effective_from": "2025-07-01", "effective_to": null },
+  { "rule_id": "R022", "product_id": "P001", "rule_key": "MAX_EXTENSION_COUNT", "value": "4", "unit": "count", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R023", "product_id": "P001", "rule_key": "PREPAYMENT_FEE_FREE_AFTER_MONTHS", "value": "36", "unit": "months", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R024", "product_id": "P001", "rule_key": "COOLING_OFF_DAYS", "value": "14", "unit": "days", "effective_from": "2024-03-25", "effective_to": null },
+  { "rule_id": "R025", "product_id": "P001", "rule_key": "EXPLANATION_RECORD_YEARS", "value": "10", "unit": "years", "effective_from": "2024-03-25", "effective_to": null },
+  { "rule_id": "R026", "product_id": "P001", "rule_key": "SENIOR_RECORDING_AGE", "value": "65", "unit": "age", "effective_from": "2025-01-01", "effective_to": null },
+  { "rule_id": "R027", "product_id": "P001", "rule_key": "SENIOR_TRANSFER_HOLD_MIN_AMOUNT", "value": "50000000", "unit": "krw", "effective_from": "2025-01-01", "effective_to": null },
+  { "rule_id": "R028", "product_id": "P001", "rule_key": "DELINQUENCY_NOTICE_BUSINESS_DAYS", "value": "3", "unit": "days", "effective_from": "2024-01-01", "effective_to": null },
+
+  { "rule_id": "R029", "product_id": "P002", "rule_key": "RECORDING_REQUIRED_AGE", "value": "65", "unit": "age", "effective_from": "2025-01-01", "effective_to": null },
+  { "rule_id": "R030", "product_id": "P002", "rule_key": "GUARDIAN_NOTICE_AGE", "value": "80", "unit": "age", "effective_from": "2025-01-01", "effective_to": null },
+  { "rule_id": "R031", "product_id": "P002", "rule_key": "SENIOR_REVIEW_BUSINESS_DAYS", "value": "2", "unit": "days", "effective_from": "2025-01-01", "effective_to": null },
+  { "rule_id": "R032", "product_id": "P002", "rule_key": "SENIOR_TRANSFER_HOLD_MIN_AMOUNT", "value": "30000000", "unit": "krw", "effective_from": "2025-01-01", "effective_to": null },
+  { "rule_id": "R033", "product_id": "P002", "rule_key": "COOLING_OFF_DAYS", "value": "14", "unit": "days", "effective_from": "2024-03-25", "effective_to": null },
+
+  { "rule_id": "R034", "product_id": "P003", "rule_key": "DSR_BULLET_TERM_FLOOR_YEARS", "value": "5", "unit": "years", "effective_from": "2025-07-01", "effective_to": null },
+  { "rule_id": "R035", "product_id": "P003", "rule_key": "PREPAYMENT_FEE_RATE", "value": "1.2", "unit": "percent", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R036", "product_id": "P003", "rule_key": "SENIOR_TRANSFER_HOLD_MIN_AMOUNT", "value": "30000000", "unit": "krw", "effective_from": "2025-01-01", "effective_to": null },
+
+  { "rule_id": "R037", "product_id": "P004", "rule_key": "DSR_LIMIT", "value": "0.30", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R038", "product_id": "P004", "rule_key": "MAX_INCOME_MULTIPLE", "value": "1.0", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R039", "product_id": "P004", "rule_key": "MAX_AMOUNT", "value": "100000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R040", "product_id": "P004", "rule_key": "MORTGAGE_LTV_LIMIT", "value": "0.40", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R041", "product_id": "P004", "rule_key": "PREPAYMENT_FEE_FREE_AFTER_MONTHS", "value": "24", "unit": "months", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R042", "product_id": "P004", "rule_key": "EXPLANATION_RECORD_YEARS", "value": "10", "unit": "years", "effective_from": "2024-03-25", "effective_to": null },
+  { "rule_id": "R043", "product_id": "P004", "rule_key": "SENIOR_TRANSFER_HOLD_MIN_AMOUNT", "value": "50000000", "unit": "krw", "effective_from": "2025-01-01", "effective_to": null },
+
+  { "rule_id": "R044", "product_id": "P005", "rule_key": "DSR_LIMIT", "value": "40", "unit": "percent", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R045", "product_id": "P005", "rule_key": "ELIGIBLE_MIN_AGE", "value": "19", "unit": "age", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R046", "product_id": "P005", "rule_key": "ELIGIBLE_MAX_AGE", "value": "34", "unit": "age", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R047", "product_id": "P005", "rule_key": "YOUTH_RATE_DISCOUNT", "value": "0.1", "unit": "percent_point", "effective_from": "2025-01-02", "effective_to": null },
+  { "rule_id": "R048", "product_id": "P005", "rule_key": "MAX_TOTAL_DISCOUNT", "value": "0.4", "unit": "percent_point", "effective_from": "2025-01-02", "effective_to": null },
+  { "rule_id": "R049", "product_id": "P005", "rule_key": "MAX_AMOUNT", "value": "30000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R050", "product_id": "P005", "rule_key": "ESTIMATED_INCOME_RATIO", "value": "0.9", "unit": "ratio", "effective_from": "2025-07-01", "effective_to": null },
+  { "rule_id": "R051", "product_id": "P005", "rule_key": "COOLING_OFF_DAYS", "value": "14", "unit": "days", "effective_from": "2024-03-25", "effective_to": null },
+
+  { "rule_id": "R052", "product_id": "P006", "rule_key": "MAX_AMOUNT", "value": "3000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R053", "product_id": "P006", "rule_key": "MAX_TERM_MONTHS", "value": "12", "unit": "months", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R054", "product_id": "P006", "rule_key": "SMALL_LOAN_DSR_EXEMPT_MAX", "value": "3000000", "unit": "krw", "effective_from": "2025-07-01", "effective_to": null },
+  { "rule_id": "R055", "product_id": "P006", "rule_key": "COOLING_OFF_DAYS", "value": "14", "unit": "days", "effective_from": "2024-03-25", "effective_to": null },
+
+  { "rule_id": "R056", "product_id": "P007", "rule_key": "MAX_DSR_RATIO", "value": "0.4", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R057", "product_id": "P007", "rule_key": "MAX_CREDIT_LINE", "value": "50000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R058", "product_id": "P007", "rule_key": "RENEWAL_TERM_MONTHS", "value": "12", "unit": "months", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R059", "product_id": "P007", "rule_key": "MAX_RENEWALS", "value": "4", "unit": "count", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R060", "product_id": "P007", "rule_key": "DSR_LINE_TERM_MONTHS", "value": "60", "unit": "months", "effective_from": "2025-07-01", "effective_to": null },
+  { "rule_id": "R061", "product_id": "P007", "rule_key": "COOLING_OFF_DAYS", "value": "15", "unit": "days", "effective_from": "2024-03-25", "effective_to": null },
+
+  { "rule_id": "R062", "product_id": "P008", "rule_key": "DSR_LIMIT", "value": "0.40", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R063", "product_id": "P008", "rule_key": "MAX_AMOUNT", "value": "100000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R064", "product_id": "P008", "rule_key": "PREPAYMENT_FEE_RATE", "value": "0.007", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R065", "product_id": "P008", "rule_key": "EXPLANATION_RECORD_MONTHS", "value": "120", "unit": "months", "effective_from": "2024-03-25", "effective_to": null },
+
+  { "rule_id": "R066", "product_id": "P009", "rule_key": "BUSINESS_DSCR_MIN", "value": "1.25", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R067", "product_id": "P009", "rule_key": "MAX_AMOUNT", "value": "50000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R068", "product_id": "P009", "rule_key": "MIN_BUSINESS_MONTHS", "value": "12", "unit": "months", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R069", "product_id": "P009", "rule_key": "EXPLANATION_RECORD_YEARS", "value": "10", "unit": "years", "effective_from": "2024-03-25", "effective_to": null },
+
+  { "rule_id": "R070", "product_id": "P010", "rule_key": "DSR_LIMIT", "value": "0.45", "unit": "ratio", "effective_from": "2023-01-01", "effective_to": "2023-12-31" },
+  { "rule_id": "R071", "product_id": "P010", "rule_key": "MIN_CREDIT_SCORE", "value": "600", "unit": "score", "effective_from": "2023-01-01", "effective_to": null },
+  { "rule_id": "R072", "product_id": "P010", "rule_key": "MAX_AMOUNT", "value": "50000000", "unit": "krw", "effective_from": "2023-01-01", "effective_to": null },
+  { "rule_id": "R073", "product_id": "P010", "rule_key": "ESTIMATED_INCOME_RATIO", "value": "0.85", "unit": "ratio", "effective_from": "2025-07-01", "effective_to": null },
+
+  { "rule_id": "R074", "product_id": "P011", "rule_key": "DSR_LIMIT", "value": "0.50", "unit": "ratio", "effective_from": "2023-01-01", "effective_to": "2023-12-31" },
+  { "rule_id": "R075", "product_id": "P011", "rule_key": "DSR_LIMIT", "value": "0.40", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R076", "product_id": "P011", "rule_key": "MAX_AMOUNT", "value": "20000000", "unit": "krw", "effective_from": "2023-01-01", "effective_to": null },
+  { "rule_id": "R077", "product_id": "P011", "rule_key": "MIN_VISA_REMAINING_MONTHS", "value": "12", "unit": "months", "effective_from": "2023-01-01", "effective_to": null },
+  { "rule_id": "R078", "product_id": "P011", "rule_key": "DELINQUENCY_NOTICE_BUSINESS_DAYS", "value": "2", "unit": "days", "effective_from": "2024-01-01", "effective_to": null },
+
+  { "rule_id": "R079", "product_id": "P012", "rule_key": "DSR_LIMIT", "value": "0.40", "unit": "ratio", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R080", "product_id": "P012", "rule_key": "MAX_AMOUNT", "value": "100000000", "unit": "krw", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R081", "product_id": "P012", "rule_key": "SENIOR_RATE_DISCOUNT", "value": "0.3", "unit": "percent_point", "effective_from": "2024-01-01", "effective_to": null },
+  { "rule_id": "R082", "product_id": "P012", "rule_key": "MAX_EXTENSION_COUNT", "value": "4", "unit": "count", "effective_from": "2024-01-01", "effective_to": null }
 ]

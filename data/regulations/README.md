@@ -13,6 +13,11 @@ data/regulations/
 | regulation_id | 제목 | 버전 |
 |---|---|---|
 | `credit-loan-ops` | 개인신용대출 운영기준 | v3 (2024-01-01), v4 (2026-12-01) |
+| `dsr-management` | 가계대출 DSR 관리기준 | v2 (2025-07-01) |
+| `consumer-explanation` | 금융소비자 설명의무 기준 | v1 (2024-03-25) |
+| `senior-protection` | 고령 금융소비자 보호기준 | v1 (2025-01-01) |
+
+규정끼리 서로 참조합니다(예: DSR 관리기준 제8조 → 운영기준 제8조). 이전 버전이 없는 규정은 `previous_version`을 적지 않습니다. 삭제된 조항은 번호를 남기고 `### 제N조(삭제)`로 둡니다.
 
 ## 포맷 규칙
 
