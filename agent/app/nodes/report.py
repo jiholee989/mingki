@@ -1,84 +1,89 @@
 from app.schemas import ChangeSheet, Event, Report
-from app.state import RippleState
-
-_TYPE_LABEL = {"value": "① 값", "logic": "② 로직", "db": "③ DB", "new": "④ 신규"}
 
 
-def _hunks(diff: str) -> list[tuple[str, str]]:
-    """'@@ file:line @@' 단위로 (위치, '- 기존 → + 수정') 쌍을 뽑는다."""
-    out = []
-    for block in diff.split("@@ ")[1:]:
-        header, _, body = block.partition(" @@\n")
-        lines = body.splitlines()
-        old = next((l[1:] for l in lines if l.startswith("-")), "")
-        new = next((l[1:] for l in lines if l.startswith("+")), "")
-        out.append((header, f"{header}: {old} → {new}"))
-    return out
-
-
-def _change_sheets(state: RippleState) -> list[ChangeSheet]:
-    """요건별 개발 변경 명세서. 전부 state에서 조립하는 코드 로직."""
-    plan = state.get("plan")
-    types = {i.spec_id: i.change_type for i in plan.items} if plan else {}
-    patches = state.get("code_patches", [])
-    sheets = []
-    for req in state.get("requirements", []):
-        specs = [s for s in state.get("change_specs", []) if s.requirement_id == req.id]
-        targets = [s for s in specs if s.is_target]
-        locs = {s.location for s in targets}
-        mine = [p for p in patches if locs & set(p.locations)]
-        if not mine:
+def make_report():
+    def report(state):
+        patches = state.get("code_patches", [])
+        sheets = []
+        for req in state.get("requirements", []):
+            specs = [
+                s for s in state.get("change_specs", []) if s.requirement_id == req.id
+            ]
+            ids = {s.id for s in specs if s.is_target}
+            mine = [p for p in patches if ids.intersection(p.spec_ids)]
+            checked = [p for p in mine if p.status != "ticket_only"]
             verification = "not_run"
-        elif all(p.status == "passed" for p in mine):
-            verification = "passed"
-        else:
-            verification = "failed"
-        sheets.append(
-            ChangeSheet(
-                requirement_id=req.id,
-                basis=f"{req.article} ({req.article_ref})",
-                summary=req.summary,
-                effective_date=req.effective_date,
-                transitional=req.transitional,
-                locations=[f"{s.location} {s.symbol} ({_TYPE_LABEL.get(types.get(s.id, ''), '미분류')})" for s in targets],
-                non_targets=[f"{s.location} {s.symbol} — {s.reason}" for s in specs if not s.is_target],
-                proposals=[h for p in mine for loc, h in _hunks(p.diff) if loc in locs],
-                tests=[f"{t.id} [{t.kind}] {t.description}" for t in state.get("test_cases", []) if t.requirement_id == req.id],
-                verification=verification,
+            if checked and not state.get("demo"):
+                verification = (
+                    "passed" if all(p.status == "passed" for p in checked) else "failed"
+                )
+            sheets.append(
+                ChangeSheet(
+                    requirement_id=req.id,
+                    basis=f"{req.article} ({req.article_ref})",
+                    summary=req.summary,
+                    effective_date=req.effective_date,
+                    transitional=req.transitional,
+                    locations=[
+                        f"{s.location} {s.symbol}" for s in specs if s.is_target
+                    ],
+                    non_targets=[
+                        f"{s.location} {s.symbol}: {s.reason}"
+                        for s in specs
+                        if not s.is_target
+                    ],
+                    proposals=[p.proposal or p.diff for p in mine],
+                    tests=[
+                        f"{t.id}: {t.description}"
+                        for t in state.get("test_cases", [])
+                        if t.requirement_id == req.id
+                    ],
+                    verification=verification,
+                )
             )
-        )
-    return sheets
-
-
-def make_report(tools):
-    """변경 명세서·PR·티켓 링크 정리 → DONE."""
-
-    def report(state: RippleState) -> dict:
-        tools.read_resource(f"reg://{state['regulation_id']}/{state['new_version']}")
-        reqs = state.get("requirements", [])
-        failed = [p.bundle_id for p in state.get("code_patches", []) if p.status != "passed"]
         deliveries = state.get("deliveries", [])
         approvals = state.get("approvals", [])
-
-        blocked = None
-        if not reqs:
-            summary = "실질 변경 없음"
+        reason = state.get("blocked_reason")
+        if not state.get("requirements"):
+            status, summary = "NO_CHANGE", "실질 변경 없음"
         elif approvals and not approvals[-1].approved:
-            summary = f"{approvals[-1].stage} 단계에서 반려"
-        elif not deliveries:
-            summary = "승인되었으나 배포 없음"
-            blocked = "검증 실패 항목만 남아 배포 차단" if failed else None
+            status = "HELD" if approvals[-1].stage == "requirements" else "REJECTED"
+            summary = "분석 보류" if status == "HELD" else "수정안 거절"
+        elif state.get("demo"):
+            if state.get("llm_used"):
+                status, summary = (
+                    "LLM_PREVIEW",
+                    "실제 LLM 분석 완료: 로컬 샘플 사용, 실제 검증·외부 발행 없음",
+                )
+            else:
+                status, summary = "DEMO", "시연 완료: 실제 검증·외부 발행 없음"
+        elif (
+            approvals
+            and approvals[-1].stage == "review"
+            and approvals[-1].approved
+            and not state.get("review_decision", {}).get("publish", True)
+        ):
+            status, summary = "READY", "검토 완료: 발행 요청 없음"
+        elif reason or not deliveries:
+            status, summary = "BLOCKED", "발행 미완료"
+            reason = reason or "발행할 수정안이 없습니다"
+        elif any(d.status != "DONE" for d in deliveries):
+            status, summary = "QUEUED", f"발행 {len(deliveries)}건 접수: 완료 확인 필요"
         else:
-            summary = f"요건 {len(reqs)}건 반영, 배포 {len(deliveries)}건"
-
+            status, summary = "DONE", f"발행 {len(deliveries)}건 완료"
         result = Report(
+            status=status,
             summary=summary,
-            requirement_ids=[r.id for r in reqs],
-            change_sheets=_change_sheets(state),
+            requirement_ids=[r.id for r in state.get("requirements", [])],
+            change_sheets=sheets,
             deliveries=deliveries,
-            failed_bundle_ids=failed,
-            blocked_reason=blocked,
+            blocked_reason=reason,
+            failed_bundle_ids=[
+                p.bundle_id
+                for p in patches
+                if p.status in ("patch_failed", "unverified")
+            ],
         )
-        return {"result": result, "events": [Event(node="report", message=f"DONE: {summary}")]}
+        return {"result": result, "events": [Event(node="report", message=summary)]}
 
     return report
