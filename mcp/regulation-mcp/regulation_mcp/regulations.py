@@ -48,7 +48,47 @@ def regulation_path(regulation_id: str, version: str, root: Path = REGULATIONS_D
     return path
 
 
+def _unquote(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
+def split_frontmatter(raw: str, source: str) -> tuple[dict, str]:
+    """'---' 로 감싼 frontmatter → (meta, 본문). 형식이 틀리면 파일 이름과 이유를 담은 RegulationError.
+
+    값은 `key: value` 한 줄. 목록은 `key: [a, b]` 한 줄이나 YAML 블록(`key:` 다음 줄마다 `  - a`) 둘 다 받는다.
+    따옴표로 감싼 값은 따옴표를 뗀다. 읽을 수 없는 줄을 조용히 건너뛰지 않는다.
+    """
+    lines = raw.removeprefix("\ufeff").splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise RegulationError(f"{source}: 첫 줄이 '---'인 frontmatter가 없습니다")
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        raise RegulationError(f"{source}: frontmatter를 닫는 '---'가 없습니다")
+
+    meta: dict[str, str | list[str]] = {}
+    key = None
+    for line in lines[1:end]:
+        if not line.strip():
+            continue
+        item = line.strip()
+        if item.startswith("- ") and key is not None and isinstance(meta[key], list):
+            meta[key].append(_unquote(item[2:]))
+        elif ":" in line and not line[0].isspace():
+            key, _, value = line.partition(":")
+            key, value = key.strip(), value.strip()
+            meta[key] = _unquote(value) if value else []   # 빈 값 = YAML 블록 목록 시작
+        else:
+            raise RegulationError(f"{source}: frontmatter를 읽을 수 없는 줄입니다: {line!r} (형식: key: value)")
+    meta = {k: ("" if v == [] else v) for k, v in meta.items()}   # 항목 없는 빈 값은 빈 문자열
+    return meta, "\n".join(lines[end + 1:])
+
+
 def list_versions(root: Path = REGULATIONS_DIR) -> dict[str, list[str]]:
+    if not root.is_dir():
+        raise RegulationError(f"규정 원문 폴더가 없습니다: {root} (REGULATIONS_DIR 확인)")
     out: dict[str, list[str]] = {}
     for d in sorted(p for p in root.iterdir() if p.is_dir() and _REGULATION_ID.match(p.name)):
         versions = sorted(
@@ -62,9 +102,9 @@ def list_versions(root: Path = REGULATIONS_DIR) -> dict[str, list[str]]:
 @lru_cache
 def load(regulation_id: str, version: str, root: Path = REGULATIONS_DIR) -> dict:
     """{"meta": {frontmatter}, "articles": {article_id: {"title", "text"}}}"""
-    raw = regulation_path(regulation_id, version, root).read_text(encoding="utf-8")
-    _, front, body = raw.split("---", 2)
-    meta = dict(line.split(": ", 1) for line in front.strip().splitlines() if ": " in line)
+    meta, body = split_frontmatter(
+        regulation_path(regulation_id, version, root).read_text(encoding="utf-8"), f"{regulation_id}/{version}.md"
+    )
 
     articles: dict[str, dict] = {}
     current = None
@@ -96,8 +136,15 @@ def list_articles(regulation_id: str, version: str, root: Path = REGULATIONS_DIR
     ]
 
 
-def diff_versions(regulation_id: str, old_version: str, new_version: str, root: Path = REGULATIONS_DIR) -> dict:
-    """원문 기준 결정적 diff. 바뀐 조항만 돌려준다 (자구 수정 포함 — 실질 여부 판단은 Agent 몫)."""
+def diff_versions(
+    regulation_id: str, old_version: str | None = None, new_version: str | None = None, root: Path = REGULATIONS_DIR
+) -> dict:
+    """원문 기준 결정적 diff. 바뀐 조항만 돌려준다 (자구 수정 포함 — 실질 여부 판단은 Agent 몫).
+
+    new_version을 생략하면 최신 버전, old_version을 생략하면 new_version의 frontmatter previous_version.
+    """
+    new_version = new_version or latest_version(regulation_id, root)
+    old_version = old_version or previous_version(regulation_id, new_version, root)
     old = load(regulation_id, old_version, root)
     new = load(regulation_id, new_version, root)
     changes = []
@@ -130,6 +177,43 @@ def latest_version(regulation_id: str, root: Path = REGULATIONS_DIR) -> str:
     if regulation_id not in versions:
         raise RegulationError(f"규정이 없습니다: {regulation_id} (가능: {list(versions)})")
     return versions[regulation_id][-1]
+
+
+def previous_version(regulation_id: str, version: str, root: Path = REGULATIONS_DIR) -> str:
+    """frontmatter previous_version. 없거나 그 파일이 없으면 RegulationError."""
+    prev = load(regulation_id, version, root)["meta"].get("previous_version")
+    if not prev:
+        raise RegulationError(f"{regulation_id} {version}은 이전 버전이 없는 첫 버전입니다. old_version을 직접 지정하세요")
+    if prev not in list_versions(root).get(regulation_id, []):
+        raise RegulationError(f"{regulation_id} {version}의 이전 버전 {prev} 원문이 없습니다 (가능: {list_versions(root)[regulation_id]})")
+    return prev
+
+
+def _frontmatter_list(value: str | list[str] | None) -> list[str] | None:
+    """'[P001, P002]' · YAML 블록 목록 · 'P001' → ['P001', ...]. 키가 없으면 None (정보 없음과 빈 목록을 구분)."""
+    if value is None:
+        return None
+    items = value if isinstance(value, list) else value.strip().removeprefix("[").removesuffix("]").split(",")
+    return [_unquote(v) for v in items if _unquote(v)]
+
+
+def list_regulations(root: Path = REGULATIONS_DIR) -> list[dict]:
+    """규정 목록. 버전별 시행일 · 이전 버전과, 최신 버전 frontmatter의 applies_to(적용 상품)."""
+    out = []
+    for rid, versions in list_versions(root).items():
+        metas = [load(rid, v, root)["meta"] for v in versions]
+        out.append({
+            "regulation_id": rid,
+            "title": metas[-1].get("title", rid),
+            "latest_version": versions[-1],
+            "applies_to": _frontmatter_list(metas[-1].get("applies_to")),
+            "versions": [
+                {"version": v, "effective_from": m.get("effective_from"),
+                 "previous_version": m.get("previous_version"), "uri": uri(rid, v)}
+                for v, m in zip(versions, metas)
+            ],
+        })
+    return out
 
 
 def resolve_scope(regulation_id: str | None, version: str | None, root: Path = REGULATIONS_DIR) -> list[tuple[str, str]]:

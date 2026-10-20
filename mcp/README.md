@@ -45,14 +45,19 @@ async with Client("http://code-mcp:8002/mcp") as c:
 
 | 도구 | 입력 | 출력 |
 |---|---|---|
-| `diff_versions` | `regulation_id, old_version, new_version` | `{regulation_id, old_version, new_version, effective_from, changes: [{article_id, title, change, old_text, new_text, old_uri, new_uri}]}` |
+| `list_regulations` | (없음) | `[{regulation_id, title, latest_version, applies_to, versions: [{version, effective_from, previous_version, uri}]}]` |
+| `diff_versions` | `regulation_id, old_version=None, new_version=None` | `{regulation_id, old_version, new_version, effective_from, changes: [{article_id, title, change, old_text, new_text, old_uri, new_uri}]}` |
 | `search_regulation` | `query, regulation_id=None, version=None` | `[{uri, regulation_id, version, article_id, title, text}]` 관련도 순 최대 5개 |
 | `search_product_docs` | `query, product_id=None` | `[{uri, product_id, name, section, text, updated_at}]` 관련도 순 최대 5개 |
 | `get_product_doc` | `product_id` | `{uri, product_id, name, updated_at, sections: [{uri, section, text}]}` |
 | `get_article` | `regulation_id, version, article_id` | `{uri, article_id, title, text}` |
-| `list_articles` | `regulation_id, version` | `[{uri, article_id, title}]` |
+| `list_articles` | `regulation_id, version=None` | `[{uri, article_id, title}]` |
 | Resource | `reg://{regulation_id}/{version}/{article_id}` | 조항 원문 (`reg://{id}/{version}` 은 규정 제목) |
 | Resource | `doc://{product_id}` | 상품설명서 · 업무 절차 문서 원문 |
+
+- `list_regulations`: 어떤 규정 · 버전이 있는지 모를 때 먼저 부른다. `applies_to`는 frontmatter의 적용 상품 목록이고, 없으면 `null`(정보 없음).
+- `diff_versions`: 버전을 생략하면 최신 버전과 그 `previous_version`을 비교한다. 첫 버전이면 오류.
+- 규정 파일을 추가 · 수정하면 `uv run pytest tests/test_data_format.py -q` 로 형식을 확인한다 (형식이 틀린 조항은 오류 없이 빠지기 때문).
 
 - `change`: `added` · `removed` · `modified`. 표현만 바뀐 조항도 나온다 (실질 여부는 Agent가 판단).
 - 조항 ID: `15`, `15-2`(제15조의2), `supp-2`(부칙 제2조). Agent `app/data.py` 와 같은 규칙.
@@ -84,11 +89,16 @@ async with Client("http://code-mcp:8002/mcp") as c:
 
 | 도구 | 성격 | Spring | 출력 |
 |---|---|---|---|
-| `get_products` | 읽기 | `GET /internal/products` | `[{productId, name, description, …}]` |
-| `get_product_rules` | 읽기 | `GET /internal/product-rules?key=` · `GET /internal/products/{id}/rules` | `[{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]` |
+| `get_products` | 읽기 | `GET /internal/products` (+`status` 필터) | `[{productId, name, description, …}]` |
+| `get_product_rules` | 읽기 | `GET /internal/product-rules?key=` · `GET /internal/products/{id}/rules` (+`asOf`) | `[{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]` |
+| `list_rule_keys` | 읽기 | `GET /internal/product-rules` 를 MCP에서 집계 (`GET /internal/product-rules/keys` 생기면 교체) | `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]` |
 | `get_db_schema` | 읽기 | `GET /internal/db/schema` | `[{table, columns: [{name, type, nullable}]}]` |
 | `get_contract_impact` | 읽기 | `GET /internal/contracts/impact` | `{ageFrom, ageTo, total, byProduct, grandfathered?, contracts}` |
 | `create_work_ticket` | 쓰기 · 승인 | `POST /internal/work-tickets` | `{jobId, status, duplicate}` |
+
+- **유효 여부는 날짜로 판단한다** (`effectiveTo == null` 아님, BACKEND_API 10.5). `as_of`에 유효 = `effectiveFrom ≤ as_of ≤ effectiveTo`(없으면 무한). 반영 직후 기존 행은 종료일이 미래라 아직 유효하고, 새 행은 시작일이 미래라 `upcoming`이다.
+- `status` · `as_of` 필터와 `list_rule_keys` 집계는 지금 있는 API 응답을 MCP에서 거른다. 백엔드에 필터 · `GET /internal/product-rules/keys` 가 생기면 (SIMPLIFICATION 9절) 도구 입출력은 그대로 두고 내부만 바꾼다.
+- 같은 개념이라도 상품마다 키 이름 · 단위가 다르다 (예: `DSR_LIMIT` 이 `ratio` 0.40 과 `percent` 40 으로 섞여 있음, `MAX_DSR_RATIO`). `list_rule_keys` 의 `units` 로 확인한다.
 
 ## Agent mock(`app/tools/mock.py`)과 다른 점
 

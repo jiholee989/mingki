@@ -19,7 +19,7 @@ from regulation_mcp.regulations import RegulationError
 mcp = FastMCP(
     "regulation-mcp",
     instructions=(
-        "은행 내규(규정) 원문과 상품설명서 · 업무 절차 문서 도구. 규정 조항 ID는 '15', '15-2'(제15조의2), "
+        "은행 내규(규정) 원문과 상품설명서 · 업무 절차 문서 도구. 어떤 규정이 있는지는 list_regulations로 먼저 본다. 규정 조항 ID는 '15', '15-2'(제15조의2), "
         "'supp-2'(부칙 제2조) 형식이고 원문 링크는 reg://{regulation_id}/{version}/{article_id} 이다. "
         "상품 문서 링크는 doc://{product_id}#{섹션 번호} 이다. 문서에 없는 절차는 지어내지 말고 추가 확인이 필요하다고 답한다."
     ),
@@ -31,15 +31,32 @@ def _tool_error(e: RegulationError) -> ToolError:
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
-def diff_versions(regulation_id: str, old_version: str, new_version: str) -> dict:
+def list_regulations() -> list[dict]:
+    """규정 목록. 어떤 규정 · 버전이 있는지 모를 때 먼저 부른다.
+
+    applies_to는 규정이 적용되는 상품 ID 목록이다. null이면 원문에 적용 상품 정보가 없는 것이므로
+    상품 문서 · 상품 규칙으로 판단한다.
+
+    Returns:
+        [{regulation_id, title, latest_version, applies_to: [product_id] | null,
+          versions: [{version, effective_from, previous_version, uri}]}]
+    """
+    try:
+        return reg.list_regulations()
+    except RegulationError as e:
+        raise _tool_error(e) from e
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def diff_versions(regulation_id: str, old_version: str | None = None, new_version: str | None = None) -> dict:
     """신·구 규정을 조항 단위로 비교해 바뀐 조항만 돌려준다 (원문 기준, 결정적).
 
     표현만 바뀐 조항도 포함된다. 실질 변경인지는 호출한 쪽이 판단한다.
 
     Args:
         regulation_id: 규정 ID (예: "credit-loan-ops")
-        old_version: 구 버전 (예: "v3")
-        new_version: 신 버전 (예: "v4")
+        old_version: 구 버전 (예: "v3"). 생략하면 new_version의 이전 버전
+        new_version: 신 버전 (예: "v4"). 생략하면 최신 버전
 
     Returns:
         {regulation_id, old_version, new_version, effective_from,
@@ -120,14 +137,18 @@ def get_article(regulation_id: str, version: str, article_id: str) -> dict:
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
-def list_articles(regulation_id: str = "credit-loan-ops", version: str = "v4") -> list[dict]:
+def list_articles(regulation_id: str, version: str | None = None) -> list[dict]:
     """버전 하나의 조항 목록 (본문 제외).
+
+    Args:
+        regulation_id: 규정 ID (예: "credit-loan-ops")
+        version: 버전 (예: "v4"). 생략하면 최신 버전
 
     Returns:
         [{uri, article_id, title}]
     """
     try:
-        return reg.list_articles(regulation_id, version)
+        return reg.list_articles(regulation_id, version or reg.latest_version(regulation_id))
     except RegulationError as e:
         raise _tool_error(e) from e
 

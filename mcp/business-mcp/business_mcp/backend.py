@@ -46,4 +46,7 @@ class Backend:
             except ValueError:
                 detail = res.text[:200] or res.reason_phrase
             raise BackendError(f"백엔드 {res.status_code} {detail}")
-        return res.json()
+        try:
+            return res.json()
+        except ValueError:
+            raise BackendError(f"백엔드 응답이 JSON이 아닙니다 ({method} {path}): {res.text[:100]!r}") from None
