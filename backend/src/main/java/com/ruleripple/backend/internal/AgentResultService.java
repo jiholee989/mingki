@@ -37,14 +37,17 @@ public class AgentResultService {
     private final ChangeSpecRepository changeSpecs;
     private final TestCaseRepository testCases;
     private final CodePatchRepository patches;
+    private final RuleProposalRepository proposals;
 
     public AgentResultService(AnalysisTaskRepository tasks, RequirementRepository requirements,
-                              ChangeSpecRepository changeSpecs, TestCaseRepository testCases, CodePatchRepository patches) {
+                              ChangeSpecRepository changeSpecs, TestCaseRepository testCases, CodePatchRepository patches,
+                              RuleProposalRepository proposals) {
         this.tasks = tasks;
         this.requirements = requirements;
         this.changeSpecs = changeSpecs;
         this.testCases = testCases;
         this.patches = patches;
+        this.proposals = proposals;
     }
 
     /** requirement_agent: 요건 추출 중에만, 전체 교체. */
@@ -158,6 +161,56 @@ public class AgentResultService {
         AnalysisTask task = load(taskId);
         task.setReport(report);
         tasks.save(task);
+    }
+
+    /**
+     * proposal_agent · verify (v2 10.2): (proposalKey, round) 기준 upsert.
+     * 확인 대기부터는 고정한다. 사용자가 본 제안과 반영할 제안이 같아야 한다.
+     */
+    @Transactional
+    public int upsertProposals(UUID taskId, List<Proposals.Item> items) {
+        lockIn(taskId, "제안은", TaskStatus.DESIGNING, TaskStatus.VERIFYING);
+        for (Proposals.Item i : nonNull(items)) {
+            String invalid = Proposals.invalid(i);
+            if (invalid != null) throw bad(invalid);
+            RuleProposal p = proposals.findByTaskIdAndProposalKeyAndRound(taskId, i.proposalKey(), i.round())
+                    .orElseGet(RuleProposal::new);
+            p.setTaskId(taskId);
+            p.setProposalKey(i.proposalKey());
+            p.setRound(i.round());
+            p.setReqKey(i.reqKey());
+            p.setProductId(i.productId());
+            p.setRuleId(blank(i.ruleId()) ? null : i.ruleId());
+            p.setRuleKey(i.ruleKey());
+            p.setImpact(i.impact());
+            p.setCurrentText(i.current());
+            p.setProposedText(i.proposed());
+            p.setUnit(i.unit());
+            p.setCurrentValue(i.currentValue());
+            p.setProposedValue(i.proposedValue());
+            p.setEffectiveDate(i.effectiveDate());
+            p.setBasis(i.basis());
+            p.setReason(i.reason());
+            p.setTransition(i.transition());
+            p.setFollowUp(i.followUp() == null ? List.of() : List.copyOf(i.followUp()));
+            p.setVerifyStatus(i.verifyStatus() == null ? RuleProposal.VerifyStatus.PENDING : i.verifyStatus());
+            p.setVerifyLog(i.verifyLog());
+            proposals.save(p);
+        }
+        return nonNull(items).size();
+    }
+
+    /** impact_agent ~ verify (v2 10.6): 전체 교체. 계약 값은 바꾸지 않고 목록만 남긴다. */
+    @Transactional
+    public int replaceContractImpacts(UUID taskId, List<Map<String, Object>> items) {
+        lockIn(taskId, "계약 영향은", TaskStatus.LOCATING, TaskStatus.DESIGNING, TaskStatus.VERIFYING);
+        for (Map<String, Object> i : nonNull(items)) {
+            if (i.get("contractId") == null) throw bad("contractId 는 필수입니다");
+        }
+        AnalysisTask task = load(taskId);
+        task.setContractImpacts(List.copyOf(nonNull(items)));
+        tasks.save(task);
+        return nonNull(items).size();
     }
 
     @Transactional

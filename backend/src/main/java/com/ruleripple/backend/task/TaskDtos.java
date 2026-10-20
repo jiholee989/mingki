@@ -28,18 +28,19 @@ public final class TaskDtos {
         }
     }
 
-    /** 지금 사람이 해야 할 일. 없으면 null. */
+    /** 지금 사람이 해야 할 일. 없으면 null. 역할 구분이 없어져서 role 은 항상 null (v2). */
     public record PendingAction(String step, String role, String path) {
         public static PendingAction of(TaskStatus s, UUID id) {
             return switch (s) {
-                case WAITING_REQUIREMENT_APPROVAL -> new PendingAction("REQUIREMENTS", "OFFICER", "/tasks/" + id + "/requirements");
-                case WAITING_REVIEW -> new PendingAction("REVIEW", "DEVELOPER", "/tasks/" + id + "/review");
+                case WAITING_REQUIREMENT_APPROVAL -> new PendingAction("REQUIREMENTS", null, "/tasks/" + id + "/requirements");
+                case WAITING_REVIEW -> new PendingAction("REVIEW", null, "/tasks/" + id + "/review");
                 default -> null;
             };
         }
     }
 
-    public record Counts(int requirements, int targets, int nonTargets, int patches, int testCases) {}
+    /** proposals: 현재 회차 제안 수 (v2). */
+    public record Counts(int requirements, int targets, int nonTargets, int patches, int testCases, int proposals) {}
 
     public record TaskDetail(TaskSummary task, String errorMessage, int maxVerifyRounds,
                              List<DocumentMeta> documents, PendingAction pendingAction, Counts counts,
@@ -90,6 +91,32 @@ public final class TaskDtos {
     /** canApprove=false 면 화면에서도 승인 버튼을 막는다 (서버도 409 로 막음). */
     public record PatchesResponse(TaskSummary task, int maxVerifyRounds, int latestRound, int passed, int failed,
                                   int pending, boolean canApprove, List<PatchView> patches, List<TestCaseView> testCases) {}
+
+    // ---------- v2 제안 (docs/BACKEND_API.md 10.2) ----------
+
+    public record ApplyResult(String jobId, String status, String closedRuleId, String newRuleId) {}
+
+    public record ProposalView(Long id, String proposalKey, String reqKey, String productId, String ruleId,
+                               String ruleKey, String impact, String current, String proposed, String unit,
+                               String currentValue, String proposedValue, LocalDate effectiveDate, String basis,
+                               String reason, String transition, List<String> followUp, int round,
+                               String verifyStatus, String verifyLog, boolean latest, String decision,
+                               ApplyResult apply) {
+        /** decision: APPLY · EXCLUDE · null. apply 는 반영 작업이 생기면 채운다. */
+        public static ProposalView of(RuleProposal p, boolean latest, String decision, ApplyResult apply) {
+            return new ProposalView(p.getId(), p.getProposalKey(), p.getReqKey(), p.getProductId(), p.getRuleId(),
+                    p.getRuleKey(), p.getImpact(), p.getCurrentText(), p.getProposedText(), p.getUnit(),
+                    p.getCurrentValue(), p.getProposedValue(), p.getEffectiveDate(), p.getBasis(), p.getReason(),
+                    p.getTransition(), p.getFollowUp(), p.getRound(), p.getVerifyStatus().name(), p.getVerifyLog(),
+                    latest, decision, apply);
+        }
+    }
+
+    /** canApprove=false 면 화면에서도 반영 버튼을 막는다 (서버도 409 로 막음). */
+    public record ProposalsResponse(TaskSummary task, int maxVerifyRounds, int latestRound, boolean canApprove,
+                                    List<ProposalView> proposals) {}
+
+    public record ContractImpactsResponse(TaskSummary task, List<Map<String, Object>> items) {}
 
     public record ApprovalView(Long id, String step, String decision, Long approverId, Approver approver,
                                String comment, Map<String, Object> payload, OffsetDateTime createdAt) {
