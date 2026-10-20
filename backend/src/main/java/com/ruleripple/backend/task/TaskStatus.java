@@ -34,7 +34,7 @@ public enum TaskStatus {
         if (next == FAILED) return true;
         return switch (this) {
             case EXTRACTING -> next == WAITING_REQUIREMENT_APPROVAL || next == LOCATING || next == NO_CHANGE;
-            case LOCATING -> next == DESIGNING;
+            case LOCATING -> next == DESIGNING || next == NO_CHANGE;   // 영향 찾기 결과 전 상품 유지
             case DESIGNING -> next == VERIFYING;
             case VERIFYING -> next == DESIGNING || next == LOCATING || next == WAITING_REVIEW;
             case PUBLISHING -> next == DONE;

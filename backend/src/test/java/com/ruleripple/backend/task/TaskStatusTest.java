@@ -25,6 +25,7 @@ class TaskStatusTest {
     void simplifiedFlowSkipsRequirementApproval() {
         assertThat(EXTRACTING.agentCanMoveTo(LOCATING)).isTrue();
         assertThat(EXTRACTING.agentCanMoveTo(DESIGNING)).isFalse();
+        assertThat(LOCATING.agentCanMoveTo(NO_CHANGE)).isTrue();   // 요건은 있는데 전 상품 유지
     }
 
     @Test

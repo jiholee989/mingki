@@ -264,8 +264,8 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 
 ```
 EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW ─(APPROVE)─▶ PUBLISHING ─▶ DONE
-     │                                                    └(REJECT)▶ REJECTED
-     └▶ NO_CHANGE                                    어디서든 오류 ▶ FAILED
+     │            │                                       └(REJECT)▶ REJECTED
+     └▶ NO_CHANGE ┘ (전 상품 유지)                    어디서든 오류 ▶ FAILED
 ```
 
 | 노드 (`STEP {node}`) | 상태 |
