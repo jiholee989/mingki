@@ -1,0 +1,5 @@
+[
+  {"ruleKey": "DSR_LIMIT", "units": ["percent", "ratio"], "productIds": ["P001", "P002", "P003", "P004", "P005", "P008", "P011", "P012"], "activeRows": 8, "closedRows": 2},
+  {"ruleKey": "MAX_DSR_RATIO", "units": ["ratio"], "productIds": ["P007"], "activeRows": 1, "closedRows": 0},
+  {"ruleKey": "MORTGAGE_LTV_LIMIT", "units": ["ratio"], "productIds": ["P001", "P003", "P004"], "activeRows": 3, "closedRows": 0}
+]
