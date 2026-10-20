@@ -115,7 +115,7 @@ def proposal_rows(proposal):
             "proposedValue": change.proposed_value if change else None,
             "effectiveDate": p.effective_date.isoformat() if p.effective_date else None,
             "basis": p.article_ref, "reason": p.reason, "transition": p.transitional,
-            "followUp": p.actions + p.optional_actions, "round": p.version,
+            "followUp": p.actions + p.optional_actions, "round": p.attempt,
             "verifyStatus": p.verification.upper(), "verifyLog": p.generation_error,
         })
     return rows
