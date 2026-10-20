@@ -1,6 +1,8 @@
 """백엔드 대신 가짜 HTTP 응답(MockTransport)을 꽂아서 MCP 도구를 검증한다."""
 
 import json
+from datetime import date
+from pathlib import Path
 
 import httpx
 import pytest
@@ -20,6 +22,14 @@ RULES = [
     {"ruleId": "R060", "productId": "P007", "ruleKey": "MAX_DSR_RATIO", "value": "40", "unit": "percent",
      "effectiveFrom": "2024-01-01", "effectiveTo": None},
 ]
+# 반영 직후 모습 (BACKEND_API 10.4): 기존 행은 시행일 전날로 닫히고, 새 행은 시행일부터
+APPLIED = [
+    {"ruleId": "R001", "productId": "P001", "ruleKey": "DSR_LIMIT", "value": "0.40", "unit": "ratio",
+     "effectiveFrom": "2024-01-01", "effectiveTo": "2026-11-30"},
+    {"ruleId": "R083", "productId": "P001", "ruleKey": "DSR_LIMIT", "value": "0.35", "unit": "ratio",
+     "effectiveFrom": "2026-12-01", "effectiveTo": None},
+]
+CONTRACTS = Path(__file__).resolve().parents[3] / "docs" / "contracts"
 PRODUCTS = [
     {"productId": "P001", "name": "리플 직장인 신용대출", "status": "ON_SALE"},
     {"productId": "P012", "name": "리플 직장인 신용대출(구)", "status": "SALE_ENDED"},
@@ -40,8 +50,9 @@ class FakeSpring:
             return httpx.Response(200, json=[r for r in RULES if key is None or r["ruleKey"] == key])
         if path == "/internal/products":
             return httpx.Response(200, json=PRODUCTS)
-        if path == "/internal/products/P002/rules":
-            return httpx.Response(200, json=[r for r in RULES if r["productId"] == "P002"])
+        if path in ("/internal/products/P001/rules", "/internal/products/P002/rules"):
+            pid = path.split("/")[3]
+            return httpx.Response(200, json=[r for r in RULES if r["productId"] == pid])
         if path == "/internal/products/P999/rules":
             return httpx.Response(404, json={"error": "NOT_FOUND", "message": "product not found"})
         if path == "/internal/contracts/impact":
@@ -138,15 +149,58 @@ async def test_products_filter_by_status(spring):
     assert len(await call("get_products")) == 2
 
 
-async def test_product_rules_active_only_drops_closed_rows(spring):
-    rules = await call("get_product_rules", {"rule_key": "DSR_LIMIT", "active_only": True})
+async def test_product_rules_as_of_drops_closed_rows(spring):
+    rules = await call("get_product_rules", {"rule_key": "DSR_LIMIT", "as_of": "2026-10-20"})
     assert [r["ruleId"] for r in rules] == ["R011"]
+    assert spring.requests[0].url.params["asOf"] == "2026-10-20"   # 계약 10.5
+
+
+async def test_as_of_after_apply_uses_dates_not_null_end(spring):
+    # 리뷰 사례: 반영 직후 R001은 11/30까지 아직 유효, R083은 12/1부터라 아직 시작 전
+    RULES.extend(APPLIED)
+    try:
+        today = await call("get_product_rules", {"product_id": "P001", "as_of": "2026-10-20"})
+        effective = await call("get_product_rules", {"product_id": "P001", "as_of": "2026-12-01"})
+        last_day = await call("get_product_rules", {"product_id": "P001", "as_of": "2026-11-30"})
+    finally:
+        del RULES[-len(APPLIED):]
+    assert [r["ruleId"] for r in today] == ["R001"]
+    assert [r["ruleId"] for r in effective] == ["R083"]
+    assert [r["ruleId"] for r in last_day] == ["R001"]   # 종료일 당일까지 유효
+
+
+async def test_bad_as_of_is_tool_error(spring):
+    with pytest.raises(ToolError, match="잘못된 as_of"):
+        await call("get_product_rules", {"as_of": "2026/12/01"})
 
 
 async def test_list_rule_keys_summarizes_keys_units_and_products(spring):
-    keys = {k["ruleKey"]: k for k in await call("list_rule_keys")}
+    keys = {k["ruleKey"]: k for k in await call("list_rule_keys", {"as_of": "2026-10-20"})}
     assert keys["DSR_LIMIT"] == {"ruleKey": "DSR_LIMIT", "units": ["ratio"], "productIds": ["P002"],
-                                 "activeRows": 1, "closedRows": 1}
+                                 "activeRows": 1, "closedRows": 1, "upcomingRows": 0}
     # 같은 개념, 다른 키 · 단위도 그대로 드러난다
     assert keys["MAX_DSR_RATIO"]["units"] == ["percent"]
     assert "key" not in spring.requests[0].url.params   # 전체 규칙에서 집계
+
+
+async def test_list_rule_keys_counts_upcoming_rows_after_apply(spring, monkeypatch):
+    monkeypatch.setattr(server, "_today", lambda: date(2026, 10, 20))   # 생략하면 오늘
+    RULES.extend(APPLIED)
+    try:
+        before = {k["ruleKey"]: k for k in await call("list_rule_keys")}["DSR_LIMIT"]
+        after = {k["ruleKey"]: k for k in await call("list_rule_keys", {"as_of": "2026-12-01"})}["DSR_LIMIT"]
+    finally:
+        del RULES[-len(APPLIED):]
+    assert (before["activeRows"], before["closedRows"], before["upcomingRows"]) == (2, 1, 1)
+    assert before["productIds"] == ["P001", "P002"]
+    assert (after["activeRows"], after["closedRows"], after["upcomingRows"]) == (2, 2, 0)
+
+
+async def test_list_rule_keys_matches_contract_shape(spring):
+    # docs/contracts/rule-keys.get.json 의 필드를 모두 낸다 (협업 규칙: 각 영역 테스트가 같은 예시를 읽는다).
+    # upcomingRows는 백엔드 92f87d0(계약에 upcomingRows 추가)이 main에 들어오면 계약 파일에도 생긴다.
+    contract = json.loads((CONTRACTS / "rule-keys.get.json").read_text(encoding="utf-8"))
+    keys = await call("list_rule_keys", {"as_of": "2026-10-20"})
+    contract_fields = set().union(*contract)
+    assert all(contract_fields <= set(k) for k in keys), contract_fields
+    assert all(set(k) <= contract_fields | {"upcomingRows"} for k in keys)

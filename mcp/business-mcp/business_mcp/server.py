@@ -10,6 +10,7 @@ API 계약은 docs/BACKEND_API.md 7 · 9절. 응답 키는 백엔드 그대로 c
 import os
 import re
 import sys
+from datetime import date
 from typing import Literal
 
 from fastmcp import FastMCP
@@ -53,9 +54,36 @@ def get_products(status: Literal["ON_SALE", "SALE_ENDED"] | None = None) -> list
     return [p for p in products if status is None or p.get("status") == status]
 
 
+def _today() -> date:
+    return date.today()
+
+
+def _as_of(value: str | None) -> date | None:
+    if value is None:
+        return None
+    if value == "today":
+        return _today()
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ToolError(f"잘못된 as_of: {value!r} (YYYY-MM-DD 또는 \"today\")") from None
+
+
+def _period(rule: dict, day: date) -> Literal["active", "closed", "upcoming"]:
+    """그날 기준 행의 상태. 유효 = effectiveFrom ≤ day ≤ effectiveTo(없으면 무한) (BACKEND_API 10.5).
+
+    effectiveTo == null 만으로 판단하면 틀린다. 반영 직후 기존 행은 effectiveTo가 미래(아직 유효)이고,
+    새 행은 effectiveFrom이 미래(아직 시작 전)인데 effectiveTo는 null이다.
+    """
+    if date.fromisoformat(rule["effectiveFrom"]) > day:
+        return "upcoming"
+    end = rule.get("effectiveTo")
+    return "closed" if end is not None and date.fromisoformat(end) < day else "active"
+
+
 @mcp.tool(annotations={"readOnlyHint": True})
 def get_product_rules(
-    rule_key: str | None = None, product_id: str | None = None, active_only: bool = False
+    rule_key: str | None = None, product_id: str | None = None, as_of: str | None = None
 ) -> list[dict]:
     """상품 규칙 (rule_key · product_id로 좁힐 수 있음, 둘 다 없으면 전체).
 
@@ -65,43 +93,53 @@ def get_product_rules(
     Args:
         rule_key: 규칙 키 (예: "DSR_LIMIT", "ELIGIBLE_MIN_AGE")
         product_id: 상품 ID (예: "P002")
-        active_only: True면 지금 유효한 행(effectiveTo가 null)만. 종료된 옛 버전 행을 뺀다
+        as_of: 그날 유효한 행만 (YYYY-MM-DD 또는 "today"). effectiveFrom ≤ as_of ≤ effectiveTo(없으면 무한).
+            생략하면 종료된 옛 버전 · 시작 전 행까지 전체. 시행일 기준으로 보려면 시행일을 넣는다
 
     Returns:
         [{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]
         unit: ratio | percent | percent_point | krw | age | score | bool | years | months … (상품마다 다를 수 있음)
     """
+    day = _as_of(as_of)
+    params = {"key": rule_key, "asOf": day.isoformat() if day else None}
     if product_id:
         # URL 경로에 들어가므로 ../ 같은 값으로 다른 /internal API에 닿지 못하게 막는다
         if not _PRODUCT_ID.match(product_id):
             raise ToolError(f"잘못된 product_id: {product_id!r} (예: P002)")
-        rules = _call(backend.get, f"/internal/products/{product_id}/rules")
-        rules = [r for r in rules if rule_key is None or r.get("ruleKey") == rule_key]
+        rules = _call(backend.get, f"/internal/products/{product_id}/rules", params)
     else:
-        rules = _call(backend.get, "/internal/product-rules", {"key": rule_key})
-    return [r for r in rules if not active_only or r.get("effectiveTo") is None]
+        rules = _call(backend.get, "/internal/product-rules", params)
+    # 백엔드가 asOf · key를 아직 지원하지 않아도 결과가 같도록 한 번 더 거른다 (지원하면 그대로 통과)
+    return [
+        r for r in rules
+        if (rule_key is None or r.get("ruleKey") == rule_key) and (day is None or _period(r, day) == "active")
+    ]
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
-def list_rule_keys() -> list[dict]:
+def list_rule_keys(as_of: str | None = None) -> list[dict]:
     """상품 규칙 키 목록과 어느 상품에 있는지. 어떤 규칙이 있는지 모를 때 먼저 본다.
 
     같은 개념이라도 상품마다 키 이름이나 단위가 다를 수 있다 (예: DSR_LIMIT · MAX_DSR_RATIO,
     EXPLANATION_RECORD_YEARS · EXPLANATION_RECORD_MONTHS). 키 이름만 보지 말고 단위와 상품을 함께 본다.
 
+    Args:
+        as_of: 기준일 (YYYY-MM-DD). 생략하면 오늘
+
     Returns:
-        [{ruleKey, units: [unit], productIds: [지금 유효한 행이 있는 상품], activeRows, closedRows}] ruleKey 순
+        [{ruleKey, units: [unit], productIds: [as_of에 유효한 행이 있는 상품],
+          activeRows, closedRows, upcomingRows(아직 시작 전, 반영 직후 생김)}] ruleKey 순
     """
+    day = _as_of(as_of) or _today()
     keys: dict[str, dict] = {}
     for r in _call(backend.get, "/internal/product-rules"):
         k = keys.setdefault(r["ruleKey"], {"ruleKey": r["ruleKey"], "units": set(), "productIds": set(),
-                                           "activeRows": 0, "closedRows": 0})
+                                           "activeRows": 0, "closedRows": 0, "upcomingRows": 0})
         k["units"].add(r.get("unit"))
-        if r.get("effectiveTo") is None:
+        period = _period(r, day)
+        k[f"{period}Rows"] += 1
+        if period == "active":
             k["productIds"].add(r.get("productId"))
-            k["activeRows"] += 1
-        else:
-            k["closedRows"] += 1
     return [{**k, "units": sorted(k["units"]), "productIds": sorted(k["productIds"])} for _, k in sorted(keys.items())]
 
 

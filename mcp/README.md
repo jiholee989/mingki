@@ -90,13 +90,14 @@ async with Client("http://code-mcp:8002/mcp") as c:
 | 도구 | 성격 | Spring | 출력 |
 |---|---|---|---|
 | `get_products` | 읽기 | `GET /internal/products` (+`status` 필터) | `[{productId, name, description, …}]` |
-| `get_product_rules` | 읽기 | `GET /internal/product-rules?key=` · `GET /internal/products/{id}/rules` (+`active_only`) | `[{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]` |
-| `list_rule_keys` | 읽기 | `GET /internal/product-rules` 를 MCP에서 집계 | `[{ruleKey, units, productIds, activeRows, closedRows}]` |
+| `get_product_rules` | 읽기 | `GET /internal/product-rules?key=` · `GET /internal/products/{id}/rules` (+`asOf`) | `[{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]` |
+| `list_rule_keys` | 읽기 | `GET /internal/product-rules` 를 MCP에서 집계 (`GET /internal/product-rules/keys` 생기면 교체) | `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]` |
 | `get_db_schema` | 읽기 | `GET /internal/db/schema` | `[{table, columns: [{name, type, nullable}]}]` |
 | `get_contract_impact` | 읽기 | `GET /internal/contracts/impact` | `{ageFrom, ageTo, total, byProduct, grandfathered?, contracts}` |
 | `create_work_ticket` | 쓰기 · 승인 | `POST /internal/work-tickets` | `{jobId, status, duplicate}` |
 
-- `status` · `active_only` 필터와 `list_rule_keys` 집계는 지금 있는 API 응답을 MCP에서 거른다. 백엔드에 필터 · `GET /internal/product-rules/keys` 가 생기면 (SIMPLIFICATION 9절) 도구 입출력은 그대로 두고 내부만 바꾼다.
+- **유효 여부는 날짜로 판단한다** (`effectiveTo == null` 아님, BACKEND_API 10.5). `as_of`에 유효 = `effectiveFrom ≤ as_of ≤ effectiveTo`(없으면 무한). 반영 직후 기존 행은 종료일이 미래라 아직 유효하고, 새 행은 시작일이 미래라 `upcoming`이다.
+- `status` · `as_of` 필터와 `list_rule_keys` 집계는 지금 있는 API 응답을 MCP에서 거른다. 백엔드에 필터 · `GET /internal/product-rules/keys` 가 생기면 (SIMPLIFICATION 9절) 도구 입출력은 그대로 두고 내부만 바꾼다.
 - 같은 개념이라도 상품마다 키 이름 · 단위가 다르다 (예: `DSR_LIMIT` 이 `ratio` 0.40 과 `percent` 40 으로 섞여 있음, `MAX_DSR_RATIO`). `list_rule_keys` 의 `units` 로 확인한다.
 
 ## Agent mock(`app/tools/mock.py`)과 다른 점
