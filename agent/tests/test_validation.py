@@ -1,0 +1,217 @@
+"""단위·필수 변경 보존·조건부 예외·선택적 재시도를 회귀 검사한다."""
+import copy
+import pytest
+
+from app.cli import show_review, show_details, review_command
+from app.schemas import RevisionCheck, RuleChange, ScopeCondition, Requirement
+from app.validation import validate_proposal, condition_errors, expected_value
+from app.nodes.impact import make_product_impact_agent
+from app.runner import DecisionError
+from app.tools.local import LocalTools
+from test_graph import DsrReasoner, start, decision
+
+
+def test_invalid_ratio_retries_only_failed_item_without_extra_version():
+    class WrongFirst(DsrReasoner):
+        def draft_product(self, context):
+            draft = super().draft_product(context)
+            if context["product"]["productId"] == "P001" and not context["validation_errors"]:
+                draft.changes[0].proposed_value = "35"
+            return draft
+    _, out, reasoner, _ = start(WrongFirst())
+    one, two = out["proposals"]
+    assert (one.version, one.attempt, one.verification) == (1, 2, "passed")
+    assert (two.version, two.attempt, two.verification) == (1, 1, "passed")
+    assert len(reasoner.contexts) == 3
+    assert reasoner.contexts[-1]["validation_errors"]
+    assert one.changes[0].proposed_value == "0.35"
+
+
+def test_invalid_ratio_stops_after_two_attempts_and_blocks_approval():
+    class AlwaysWrong(DsrReasoner):
+        def draft_product(self, context):
+            draft = super().draft_product(context)
+            draft.changes[0].proposed_value = "35"
+            return draft
+    runner, out, _, _ = start(AlwaysWrong())
+    assert all(p.attempt == 2 and p.verification == "failed" for p in out["proposals"])
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"decisions": [decision(out["proposals"][0])]})
+
+
+def test_revision_cannot_drop_mandatory_changes_and_preserves_other_approval():
+    class Drop(DsrReasoner):
+        def draft_product(self, context):
+            draft = super().draft_product(context)
+            if context["comment"]:
+                draft.changes = []
+            return draft
+    runner, out, _, _ = start(Drop())
+    before = out["proposals"][0].model_copy(deep=True)
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][1])]})
+    approved = out["proposals"][1].model_dump()
+    out = runner.resume("T1", {"decisions": [decision(before, "request_changes", comment="화면 안내 문구 추가")]})
+    after = out["proposals"][0]
+    assert (after.version, after.attempt, after.verification) == (2, 2, "failed")
+    assert after.changes == before.changes and after.actions == before.actions
+    assert after.changed_fields == []
+    assert out["proposals"][1].model_dump() == approved
+
+
+def test_different_words_without_requested_meaning_are_rejected():
+    class Ignored(DsrReasoner):
+        def check_revision(self, context):
+            return RevisionCheck(feedback_addressed=False, mandatory_preserved=True, reason="실제 안내 문구가 없고 작성 계획만 있음")
+    runner, out, _, _ = start(Ignored())
+    before = out["proposals"][0]
+    out = runner.resume("T1", {"decisions": [decision(before, "request_changes", comment="고객 안내 문구 한 문장 작성")]})
+    p = out["proposals"][0]
+    assert p.verification == "failed" and "실제 안내 문구" in p.generation_error
+    assert p.recommendation == before.recommendation
+
+
+@pytest.mark.parametrize("comment", ["다른 제안사항 줘봐", "새로운 제안", "새로운 아이디어"])
+def test_vague_request_is_rejected_before_model_call_or_checkpoint_change(comment):
+    runner, out, reasoner, _ = start()
+    count = len(reasoner.contexts)
+    with pytest.raises(DecisionError, match="구체적"):
+        runner.resume("T1", {"decisions": [decision(out["proposals"][0], "request_changes", comment=comment)]})
+    assert len(reasoner.contexts) == count
+    assert runner.graph.get_state(runner.config("T1")).values["proposals"][0].version == 1
+
+
+def test_percent_values_are_checked_in_original_unit():
+    runner, out, _, _ = start()
+    state = copy.deepcopy(runner.graph.get_state(runner.config("T1")).values)
+    row = next(r for r in state["product_rules"] if r["ruleId"] == "R001")
+    row.update(unit="percent", value="40")
+    proposal = out["proposals"][0].model_copy(deep=True)
+    proposal.changes[0] = RuleChange(rule_id="R001", rule_key="DSR_LIMIT", current_value="40", proposed_value="35", unit="percent")
+    assert validate_proposal(state, proposal) == []
+    proposal.changes[0].proposed_value = "0.35"
+    assert any("35" in error for error in validate_proposal(state, proposal))
+
+
+def test_multiple_justified_targets_are_supported_instead_of_arbitrary_one_rule_limit():
+    runner, out, _, _ = start()
+    state = copy.deepcopy(runner.graph.get_state(runner.config("T1")).values)
+    row = copy.deepcopy(next(r for r in state["product_rules"] if r["ruleId"] == "R001"))
+    row["ruleId"] = "R_EXTRA"
+    state["product_rules"].append(row)
+    proposal = out["proposals"][0].model_copy(deep=True)
+    proposal.target_rule_ids.append("R_EXTRA")
+    proposal.changes.append(proposal.changes[0].model_copy(update={"rule_id": "R_EXTRA"}))
+    assert validate_proposal(state, proposal) == []
+
+
+def test_wrong_effective_date_or_current_value_is_rejected():
+    runner, out, _, _ = start()
+    state = runner.graph.get_state(runner.config("T1")).values
+    proposal = out["proposals"][0].model_copy(deep=True)
+    proposal.effective_date = None
+    proposal.changes[0].current_value = "0.99"
+    errors = validate_proposal(state, proposal)
+    assert any("시행일" in e for e in errors) and any("현재 값" in e for e in errors)
+
+
+def impact_state(tools):
+    return {"requirements": [Requirement(id="REQ-8", article_id="8", article="제8조", article_ref="reg://credit-loan-ops/v4/8",
+        change="modified", summary="DSR 상한 변경", target="DSR_LIMIT", new_text="DSR은 35%를 초과할 수 없다.")],
+        "snapshot_date": "2026-11-30", "regulation_context": tools.get_regulation_context("credit-loan-ops", "v4")["articles"]}
+
+
+def test_numeric_small_loan_exemption_is_not_a_blanket_product_exemption():
+    class Blanket(DsrReasoner):
+        def product_impacts(self, *args):
+            rows = super().product_impacts(*args)
+            return [r.model_copy(update={"impact": "no_change", "applicability": "excluded", "target_rule_ids": [],
+                        "evidence_rule_ids": ["R054"], "document_refs": ["product-doc://P006"]}) if r.product_id == "P006" else r for r in rows]
+    tools = LocalTools()
+    out = make_product_impact_agent(tools, Blanket())(impact_state(tools))
+    item = next(i for i in out["product_impacts"] if i.product_id == "P006")
+    assert item.impact == "needs_review" and item.applicability == "unknown"
+    assert "차주별" in item.reason
+
+
+def test_condition_citation_must_be_real_and_about_same_transaction():
+    condition = ScopeCondition(text="잔액을 늘리지 않는 대환은 예외", source_ref="reg://example/12", quote="잔액을 늘리지 아니하는 연장은 허용한다")
+    from app.schemas import ProductAssessment
+    row = ProductAssessment(requirement_id="r", product_id="p", reason="조건", impact="change_required",
+                            applicability="conditional", conditions=[condition])
+    assert any("대환" in e for e in condition_errors(row, {condition.source_ref: condition.quote}))
+    row.conditions[0].source_ref = "reg://unobserved"
+    assert any("인용문" in e for e in condition_errors(row, {}))
+
+
+def test_conditional_keep_is_exposed_for_review_not_hidden_as_unchanged():
+    class Conditional(DsrReasoner):
+        def product_impacts(self, *args):
+            return [r.model_copy(update={"impact": "no_change", "applicability": "conditional"}) for r in super().product_impacts(*args)]
+    _, out, _, _ = start(Conditional())
+    assert len(out["proposals"]) == 3
+    assert all(p.impact == "needs_review" for p in out["proposals"])
+
+
+def test_cli_summary_is_short_and_does_not_repeat_full_proposals(capsys):
+    _, out, _, _ = start()
+    value = out["__interrupt__"][0].value
+    show_review(value)
+    text = capsys.readouterr().out
+    assert len(text.splitlines()) <= 8
+    assert "현재 → 제안" in text and "v 3" in text
+    assert out["proposals"][0].recommendation not in text
+    show_details(value["proposals"][0])
+    assert "0.40 → 0.35" in capsys.readouterr().out
+
+
+def test_direct_edit_cannot_bypass_brevity_constraints():
+    runner, out, _, _ = start()
+    with pytest.raises(DecisionError, match="직접 수정 검증"):
+        runner.resume("T1", {"decisions": [decision(out["proposals"][0], "edit", edits={"actions": ["a", "b", "c", "d"]})]})
+
+
+def test_wrong_uri_is_corrected_only_when_quote_uniquely_matches_observed_source():
+    from app.validation import ground_conditions
+    from app.schemas import ProductAssessment
+    row = ProductAssessment(requirement_id="r", product_id="p", impact="needs_review", reason="조건",
+        conditions=[ScopeCondition(text="갱신 조건", source_ref="reg://wrong", quote="갱신 시 한도를 늘리지 않는 경우에는 예외다")])
+    sources = {"reg://correct": "갱신 시 한도를 늘리지 않는 경우에는 예외다"}
+    ground_conditions(row, sources)
+    assert row.conditions[0].source_ref == "reg://correct"
+    row.conditions[0].source_ref = "reg://wrong"
+    ground_conditions(row, {**sources, "reg://also": sources["reg://correct"]})
+    assert row.conditions[0].source_ref == "reg://wrong"
+
+
+def test_effective_date_comes_from_diff_not_model_guess():
+    from datetime import date
+    class WrongDate(DsrReasoner):
+        def requirements(self, diff):
+            return [r.model_copy(update={"effective_date": date(2030, 1, 1)}) for r in super().requirements(diff)]
+    _, out, _, _ = start(WrongDate())
+    assert all(p.effective_date == date(2026, 12, 1) for p in out["proposals"])
+
+
+def test_unverified_condition_is_not_repeated_as_a_confirmed_value_change():
+    class WrongCitation(DsrReasoner):
+        def product_impacts(self, *args):
+            rows = super().product_impacts(*args)
+            rows[0] = rows[0].model_copy(update={"applicability": "conditional", "conditions": [
+                ScopeCondition(text="증액 대환만 적용", source_ref="reg://missing", quote="실제 원문에 없는 가상의 예외 조건입니다")]})
+            return rows
+    _, out, _, _ = start(WrongCitation())
+    item = out["proposals"][0]
+    assert item.impact == "needs_review" and item.applicability == "unknown"
+    assert not item.target_rule_ids and not item.changes and not item.conditions
+    assert "확인되지 않아" in item.reason
+
+
+def test_approved_rows_are_hidden_but_original_selection_numbers_work(capsys):
+    runner, out, _, _ = start()
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0])]})
+    value = out["__interrupt__"][0].value
+    show_review(value)
+    text = capsys.readouterr().out
+    assert "\n1 |" not in text and "\n2 |" in text
+    command = review_command("p 2", value["proposals"])
+    assert command["decisions"][0]["proposal_id"] == out["proposals"][1].id
