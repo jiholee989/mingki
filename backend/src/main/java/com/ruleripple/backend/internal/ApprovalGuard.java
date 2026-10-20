@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 쓰기 도구(create_draft_pr, create_work_ticket)의 서버 측 검증.
+ * 쓰기 도구(apply_rule_version, 옛 흐름 create_draft_pr · create_work_ticket)의 서버 측 검증.
  * 그래프의 interrupt 만 믿지 않고, 호출마다 approval_id 가 유효한지 다시 확인한다.
  *
  * 통과 조건

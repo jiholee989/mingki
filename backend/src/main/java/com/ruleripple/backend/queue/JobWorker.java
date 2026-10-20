@@ -2,6 +2,7 @@ package com.ruleripple.backend.queue;
 
 import com.rabbitmq.client.Channel;
 import com.ruleripple.backend.config.RuleRippleProperties;
+import com.ruleripple.backend.internal.RuleVersionService;
 import com.ruleripple.backend.internal.WorkTicket;
 import com.ruleripple.backend.internal.WorkTicketRepository;
 import com.ruleripple.backend.task.Delivery;
@@ -32,16 +33,19 @@ public class JobWorker {
     private final WorkTicketRepository tickets;
     private final DeliveryRepository deliveries;
     private final TaskEventService events;
+    private final RuleVersionService ruleVersions;
     private final int maxAttempts;
     private final double failureRate;
 
     public JobWorker(JobRepository jobs, JobPublisher publisher, WorkTicketRepository tickets,
-                     DeliveryRepository deliveries, TaskEventService events, RuleRippleProperties props) {
+                     DeliveryRepository deliveries, TaskEventService events, RuleVersionService ruleVersions,
+                     RuleRippleProperties props) {
         this.jobs = jobs;
         this.publisher = publisher;
         this.tickets = tickets;
         this.deliveries = deliveries;
         this.events = events;
+        this.ruleVersions = ruleVersions;
         this.maxAttempts = props.queue().maxAttempts();
         this.failureRate = props.queue().failureRate();
     }
@@ -78,7 +82,8 @@ public class JobWorker {
         } catch (Exception e) {
             String error = String.valueOf(e.getMessage());
             job.setLastError(error);
-            boolean retry = msg.attempt() < maxAttempts;
+            // 다시 해도 같은 실패(이미 바뀐 규칙 등)는 재시도하지 않는다
+            boolean retry = !(e instanceof PermanentJobFailure) && msg.attempt() < maxAttempts;
             job.setStatus(retry ? Job.Status.RETRYING : Job.Status.DEAD);
             jobs.save(job);
             if (retry) publisher.retry(msg); else publisher.dead(msg);
@@ -95,6 +100,7 @@ public class JobWorker {
             case CREATE_TICKET -> createTicket(job);
             case CREATE_DRAFT_PR -> createDraftPr(job);
             case CHECK_PATCH -> checkPatch(job);
+            case APPLY_RULE_VERSION -> ruleVersions.apply(job);
         };
     }
 

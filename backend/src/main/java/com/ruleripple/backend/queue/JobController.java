@@ -39,6 +39,10 @@ public class JobController {
     @PostMapping
     public ResponseEntity<JobPublisher.Enqueued> enqueue(@RequestBody EnqueueRequest req) {
         if (req.type() == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type is required");
+        // 반영은 제안 · 지금 값 검사를 거치는 전용 API 로만 받는다 (임의 proposalId 로 우회 방지)
+        if (req.type() == Job.Type.APPLY_RULE_VERSION) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "APPLY_RULE_VERSION 은 POST /internal/product-rules/versions 로 요청하세요");
+        }
         Map<String, Object> payload = req.payload() == null ? Map.<String, Object>of() : req.payload();
         if (req.type().isWrite()) guard.check(req.taskId(), req.approvalId(), specKeysOf(payload));
         return ResponseEntity.status(HttpStatus.ACCEPTED)

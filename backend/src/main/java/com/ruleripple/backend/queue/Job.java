@@ -25,7 +25,7 @@ public class Job {
     public enum Status { QUEUED, RUNNING, RETRYING, DONE, DEAD }
 
     public enum Type {
-        CHECK_PATCH(false), CREATE_DRAFT_PR(true), CREATE_TICKET(true);
+        CHECK_PATCH(false), CREATE_DRAFT_PR(true), CREATE_TICKET(true), APPLY_RULE_VERSION(true);
 
         private final boolean write;
 
