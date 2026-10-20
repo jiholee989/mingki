@@ -35,7 +35,12 @@ public class ProductRule {
     @Column(name = "effective_from", nullable = false)
     private LocalDate effectiveFrom;
 
-    /** null 이면 현재 유효. */
+    /** null 이면 끝나는 날이 없다. 유효 여부는 isValidOn 으로 판단한다. */
     @Column(name = "effective_to")
     private LocalDate effectiveTo;
+
+    /** day 에 유효한 행인가. effectiveTo 가 null 이어도 시작 전이면 유효하지 않다. */
+    public boolean isValidOn(LocalDate day) {
+        return !effectiveFrom.isAfter(day) && (effectiveTo == null || !effectiveTo.isBefore(day));
+    }
 }

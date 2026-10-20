@@ -58,6 +58,8 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
                                                                                   어디서든 오류 ▶ FAILED
 ```
 
+단순화 흐름([SIMPLIFICATION.md](./SIMPLIFICATION.md))에서는 요건 확정 없이 `EXTRACTING ─▶ LOCATING`으로 바로 간다. 두 흐름 모두 허용한다.
+
 `GET /tasks/{id}`의 `pendingAction`이 지금 사람이 할 일을 알려준다 (`{step, role, path}` 또는 `null`).
 라우터 가드는 이 값과 `status`만 보면 된다.
 
@@ -80,6 +82,7 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
+| `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, workTickets, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
 
 ### 승인 규칙 (서버가 검사)
 
@@ -362,7 +365,7 @@ Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/
 |---|---|
 | `GET /internal/products` | `?status=ON_SALE\|SALE_ENDED` |
 | `GET /internal/product-rules` | `?productId=`, `?asOf=YYYY-MM-DD` — 그날 유효한 행만 (`effectiveFrom ≤ asOf`, `effectiveTo`가 null이거나 `≥ asOf`) |
-| `GET /internal/product-rules/keys` (신규) | `?asOf=` (기본 오늘) → `[{ruleKey, units, productIds, activeRows, closedRows}]`. #23 `list_rule_keys`와 같은 모양 ([예시](./contracts/rule-keys.get.json)) |
+| `GET /internal/product-rules/keys` (신규) | `?asOf=` (기본 오늘) → `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]`. #23 `list_rule_keys` 모양에 `upcomingRows`(아직 시작 전인 행, 반영 직후 생김)를 더했다. `productIds`는 `asOf`에 유효한 행이 있는 상품 ([예시](./contracts/rule-keys.get.json)) |
 | `GET /internal/contracts/impact` | `?dsrFrom=&dsrTo=` — `dsr_at_approval`이 (dsrFrom, dsrTo] 안. 나이 조건과 함께 주면 둘 다 만족. 계약마다 `dsrAtApproval` · `repaymentType` · `maturityDate` · `extensionCount` · `maturesAfterEffective`(만기 ≥ `appliedBefore`) 추가. 연장 사례(C0006)는 만기일시 · 연장 이력으로 Agent가 판단한다 ([예시](./contracts/contract-impact.get.json)) |
 
 **"지금 유효"는 `effectiveTo == null`이 아니다.** 반영하면 기존 행은 `effective_to = 2026-11-30`(오늘은 아직 유효), 새 행은 `effective_from = 2026-12-01`(오늘은 아직 아님, `effectiveTo` null)이 된다. 유효 여부는 `asOf`로 판단한다.
