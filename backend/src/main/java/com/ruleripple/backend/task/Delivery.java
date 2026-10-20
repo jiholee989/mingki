@@ -14,7 +14,8 @@ import java.util.UUID;
 @NoArgsConstructor
 public class Delivery {
 
-    public enum Kind { PR, TICKET }
+    /** RULE_VERSION: 상품 규칙 새 버전 (v2 반영). externalRef 는 새 rule_id */
+    public enum Kind { PR, TICKET, RULE_VERSION }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -3,6 +3,8 @@ package com.ruleripple.backend.task;
 import com.ruleripple.backend.auth.AuthUser;
 import com.ruleripple.backend.auth.User;
 import com.ruleripple.backend.auth.UserRepository;
+import com.ruleripple.backend.queue.Job;
+import com.ruleripple.backend.queue.JobRepository;
 import com.ruleripple.backend.task.TaskDtos.ApprovalView;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -36,12 +38,13 @@ public class TaskService {
     private final TaskEventService events;
     private final UserRepository users;
     private final RuleProposalRepository proposals;
+    private final JobRepository jobs;
 
     public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
                        RequirementRepository requirements, ChangeSpecRepository changeSpecs,
                        CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
                        DeliveryRepository deliveries, TaskEventService events,
-                       UserRepository users, RuleProposalRepository proposals) {
+                       UserRepository users, RuleProposalRepository proposals, JobRepository jobs) {
         this.tasks = tasks;
         this.documents = documents;
         this.requirements = requirements;
@@ -53,6 +56,7 @@ public class TaskService {
         this.events = events;
         this.users = users;
         this.proposals = proposals;
+        this.jobs = jobs;
     }
 
     // ===================== 생성 =====================
@@ -145,6 +149,21 @@ public class TaskService {
     public List<Map<String, Object>> contractImpacts(UUID taskId) {
         List<Map<String, Object>> items = get(taskId).getContractImpacts();
         return items == null ? List.of() : items;
+    }
+
+    /** 제안 키마다 가장 최근 반영 작업의 결과 (v2 10.4). */
+    @Transactional(readOnly = true)
+    public Map<String, TaskDtos.ApplyResult> applyResults(UUID taskId) {
+        Map<String, TaskDtos.ApplyResult> out = new HashMap<>();
+        for (Job j : jobs.findByTaskIdOrderByCreatedAtAsc(taskId)) {
+            if (j.getType() != Job.Type.APPLY_RULE_VERSION || j.getPayload() == null) continue;
+            Object key = j.getPayload().get("proposalKey");
+            if (key == null) continue;
+            Map<String, Object> r = j.getResult() == null ? Map.of() : j.getResult();
+            out.put(key.toString(), new TaskDtos.ApplyResult(j.getId().toString(), j.getStatus().name(),
+                    (String) r.get("closedRuleId"), (String) r.get("newRuleId")));
+        }
+        return out;
     }
 
     /** 가장 최근 확인(REVIEW) 기록. 제안마다 반영 · 제외를 붙일 때 쓴다. */
