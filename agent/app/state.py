@@ -2,7 +2,7 @@
 
 import operator
 from typing import Annotated, Literal, TypedDict
-from app.schemas import Event, Requirement, ProductImpact, ProductProposal, ProposalReviewRecord, ProductReport
+from app.schemas import Event, Requirement, ProductImpact, ProductProposal, ProposalReviewRecord, ProductReport, ApplyApproval, ApplyResult
 
 
 class RippleState(TypedDict, total=False):
@@ -22,6 +22,9 @@ class RippleState(TypedDict, total=False):
     proposals: list[ProductProposal]
     revision_baselines: dict[str, ProductProposal]
     review_history: Annotated[list[ProposalReviewRecord], operator.add]
+    apply_approval: ApplyApproval | None
+    apply_results: list[ApplyResult]
+    apply_error: str | None
     review_finish: bool
     events: Annotated[list[Event], operator.add]
     mode: Literal["llm", "live"]

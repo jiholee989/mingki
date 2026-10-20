@@ -63,6 +63,11 @@ class AgentRunner:
             expected = "REVIEW"
             if step and step != expected:
                 raise DecisionError("현재는 상품별 제안 검토 단계입니다. 중간 요건 승인은 사용하지 않습니다")
+            if isinstance(decision, ResumeRequest):
+                try:
+                    decision = decision.to_decision(snapshot.values.get("proposals", []))
+                except ValueError as exc:
+                    raise DecisionError(str(exc)) from exc
             validator = validate_review
             try:
                 validator(snapshot.values, decision)
@@ -95,7 +100,7 @@ class AgentRunner:
     def resume_backend(self, request: ResumeRequest):
         return self.resume(
             request.thread_id,
-            request.to_decision(),
+            request,
             task_id=request.task_id,
             step=request.step,
         )
