@@ -1,125 +1,157 @@
 # Frontend 작업 계획
 
 Rule Ripple 프론트엔드(Vue 3 + Spring 백엔드)의 작업 순서와 완료 기준.
-설계 근거는 [PROJECT.md](./PROJECT.md).
+제품 방향은 [SIMPLIFICATION.md](./SIMPLIFICATION.md), 처음 설계는 [PROJECT.md](./PROJECT.md), 백엔드 API는 [BACKEND_API.md](./BACKEND_API.md).
 
 ## 원칙
 
-- 백엔드가 바뀌어도 안 바뀌는 것(화면, 상태 흐름, 도메인 개념)과 바뀔 것(API 주소, 응답 필드, 인증, 진행 상황 전달 방식)을 분리한다.
-- 바뀔 것은 `src/api/`와 `src/mocks/`에만 둔다. 화면과 store는 `src/domain/` 타입만 본다.
-- 백엔드가 완성되기 전에는 MSW mock으로 모든 화면을 먼저 만든다.
+- **사용자는 한 명, 역할 없음.** 기능(바뀐 조항 → 상품 업데이트 제안 → 반영)을 보여주는 데 집중한다.
+- 백엔드가 바뀌어도 안 바뀌는 것(화면, 상태 흐름, 도메인 개념)과 바뀔 것(API 주소, 응답 필드, 인증, 진행 상황 전달 방식)을 분리한다. 바뀔 것은 `src/api/`와 `src/mocks/`에만 둔다.
+- 백엔드가 완성되기 전에는 MSW 가짜 서버로 모든 화면을 먼저 만든다.
 
 ## 진행 상황
 
+### 지금까지 (단순화 전 흐름 기준, 브랜치 `minkyojung/frontend-mock-handlers`)
+
+| # | 작업 | 상태 | 단순화 후 |
+|---|---|---|---|
+| 1 | 프로젝트 세팅 | ✅ | 그대로 |
+| 2 | 도메인 타입 (백엔드 응답 모양) | ✅ | 제안 타입 추가, 코드 패치 · 테스트 · 결과물 타입은 안 씀 |
+| 3 | 가짜 데이터 | ✅ | 제안 · 계약 영향 데이터로 교체 |
+| 4 | API 함수 + 가짜 서버 (`demoFlow.spec.ts`) | ✅ | 구조는 그대로, 흐름 · 응답만 교체 |
+| 5 | 화면 8개 | ✅ | 로그인 · 업로드 · 진행 · 비교만 남김 |
+| 6 | 상태별 전환 | ✅ | 역할 안내 제거 |
+| 7 | 데모 리허설 (헤드리스 Chrome 자동 클릭) | ✅ | 새 흐름으로 다시 |
+
+### 단순화 후 할 일
+
 | # | 작업 | 상태 | 완료 기준 |
 |---|---|---|---|
-| 1 | 프로젝트 세팅 | ✅ 완료 | `pnpm build` · `lint` · `typecheck` · `test` 통과 |
-| 2 | 도메인 타입 | ✅ 완료 | PROJECT.md 2·5절 항목이 전부 `src/domain/` 타입으로 존재 |
-| 3 | 가짜 데이터 | ⬜ | 시나리오 2개가 PROJECT.md 10절 정답지 항목을 전부 포함 |
-| 4 | API 함수 + mock 서버 | ⬜ | 모든 화면이 쓸 함수가 MSW로 응답하고 상태 전환을 시뮬레이션 |
-| 5 | 화면 7개 | ⬜ | 각 화면이 fixture로 렌더링 |
-| 6 | 상태별 전환 | ⬜ | 작업 상태 12개 전부 화면 전환, 로딩·빈·오류 화면 포함 |
-| 7 | 데모 리허설 | ⬜ | PROJECT.md 10절 5분 데모를 mock으로 끝까지 클릭, 빠진 버튼 없음 |
-| 8 | 실서버 연결 | ⬜ | `VITE_USE_MOCK=false`로 같은 화면이 동작 |
+| S1 | 가짜 데이터 · 가짜 서버를 새 흐름으로 | ⬜ | 제안 4건 · 대상 아님 · 계약 영향 · 1차 검증 실패(35) → 2차 통과(0.35) · 사용자 확인 1번 · 반영 · 초기화가 `demoFlow.spec.ts`로 끝까지 통과 |
+| S2 | 갤러리 | ⬜ | `/gallery`(개발 빌드만)에서 단계별 화면을 서버 · 로그인 · 기다림 없이 확인 |
+| S3 | 개정 브리핑 화면 | ⬜ | 신구조문 대비표 · 제안 표 · 대상 아님 · 계약 영향 · 자동 검사 · 반영이 한 화면에 |
+| S4 | 화면 정리 | ⬜ | 요건 확정 · 영향 위치 · 코드 검토 화면, 역할 안내 · 계정 전환 · 시연 계정 2개 삭제 |
+| S5 | 데모 리허설 | ⬜ | 새 흐름으로 끝까지 (헤드리스 Chrome 자동 + 사람), 초기화 후 다시 해도 같은 결과 |
+| 8 | 실서버 연결 | ⬜ | 백엔드 제안 API(`rule_proposals`) 확정 후, `VITE_USE_MOCK=false`로 같은 화면이 동작 |
+| 9 | 배포 | ⬜ | `docker compose up`으로 frontend 컨테이너가 뜨고, 어느 경로에서 새로고침해도 화면이 유지됨 |
 
-## 2. 도메인 타입 (`src/domain/`)
+## 데모 흐름
 
-| 타입 | 출처 |
-|---|---|
-| `AnalysisTask`, `TaskStatus` | PROJECT.md 5절, 아래 상태 목록 |
-| `Requirement` (변경 내용, 대상, 시행일, 경과조치, 근거 조항) | 2절, 5절 requirement_agent |
-| `ChangeSpec` (위치, 유형 ①~④, 판단 이유, 대상 아님 여부와 이유) | 3절, 5절 locate_agent |
-| `CodePatch` (diff, 검증 결과, round) | 5절 design_agent · verify |
-| `TestCase` | 5절 test_agent |
-| `Approval` | 5절 interrupt ①② |
-| `Delivery` (PR · 티켓 링크) | 5절 publish |
-| `User`, `Role` (준법감시 · 상품기획 담당자 / 개발자) | 1절 사용자 |
-
-### 작업 상태
-
-| 상태 | 화면 표시 | 사람이 할 일 |
+| # | 화면 | 일어나는 일 |
 |---|---|---|
-| `EXTRACTING` | 요건 추출 중 | 대기 |
-| `WAITING_REQUIREMENT_APPROVAL` | 요건 확정 대기 | 담당자: 확정 또는 보류 |
-| `LOCATING` | 영향 위치 탐색 · 테스트 생성 중 | 대기 |
-| `DESIGNING` | 수정안 생성 중 | 대기 |
-| `VERIFYING` | 검증 중 (n회차, 최대 2회) | 대기 |
-| `WAITING_REVIEW` | 검토 · 승인 대기 | 개발자: 승인 · 거절 · 수정 |
-| `PUBLISHING` | PR · 티켓 생성 중 | 대기 |
-| `DONE` | 완료 | 결과 보기 |
-| `NO_CHANGE` | 실질 변경 없음 | 종료 |
-| `HELD` / `REJECTED` | 보류 · 거절로 종료 | 종료 |
-| `FAILED` | 시스템 오류 | 다시 시도 |
+| 1 | 로그인 → 업로드 | 규정 v3.md · v4.md 업로드 |
+| 2 | 진행 (자동) | 바뀐 조항 추출 → 영향 상품 규칙 찾기 → 제안 작성 → **1차 검증 실패(단위: 35를 0.35로)** → 다시 작성 → 2차 통과 → 제안 확인 대기 |
+| 3 | 개정 브리핑 | 신구조문 대비표, 상품 업데이트 제안(주인공 R010 가입 최소 나이 65 → 60), 대상 아님과 이유, 기존 계약 영향, 자동 검사 → 제안마다 반영 / 제외 → **반영** |
+| 4 | 진행 (자동) | 상품 규칙 새 버전 등록 (대기열, 일시 실패 시 재시도) → 완료 |
+| 5 | 결과 · 비교 | 반영된 규칙, 정답지 점수, 키워드 검색이 놓친 곳 · 잘못 고친 곳 |
+| 6 | 데모 초기화 | 업무 데이터와 작업 기록을 처음 상태로 → 다시 시연 |
 
-## 3. 가짜 데이터 (`src/mocks/fixtures/`)
+### 작업 상태 (뜻이 바뀜)
 
-PROJECT.md 10절 시나리오를 그대로 쓴다.
-
-| 시나리오 | 포함할 것 |
-|---|---|
-| 고령자 65 → 60 | 요건 1건, 바꿀 곳 4개(`age >= 65`, `age > 64`, `SENIOR_AGE_MONTHS = 780`, 경과조치 분기), 대상 아님 1개(`RETIREMENT_AGE = 65`), diff, 검증 1회차 실패 → 2회차 통과 |
-| DSR 0.40 → 0.35 | 요건 1건, 바꿀 곳 3개(`DSR_LIMIT: 0.40`, 하드코딩 `0.4`, 문구 "DSR 40%"), 대상 아님 1개(`LTV_LIMIT = 0.40`), diff, 검증 통과 |
-
-## 4. API 함수 + mock 서버 (`src/api/`, `src/mocks/handlers.ts`)
-
-| 함수 | 용도 | 화면 |
+| 상태 | 화면 표시 | 사용자가 할 일 |
 |---|---|---|
-| `createTask(files)` | 규정 v3 · v4 업로드, 작업 생성 | 업로드 |
-| `listTasks()` / `getTask(id)` | 목록 · 상세 · 현재 상태 | 목록, 진행 상황 |
-| `getRequirements(taskId)` | 요건 목록과 신 · 구 원문 | ① 요건 확정 |
-| `approveRequirements(taskId, decisions)` | 확정 · 보류 | ① 요건 확정 |
-| `getChangeSpecs(taskId)` | 영향 위치, 대상 아님 | 영향 위치 |
-| `getPatches(taskId)` | diff, 테스트, 회차별 검증 결과 | ② 검토 · 승인 |
-| `reviewPatches(taskId, decision)` | 승인 · 거절 · 수정 요청 | ② 검토 · 승인 |
-| `getReport(taskId)` | 명세서, PR · 티켓 링크 | 리포트 |
-| `getEvaluation(taskId)` | 키워드 검색 비교, 정답지 점수 | 데모 비교 |
+| `EXTRACTING` | 바뀐 조항을 찾는 중 | 대기 |
+| `LOCATING` | 영향 받는 상품 규칙을 찾는 중 | 대기 |
+| `DESIGNING` | 업데이트 제안을 만드는 중 (2차부터는 "다시 만드는 중") | 대기 |
+| `VERIFYING` | 제안을 검사하는 중 (n차) | 대기 |
+| `WAITING_REVIEW` | 제안 확인 필요 | 반영 / 제외 고르고 반영 |
+| `PUBLISHING` | 상품 규칙에 반영하는 중 | 대기 |
+| `DONE` · `NO_CHANGE` · `REJECTED` · `FAILED` | 완료 · 실질 변경 없음 · 반영 안 함 · 시스템 오류 | 결과 보기 |
 
-mock은 `createTask` 뒤 시간 흐름으로 상태를 전환하고, interrupt 두 지점에서 멈춘다.
+`WAITING_REQUIREMENT_APPROVAL` · `HELD`는 쓰지 않는다.
 
-## 5. 화면 7개 (`src/pages/`)
+## 화면
 
-구현 순서는 어려운 것부터.
+| 화면 | 경로 | 단순화 후 | shadcn-vue |
+|---|---|---|---|
+| 로그인 | `/login` | 남김. 시연 계정 버튼 1개 | Card, Field, Input, Button, Alert |
+| 업로드 | `/tasks/new` | 남김 | Card, Field, Input(file) |
+| 진행 상황 | `/tasks/:id` | 남김. 단계 이름만 새 흐름으로 | Badge, Spinner, Alert, Card |
+| **개정 브리핑** | `/tasks/:id/briefing` (가칭) | **새로.** 아래 구성 | Card, Table · Item, Badge, Collapsible, Sheet, ToggleGroup, AlertDialog |
+| 결과 · 비교 | `/tasks/:id/result` (가칭) | 리포트 · 데모 비교를 합침 | Card, Progress, Table, Badge |
+| 요건 확정, 영향 위치, 검토 · 승인(diff) | | 삭제. 브리핑에 흡수 | |
 
-| 순서 | 화면 | 경로 | 핵심 컴포넌트 | 추가 라이브러리 |
-|---|---|---|---|---|
-| 1 | ② 검토 · 승인 | `/tasks/:id/review` | Tabs, Badge, Alert, Dialog, Textarea | diff 뷰어 (`diff2html` 또는 `v-code-diff`) |
-| 2 | ① 요건 확정 | `/tasks/:id/requirements` | Card, Checkbox, RadioGroup, Tabs | — |
-| 3 | 영향 위치 | `/tasks/:id/locations` | Table, Badge, Collapsible, Tooltip | TanStack Table |
-| 4 | 진행 상황 | `/tasks/:id` | Badge, Separator, Skeleton | — |
-| 5 | 업로드 | `/tasks/new` | Card, Input(file), Progress | — |
-| 6 | 리포트 | `/tasks/:id/report` | Card, Table, Button | `markdown-it` |
-| 7 | 데모 비교 | `/tasks/:id/evaluation` | Table, Badge, Progress | — |
+개정 브리핑 구성 (위에서 아래로):
+1. 요약: 규정 이름, 시행일(D-day), 실질 변경 n건, 제안 n건
+2. **신구조문 대비표**: 바뀐 조항, 바뀐 글자 강조. 표현만 바뀐 조항은 접어서 "실질 변경 없음"
+3. **상품 업데이트 제안**: 상품 · 규칙 · 지금 값 → 제안 값 · 시행일 · 근거 조항 · 판단 이유, 제안마다 반영 / 제외. "새 규칙 필요"는 따로 표시
+4. **대상 아님**: 같은 숫자 · 다른 의미, 이미 기준 충족 + 이유
+5. **기존 계약 영향**: 시행일 전 신청이라 종전 기준이 유지되는 계약
+6. **자동 검사 결과**: 1차 · 2차 검증, 통과 항목
+7. 아래 고정 바: "제안 4건 중 n건 반영" + [반영] (확인 대화상자)
 
-목록 화면 `/tasks`는 4번과 함께 만든다.
+공통: 상단바(`AppHeader`: 사용자 이름 · 데모 초기화 · 로그아웃), 작업 메뉴(`TaskNav`: 링크), 토스트(Sonner).
 
-## 6. 상태별 전환
+shadcn-vue 컴포넌트의 `data-open:` · `data-checked:` · `data-active:` · `data-horizontal:` 같은 축약 조건은 `style.css`의 `@custom-variant`로 reka-ui의 `data-state` · `data-orientation`에 연결한다. 없으면 탭 배치 · 선택 표시 · 열고 닫기 효과가 깨진다.
 
-- 라우터 가드: 작업 상태에 따라 허용되는 화면만 진입. 그 외는 진행 상황으로 리다이렉트.
-- 역할 가드: ① 요건 확정은 담당자, ② 검토 · 승인은 개발자만.
-- 모든 화면에 로딩(Skeleton) · 빈 화면 · 오류 화면.
-- 검증 실패 패치는 승인 버튼 비활성. 서버도 막지만 화면에서도 막는다.
+## 갤러리 (`/gallery`)
 
-## 8. 실서버 연결
+- 서버 · 로그인 · 기다림 없이 단계별 화면을 한 페이지에서 본다. 개발 빌드에서만 연다.
+- 데이터는 `scenario(events, now)`로 원하는 단계를 바로 만든다. 단계 선택: 진행 중 · 1차 검증 실패 · 제안 확인 대기 · 반영 중 · 완료.
+- 화면은 **불러오기(페이지)와 보여주기(컴포넌트)를 나눈다.** 보여주기 컴포넌트는 데이터를 props로만 받아서 갤러리와 실제 앱이 같은 컴포넌트를 쓴다.
 
-백엔드 명세가 확정되면 바꾸는 곳은 세 파일만이어야 한다.
+## 데이터 · 가짜 서버 (`src/mocks/`)
+
+| 부분 | 파일 | 하는 일 | 단순화 후 |
+|---|---|---|---|
+| 계산 | `scenario.ts` | 사람이 한 일과 지금 시각으로 단계와 보이는 데이터를 계산. 타이머 없음 | 단계 순서 교체, 사람이 한 일은 업로드 · 확인(반영/제외) 두 가지 |
+| 저장 | `store.ts` | 작업마다 사람이 한 일. localStorage(`rr.mock.tasks.v1`), 요청마다 다시 읽음 | 저장 모양이 바뀌므로 키를 v2로 |
+| 응답 | `handlers.ts` | 백엔드와 같은 검사 규칙 · 문구 | 역할 검사 제거, 제안 조회 · 확인 · 초기화 응답 추가 |
+| 가짜 데이터 | `fixtures/creditLoan/` | 규정 v3 → v4 1건 | 제안 4건(R001 · R011 · R010 · 제15조의2), 대상 아님, 계약 영향(C0002 · C0004 · C0006), 1차 · 2차 검증 결과 |
+
+- 근거: 규정 원문 `data/regulations/credit-loan-ops/`, 상품 규칙 정답 `eval/answer_key.md` 2절, 계약 3절.
+- `creditLoan.spec.ts`가 원문 · 정답지와 맞는지 계속 검사한다.
+- 가짜 서버의 경로는 `API_BASE`(`/api`)에 고정한다. `*/api/*`처럼 넓게 잡으면 `/src/api/*.ts` 소스 요청까지 가로챈다.
+
+## 도메인 타입 (`src/domain/`)
+
+백엔드 응답의 칸 이름과 값을 그대로 따른다. 자유 형식 칸(`detail`, `payload`)만 뺀다.
+
+| 타입 | 단순화 후 |
+|---|---|
+| `AnalysisTask`, `TaskStatus`, `RegulationDocument`, `Requirement`, `ChangeSpec`, `Approval`, `User` | 남김 (`Role`은 화면에서 안 씀) |
+| **`RuleProposal`** (가칭) | 새로. 백엔드 `rule_proposals`가 확정되면 맞춘다. 상품 · 규칙(새 규칙이면 없음) · 단위 · 지금 값 · 제안 값 · 시행일 · 종전 행 종료일 · 근거 조항 · 판단 이유 · 반영/제외 · 검증 결과 |
+| **`ContractImpact`** (가칭) | 새로. 계약 · 상품 · 신청일 · 신청 당시 나이 · 종전 기준 유지 여부 |
+| `CodePatch`, `TestCase`, `Delivery` | 안 씀 (S4에서 정리) |
+
+## 화면 동작 (그대로 유지)
+
+- 로그인 가드만 둔다: 로그인 안 했으면 `/login?redirect=…`. 로그인 상태는 탭마다 따로(sessionStorage).
+- 작업 상태는 레이아웃(`TaskLayout`) 한 곳에서 1초마다 받고, 각 화면은 작업이 바뀔 때(`updatedAt`) 자기 데이터를 다시 받는다. 제출 뒤에는 최신 상태를 받은 다음 이동한다.
+- 단계가 맞지 않으면 화면을 막지 않고 안내한다. 1초 폴링 중 상태가 바뀌어도 화면이 튕기지 않게.
+- 로딩은 첫 로딩에만 Skeleton, 데이터가 없으면 Empty, 동작 오류는 토스트, 없는 작업은 Empty + "새 작업".
+- 화면 파일을 못 불러오면(새 배포 등) 한 번만 새로고침해서 복구한다.
+
+## 실서버 연결
+
+바꾸는 곳은 아래 네 파일만이어야 한다.
 
 | 파일 | 바뀌는 것 |
 |---|---|
-| `src/api/client.ts` | 인증 헤더, 에러 형식 |
-| `src/api/mappers.ts` | 서버 JSON → 도메인 타입 |
-| `src/composables/useTaskPolling.ts` | 폴링 ↔ SSE |
+| `vite.config.ts` | 개발 서버의 `/api` 요청을 백엔드(`localhost:8080`)로 프록시 |
+| `src/api/client.ts` | `Authorization: Bearer` 토큰, 에러 형식 `{error, message}`, 401이면 로그인으로 |
+| `src/api/types.ts` | 응답 모양이 달라진 항목. 도메인 타입이 응답과 같아서 변환 층은 두지 않는다 |
+| `src/composables/useTaskPolling.ts` | `GET /tasks/{id}` + `/events?after=` 폴링 (SSE는 나중에) |
 
-## 백엔드와 확인할 것
+## 배포
 
-| 질문 | 영향 | 프론트 제안 |
-|---|---|---|
-| 프론트는 Spring만 호출하나? (AI 엔진 직접 호출 없음) | 서버 주소, 인증 | Spring 하나로 통일 |
-| 인증: 세션 쿠키 vs JWT | `client.ts` | 데모는 역할 전환 버튼 |
-| 진행 상황: 폴링 vs SSE | `useTaskPolling` | MVP는 폴링 |
-| ① 요건 확정에서 내용 수정이 되나, 확정 · 보류만인가? | 편집 UI 유무 | 확정 · 보류만 |
-| ② "수정함"은 화면에서 코드를 직접 고치는 것인가? | 코드 편집기 유무 | MVP는 코멘트로 수정 요청 |
-| 검증 실패 패치의 publish 차단에 예외가 있나? | 예외 승인 UI | 예외 없음 |
-| 규정 파일 형식 | 업로드 화면 | 텍스트 · Markdown |
-| 작업 티켓은 어디에 생기나? | 링크 대상 | — |
-| 명세서 출력 형식 | 다운로드 기능 | 화면 + Markdown |
-| history 모드 라우팅 → Spring SPA fallback 필요 | 배포 | 모든 경로 → `index.html` |
+- frontend 컨테이너(nginx)가 빌드 결과를 서빙한다. history 라우팅은 `try_files $uri /index.html`.
+- `/api` 요청은 nginx가 backend로 넘긴다.
+- `docker-compose.yml`의 frontend 서비스 주석을 푼다.
+
+## 백엔드와 맞출 것
+
+| 항목 | 상태 |
+|---|---|
+| 제안 조회 · 확인(반영/제외) API, `rule_proposals` 모양 | 백엔드(C) 작업 후 확정 |
+| 시연 리셋 API | 백엔드(C) 작업 후 확정. 화면의 "데모 초기화"가 호출 |
+| 계약 영향을 화면에 줄 방법 | 지금은 `/internal`에만 있다. 공개 API나 제안 응답에 포함 필요 |
+| 진행 이벤트 문장 ("바뀐 조항 3건을 찾았어요") | Agent ↔ Spring 연결 후 `/events`로 |
+| 규정 파일 형식 | `.md` · `.markdown` · `.txt`, UTF-8, 파일당 1MB 이하 (확인됨) |
+| history 라우팅 | frontend nginx가 처리 (확인됨) |
+
+## 아직 정할 것
+
+- 화면 경로 이름(`briefing`, `result`)과 작업 메뉴 구성.
+- `articleRef`에 조항 제목도 넣을지 (`제15조` → `제15조(고령자 기준)`). 신구조문 대비표에 필요하다.
+- 평가의 `keywordBaseline` 모양. 프론트는 `{missed: specKey[], wrong: specKey[]}`로 가정했다.
