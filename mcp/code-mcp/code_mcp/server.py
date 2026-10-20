@@ -95,7 +95,7 @@ def check_patch(patches: list[dict], test_cases: list[dict] | None = None) -> di
     Returns:
         {results: [{bundle_id, ok, errors, files}],
          system: {ok, errors, missed_locations},
-         tests: {generated, executed, skipped_without_code}}
+         tests: {generated, skipped_without_code}}
     """
     return _guard(sandbox.check_patch, patches, test_cases or [])
 
