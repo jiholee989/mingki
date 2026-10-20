@@ -30,6 +30,9 @@ APPLIED = [
      "effectiveFrom": "2026-12-01", "effectiveTo": None},
 ]
 CONTRACTS = Path(__file__).resolve().parents[3] / "docs" / "contracts"
+KEYS = json.loads((CONTRACTS / "rule-keys.get.json").read_text(encoding="utf-8"))
+APPLY = json.loads((CONTRACTS / "apply.post.json").read_text(encoding="utf-8"))
+JOB = json.loads((CONTRACTS / "apply.job.json").read_text(encoding="utf-8"))
 PRODUCTS = [
     {"productId": "P001", "name": "리플 직장인 신용대출", "status": "ON_SALE"},
     {"productId": "P012", "name": "리플 직장인 신용대출(구)", "status": "SALE_ENDED"},
@@ -49,7 +52,19 @@ class FakeSpring:
             key = req.url.params.get("key")
             return httpx.Response(200, json=[r for r in RULES if key is None or r["ruleKey"] == key])
         if path == "/internal/products":
-            return httpx.Response(200, json=PRODUCTS)
+            status = req.url.params.get("status")
+            return httpx.Response(200, json=[p for p in PRODUCTS if status is None or p["status"] == status])
+        if path == "/internal/product-rules/keys":
+            return httpx.Response(200, json=KEYS)
+        if path == "/internal/product-rules/versions":
+            body = json.loads(req.content)
+            if body["approvalId"] != 12:
+                return httpx.Response(403, json={"error": "FORBIDDEN", "message": "최신 REVIEW 승인이 아닙니다"})
+            if body["proposalKey"] == "P003:DSR_LIMIT":
+                return httpx.Response(409, json={"error": "CONFLICT", "message": "이미 바뀐 규칙"})
+            return httpx.Response(202, json=APPLY["response"])
+        if path == f"/internal/jobs/{JOB['id']}":
+            return httpx.Response(200, json={**JOB, "payload": {"secret": "내부값"}, "idempotencyKey": "k"})
         if path in ("/internal/products/P001/rules", "/internal/products/P002/rules"):
             pid = path.split("/")[3]
             return httpx.Response(200, json=[r for r in RULES if r["productId"] == pid])
@@ -81,7 +96,7 @@ async def test_tools_are_registered():
     async with Client(server.mcp) as c:
         names = {t.name for t in await c.list_tools()}
     assert names == {"get_products", "get_product_rules", "list_rule_keys", "get_db_schema", "get_contract_impact",
-                     "create_work_ticket"}
+                     "create_work_ticket", "apply_rule_version", "get_job"}
 
 
 async def test_sends_internal_token_and_caller(spring):
@@ -174,36 +189,99 @@ async def test_bad_as_of_is_tool_error(spring):
         await call("get_product_rules", {"as_of": "2026/12/01"})
 
 
-async def test_list_rule_keys_summarizes_keys_units_and_products(spring):
-    keys = {k["ruleKey"]: k for k in await call("list_rule_keys", {"as_of": "2026-10-20"})}
-    assert keys["DSR_LIMIT"] == {"ruleKey": "DSR_LIMIT", "units": ["ratio"], "productIds": ["P002"],
-                                 "activeRows": 1, "closedRows": 1, "upcomingRows": 0}
-    # 같은 개념, 다른 키 · 단위도 그대로 드러난다
-    assert keys["MAX_DSR_RATIO"]["units"] == ["percent"]
-    assert "key" not in spring.requests[0].url.params   # 전체 규칙에서 집계
+async def test_list_rule_keys_passes_backend_keys_through(spring):
+    # 집계는 Spring 한 곳 (GET /internal/product-rules/keys, 10.5). 응답은 계약 예시 그대로
+    assert await call("list_rule_keys", {"as_of": "2026-12-01"}) == KEYS
+    assert spring.requests[0].url.params["asOf"] == "2026-12-01"
 
 
-async def test_list_rule_keys_counts_upcoming_rows_after_apply(spring, monkeypatch):
-    monkeypatch.setattr(server, "_today", lambda: date(2026, 10, 20))   # 생략하면 오늘
-    RULES.extend(APPLIED)
-    try:
-        before = {k["ruleKey"]: k for k in await call("list_rule_keys")}["DSR_LIMIT"]
-        after = {k["ruleKey"]: k for k in await call("list_rule_keys", {"as_of": "2026-12-01"})}["DSR_LIMIT"]
-    finally:
-        del RULES[-len(APPLIED):]
-    assert (before["activeRows"], before["closedRows"], before["upcomingRows"]) == (2, 1, 1)
-    assert before["productIds"] == ["P001", "P002"]
-    assert (after["activeRows"], after["closedRows"], after["upcomingRows"]) == (2, 2, 0)
+async def test_list_rule_keys_defaults_to_today(spring, monkeypatch):
+    monkeypatch.setattr(server, "_today", lambda: date(2026, 10, 20))
+    await call("list_rule_keys")
+    assert spring.requests[0].url.params["asOf"] == "2026-10-20"
 
 
-async def test_list_rule_keys_matches_contract_shape(spring):
-    # docs/contracts/rule-keys.get.json 의 필드를 모두 낸다 (협업 규칙: 각 영역 테스트가 같은 예시를 읽는다).
-    # upcomingRows는 백엔드 92f87d0(계약에 upcomingRows 추가)이 main에 들어오면 계약 파일에도 생긴다.
-    contract = json.loads((CONTRACTS / "rule-keys.get.json").read_text(encoding="utf-8"))
-    keys = await call("list_rule_keys", {"as_of": "2026-10-20"})
-    contract_fields = set().union(*contract)
-    assert all(contract_fields <= set(k) for k in keys), contract_fields
-    assert all(set(k) <= contract_fields | {"upcomingRows"} for k in keys)
+async def test_products_status_is_sent_to_backend(spring):
+    await call("get_products", {"status": "SALE_ENDED"})
+    assert spring.requests[0].url.params["status"] == "SALE_ENDED"
+
+
+# ---------- 반영 · 작업 상태 (10.4) ----------
+
+async def test_apply_request_matches_contract(spring):
+    req = APPLY["request"]
+    out = await call("apply_rule_version", {
+        "task_id": req["taskId"], "approval_id": req["approvalId"], "proposal_key": req["proposalKey"]})
+    assert out == APPLY["response"]
+    sent = spring.requests[0]
+    assert sent.method == "POST" and sent.url.path == "/internal/product-rules/versions"
+    assert json.loads(sent.content) == req   # 값(지금 값 · 제안 값)은 보내지 않는다. 기본 멱등키 형식도 계약대로
+
+
+async def test_apply_keeps_given_idempotency_key(spring):
+    req = APPLY["request"]
+    await call("apply_rule_version", {"task_id": req["taskId"], "approval_id": 12, "proposal_key": "P002:DSR_LIMIT",
+                                      "idempotency_key": "retry-1"})
+    assert json.loads(spring.requests[0].content)["idempotencyKey"] == "retry-1"
+
+
+@pytest.mark.parametrize("args, reason", [
+    ({"approval_id": 999}, "403 FORBIDDEN: 최신 REVIEW 승인이 아닙니다"),
+    ({"proposal_key": "P003:DSR_LIMIT"}, "409 CONFLICT: 이미 바뀐 규칙"),
+])
+async def test_apply_rejection_reason_reaches_agent(spring, args, reason):
+    base = {"task_id": APPLY["request"]["taskId"], "approval_id": 12, "proposal_key": "P001:DSR_LIMIT"}
+    with pytest.raises(ToolError, match=reason):
+        await call("apply_rule_version", {**base, **args})
+
+
+@pytest.mark.parametrize("args, reason", [
+    ({"task_id": "../tasks"}, "잘못된 task_id"),
+    ({"task_id": ""}, "잘못된 task_id"),
+    ({"proposal_key": "  "}, "proposal_key가 비어"),
+])
+async def test_apply_bad_input_never_reaches_backend(spring, args, reason):
+    base = {"task_id": APPLY["request"]["taskId"], "approval_id": 12, "proposal_key": "P001:DSR_LIMIT"}
+    with pytest.raises(ToolError, match=reason):
+        await call("apply_rule_version", {**base, **args})
+    assert spring.requests == []
+
+
+async def test_get_job_returns_status_result_and_error_only(spring):
+    job = await call("get_job", {"job_id": JOB["id"]})
+    assert job == {"jobId": JOB["id"], "type": "APPLY_RULE_VERSION", "status": "DONE", "attempts": 1,
+                   "result": JOB["result"], "lastError": None}   # payload · 멱등키 같은 내부 값은 빼고
+
+
+@pytest.mark.parametrize("job_id", ["../tasks", "", "4f1c2b8e"])
+async def test_get_job_bad_id_never_reaches_backend(spring, job_id):
+    with pytest.raises(ToolError, match="잘못된 job_id"):
+        await call("get_job", {"job_id": job_id})
+    assert spring.requests == []
+
+
+async def test_get_job_unknown_is_tool_error(spring):
+    with pytest.raises(ToolError, match="404"):
+        await call("get_job", {"job_id": "00000000-0000-4000-8000-000000000000"})
+
+
+@pytest.mark.parametrize("response, reason", [
+    (httpx.Response(200, text="<html>"), "JSON이 아닙니다"),
+    (httpx.Response(200, json=[JOB]), "작업 응답 형식 오류"),
+    (httpx.Response(200, json={"id": JOB["id"]}), "작업 응답 형식 오류"),   # status 없음
+    (httpx.Response(500, text="boom"), "500"),
+])
+async def test_unexpected_job_response_is_tool_error(monkeypatch, response, reason):
+    _respond(monkeypatch, response)
+    with pytest.raises(ToolError, match=reason):
+        await call("get_job", {"job_id": JOB["id"]})
+
+
+async def test_dead_job_shows_last_error(monkeypatch):
+    dead = {**JOB, "status": "DEAD", "result": None, "lastError": "이미 바뀐 규칙"}
+    _respond(monkeypatch, httpx.Response(200, json=dead))
+    job = await call("get_job", {"job_id": JOB["id"]})
+    assert (job["status"], job["lastError"], job["result"]) == ("DEAD", "이미 바뀐 규칙", None)
 
 
 @pytest.mark.parametrize("args, reason", [
@@ -228,7 +306,7 @@ def _respond(monkeypatch, response):
     ({**RULES[1], "unit": None}, "unit"),
     ({k: v for k, v in RULES[1].items() if k != "ruleKey"}, "ruleKey"),
 ])
-@pytest.mark.parametrize("tool", ["get_product_rules", "list_rule_keys"])
+@pytest.mark.parametrize("tool", ["get_product_rules"])
 async def test_malformed_rule_from_backend_names_row_and_field(monkeypatch, rule, field, tool):
     _respond(monkeypatch, httpx.Response(200, json=[RULES[0], rule]))
     with pytest.raises(ToolError, match=f"R011의 {field}"):
@@ -252,6 +330,12 @@ async def test_backend_timeout_is_tool_error(monkeypatch):
         raise httpx.ReadTimeout("slow")
     monkeypatch.setattr(server, "backend", Backend("http://spring", "t", transport=httpx.MockTransport(slow)))
     with pytest.raises(ToolError, match="연결할 수 없습니다"):
+        await call("list_rule_keys")
+
+
+async def test_malformed_keys_from_backend_is_tool_error(monkeypatch):
+    _respond(monkeypatch, httpx.Response(200, json=[{"units": ["ratio"]}]))
+    with pytest.raises(ToolError, match="ruleKey가 없는 항목"):
         await call("list_rule_keys")
 
 
