@@ -57,6 +57,16 @@ class RuleVersionsTest {
     }
 
     @Test
+    void futureVersionBlocksAnEarlierEffectiveDate() {
+        // 2027-01-01 시행으로 한 번 반영된 뒤(R001 은 12-31 까지, R083 은 1-1 부터), 같은 R001 을 12-01 시행으로 또 반영하려는 경우.
+        // 시행일(12-01)에 유효한 다른 행은 없지만, 끝이 없는 새 행을 넣으면 1-1 부터 R083 과 함께 유효해진다.
+        var rows = List.of(row("R001", "0.40", "2024-01-01", "2026-12-31"), row("R083", "0.35", "2027-01-01", null));
+        assertThat(RuleVersions.problem("R001", "0.40", EFFECTIVE, rows, TODAY)).contains("R083");
+        // 새 규칙도 같다
+        assertThat(RuleVersions.problem(null, null, EFFECTIVE, List.of(row("R090", "true", "2027-01-01", null)), TODAY)).contains("R090");
+    }
+
+    @Test
     void endedOldVersionIsNotTheCurrentRule() {
         // P011: R074 는 2023 년에 끝났다. R074 를 고치려는 제안은 받지 않는다
         var rows = List.of(row("R074", "0.50", "2023-01-01", "2023-12-31"), row("R075", "0.40", "2024-01-01", null));
