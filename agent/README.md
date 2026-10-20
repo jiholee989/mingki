@@ -112,9 +112,35 @@ live는 최신 MCP의 `list_regulations` → `list_articles` · `get_article`, `
 
 Docker를 사용한다면 최신 main을 받은 뒤 규정·업무 MCP 이미지를 다시 빌드한다. 서버 실행 설정은 [MCP 안내](../mcp/README.md)를 참고한다.
 
-`AgentRunner.start_backend` / `resume_backend`와 camelCase payload 변환은 연결 지점이다.
-현재 HTTP 서버·콜백·쓰기 도구·대기열·실제 상품 반영은 구현하지 않았다.
-`backend.py`의 변환은 연결 초안이며 최신 백엔드의 제안 저장·승인 API 계약과 맞추는 작업은 별도다. MCP를 통한 백엔드 조회와 이 HTTP 연결을 구분한다.
-검토 체크포인터·이력은 프로세스 메모리에 있으므로 종료 시 사라진다. 서비스 연결 때 인증·영구 저장·분산 잠금이 필요하다.
+## 백엔드 연결 (HTTP 어댑터)
+
+Spring이 `/run` · `/resume`을 부르면 바로 202를 돌려주고 그래프는 백그라운드에서 돈다. 진행 상황과 산출물은 `callbackBaseUrl` 아래 `/internal/tasks/{taskId}/**`로 보낸다. 계약은 `docs/BACKEND_API.md` 10절.
+
+```bash
+AGENT_MODE=llm AGENT_CHECKPOINT_DB=postgresql://ruleripple:ruleripple@localhost:5432/ruleripple \
+uv run uvicorn app.server:create_app --factory --port 8000
+```
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `AGENT_MODE` | `llm` | `llm`(로컬 자료) · `live`(MCP). 둘 다 실제 LLM 키 필요 |
+| `AGENT_CHECKPOINT_DB` | 없음 | 있으면 Postgres 체크포인터(`agent` 스키마). 승인 대기 중 재시작해도 재개된다 |
+| `INTERNAL_TOKEN` | `rr-internal-dev-token` | Spring과 주고받는 `X-Internal-Token` |
+| `REGULATION_ID` | `credit-loan-ops` | 분석할 등록 규정. 업로드 원문 sha256이 로컬 원문과 다르면 FAILED |
+
+| 파일 | 역할 |
+|---|---|
+| `app/server.py` | FastAPI `/run` · `/resume` · `/health`, 토큰 검사 |
+| `app/bridge.py` | 노드 시작 · 완료를 Spring 콜백으로. Agent 제안(상품 × 요건, `changes[]`)을 백엔드 행(상품 × 규칙)으로 펼치고, 유지 판정은 `keep` 행으로 보낸다 |
+| `app/spring.py` | Spring `/internal/**` 클라이언트 |
+| `app/checkpoint.py` | Postgres 체크포인터 |
+
+사람 확인은 1번이다 (SIMPLIFICATION v2). 백엔드의 `APPROVE + excludedProposalKeys`를 제안별 `approve` · `reject` + `finish`로 바꿔 넘긴다. 수정 요청 · 직접 편집은 CLI에서만 쓰고 백엔드 경로에서는 쓰지 않는다.
+
+판정 · 상태 대응: `no_change → keep`, `needs_review → needs_check`, 리포트 `APPROVED` · `PARTIALLY_APPROVED → DONE`, `NO_ACTION → NO_CHANGE`, `REJECTED → REJECTED`.
+
+아직 없는 것: 승인 뒤 상품 규칙에 실제로 반영하는 `apply` 노드(`apply_rule_version` 호출 → `/internal/jobs/{id}` 완료 대기). 지금은 승인 즉시 `DONE`으로 끝난다.
+
+`tests/test_server.py`가 가짜 Spring으로 콜백 순서 · 제안 펼치기 · 확인 번역 · 종료 상태를 확인한다.
 
 커밋은 매번 사용자의 명시적인 허락을 받은 뒤 수행한다.

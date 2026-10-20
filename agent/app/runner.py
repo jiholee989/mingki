@@ -29,6 +29,7 @@ class AgentRunner:
         *,
         thread_id=None,
         article_ids=None,
+        listener=None,
     ):
         thread_id = thread_id or task_id
         config = self.config(thread_id)
@@ -47,9 +48,10 @@ class AgentRunner:
                     "article_ids": article_ids or [],
                 },
                 config,
+                listener,
             )
 
-    def resume(self, thread_id, decision, *, task_id=None, step=None):
+    def resume(self, thread_id, decision, *, task_id=None, step=None, listener=None):
         config = self.config(thread_id)
         with self._lock:
             snapshot = self.graph.get_state(config)
@@ -66,18 +68,25 @@ class AgentRunner:
                 validator(snapshot.values, decision)
             except ValueError as exc:
                 raise DecisionError(str(exc)) from exc
-            return self._invoke(Command(resume=decision), config)
+            return self._invoke(Command(resume=decision), config, listener)
 
-    def _invoke(self, value, config):
-        if self.on_update is None:
+    def _invoke(self, value, config, listener=None):
+        """listener: node_started(node) · node_updated(node, delta)를 가진 객체. 호출 단위로 받는다."""
+        if listener is None and self.on_update is None:
             return self.graph.invoke(value, config)
+        on_update = listener.node_updated if listener else self.on_update
         interrupts = ()
-        for update in self.graph.stream(value, config, stream_mode="updates"):
-            for node, delta in update.items():
+        for mode, chunk in self.graph.stream(value, config, stream_mode=["updates", "tasks"]):
+            if mode == "tasks":
+                # 시작 알림에만 input이 있다. 끝 알림은 updates로 받는다.
+                if listener and "input" in chunk:
+                    listener.node_started(chunk["name"])
+                continue
+            for node, delta in chunk.items():
                 if node == "__interrupt__":
                     interrupts = delta
                 else:
-                    self.on_update(node, delta)
+                    on_update(node, delta)
         out = dict(self.graph.get_state(config).values)
         if interrupts:
             out["__interrupt__"] = interrupts
@@ -91,5 +100,9 @@ class AgentRunner:
             step=request.step,
         )
 
-    def start_backend(self, request: RunRequest, *, regulation_id):
-        return self.start(**request.to_input(regulation_id))
+    def start_backend(self, request: RunRequest, *, regulation_id, listener=None):
+        return self.start(**request.to_input(regulation_id), listener=listener)
+
+    def current_proposals(self, thread_id):
+        """검토 대기 중인 제안 (버전 포함). 백엔드 확인 결과를 제안별 결정으로 바꿀 때 쓴다."""
+        return list(self.graph.get_state(self.config(thread_id)).values.get("proposals", []))

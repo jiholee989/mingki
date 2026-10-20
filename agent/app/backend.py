@@ -44,6 +44,7 @@ class ResumeRequest(BaseModel):
     approval_id: int | None = Field(default=None, alias="approvalId")
     comment: str | None = None
     payload: dict = Field(default_factory=dict)
+    callback_base_url: str | None = Field(default=None, alias="callbackBaseUrl")
 
     def to_decision(self):
         if self.step != "REVIEW" or self.decision != "REVIEW_PROPOSALS":
