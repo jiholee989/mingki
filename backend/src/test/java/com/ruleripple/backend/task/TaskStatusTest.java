@@ -28,6 +28,14 @@ class TaskStatusTest {
     }
 
     @Test
+    void simplifiedNodesMapToStatuses() {
+        assertThat(TaskStatus.fromNode("impact_agent")).isEqualTo(LOCATING);
+        assertThat(TaskStatus.fromNode("proposal_agent")).isEqualTo(DESIGNING);
+        assertThat(TaskStatus.fromNode("verify")).isEqualTo(VERIFYING);
+        assertThat(TaskStatus.fromNode("apply")).isEqualTo(PUBLISHING);
+    }
+
+    @Test
     void agentCannotSkipReview() {
         assertThat(VERIFYING.agentCanMoveTo(PUBLISHING)).isFalse();
     }

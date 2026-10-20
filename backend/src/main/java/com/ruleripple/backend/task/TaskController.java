@@ -14,6 +14,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,7 +30,9 @@ import java.util.UUID;
  *   approveRequirements(id, d)       → POST /api/ai/tasks/{id}/requirements/approval
  *   getChangeSpecs(id)               → GET  /api/ai/tasks/{id}/change-specs
  *   getPatches(id)                   → GET  /api/ai/tasks/{id}/patches
- *   reviewPatches(id, decision)      → POST /api/ai/tasks/{id}/review
+ *   getProposals(id)                 → GET  /api/ai/tasks/{id}/proposals          (v2 상품별 변경 제안)
+ *   getContractImpacts(id)           → GET  /api/ai/tasks/{id}/contract-impacts   (v2 경과조치 계약)
+ *   reviewPatches(id, decision)      → POST /api/ai/tasks/{id}/review            (v2 제안 확인 · 옛 흐름 패치 검토)
  *   getReport(id)                    → GET  /api/ai/tasks/{id}/report
  *   getEvaluation(id)                → GET  /api/ai/tasks/{id}/evaluation
  * 진행 상황
@@ -42,7 +45,9 @@ public class TaskController {
 
     public record CreateResponse(UUID taskId, String status) {}
     public record RequirementApprovalRequest(List<TaskService.RequirementDecision> decisions, String comment) {}
-    public record ReviewRequest(Approval.Decision decision, String comment, List<String> excludedSpecKeys) {}
+    /** v2 는 excludedProposalKeys, 옛 흐름은 excludedSpecKeys. */
+    public record ReviewRequest(Approval.Decision decision, String comment, List<String> excludedSpecKeys,
+                                List<String> excludedProposalKeys) {}
 
     private final TaskService service;
     private final TaskEventService events;
@@ -86,7 +91,8 @@ public class TaskController {
         List<ChangeSpec> specs = service.changeSpecs(id);
         int targets = (int) specs.stream().filter(ChangeSpec::isTarget).count();
         Counts counts = new Counts(reqs.size(), targets, specs.size() - targets,
-                TaskService.latestPatches(service.patches(id)).size(), service.testCases(id).size());
+                TaskService.latestPatches(service.patches(id)).size(), service.testCases(id).size(),
+                Proposals.latest(service.proposals(id)).size());
         return new TaskDetail(TaskSummary.of(t), t.getErrorMessage(), MAX_VERIFY_ROUNDS,
                 service.documents(id).stream().map(DocumentMeta::of).toList(),
                 PendingAction.of(t.getStatus(), t.getId()), counts,
@@ -123,6 +129,41 @@ public class TaskController {
                 all.stream().filter(c -> !c.target()).toList());
     }
 
+    // ---------- v2 제안 · 계약 영향 ----------
+
+    @GetMapping("/{id}/proposals")
+    public ProposalsResponse proposals(@PathVariable UUID id) {
+        AnalysisTask t = service.get(id);
+        List<RuleProposal> all = service.proposals(id);
+        List<RuleProposal> latest = Proposals.latest(all);
+        Set<Long> latestIds = latest.stream().map(RuleProposal::getId).collect(java.util.stream.Collectors.toSet());
+
+        // 확인 기록에서 제안마다 반영 · 제외를 붙인다. 거절이면 붙이지 않는다.
+        Map<String, String> decisions = new HashMap<>();
+        service.latestReview(id).filter(a -> a.getDecision() == Approval.Decision.APPROVE).ifPresent(a -> {
+            keys(a.getPayload(), "approvedProposalKeys").forEach(k -> decisions.put(k, "APPLY"));
+            keys(a.getPayload(), "excludedProposalKeys").forEach(k -> decisions.put(k, "EXCLUDE"));
+        });
+        int latestRound = all.stream().mapToInt(RuleProposal::getRound).max().orElse(0);
+        return new ProposalsResponse(TaskSummary.of(t), MAX_VERIFY_ROUNDS, latestRound,
+                Proposals.canApprove(t.getStatus(), latest),
+                all.stream().map(p -> {
+                    boolean isLatest = latestIds.contains(p.getId());
+                    return ProposalView.of(p, isLatest, isLatest ? decisions.get(p.getProposalKey()) : null, null);
+                }).toList());
+    }
+
+    @GetMapping("/{id}/contract-impacts")
+    public ContractImpactsResponse contractImpacts(@PathVariable UUID id) {
+        return new ContractImpactsResponse(TaskSummary.of(service.get(id)), service.contractImpacts(id));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> keys(Map<String, Object> payload, String name) {
+        Object v = payload == null ? null : payload.get(name);
+        return v instanceof List<?> l ? (List<String>) l : List.of();
+    }
+
     // ---------- ② 검토 · 승인 ----------
 
     @GetMapping("/{id}/patches")
@@ -143,7 +184,8 @@ public class TaskController {
 
     @PostMapping("/{id}/review")
     public ApprovalView review(@AuthenticationPrincipal AuthUser me, @PathVariable UUID id, @RequestBody ReviewRequest req) {
-        Approval a = service.review(id, me, req.decision(), req.comment(), req.excludedSpecKeys());
+        Approval a = service.review(id, me, req.decision(), req.comment(), req.excludedSpecKeys(),
+                req.excludedProposalKeys());
         dispatcher.resume(id, a.getId());
         return service.approvalView(a);
     }

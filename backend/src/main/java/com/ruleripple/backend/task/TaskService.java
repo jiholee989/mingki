@@ -35,12 +35,13 @@ public class TaskService {
     private final DeliveryRepository deliveries;
     private final TaskEventService events;
     private final UserRepository users;
+    private final RuleProposalRepository proposals;
 
     public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
                        RequirementRepository requirements, ChangeSpecRepository changeSpecs,
                        CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
                        DeliveryRepository deliveries, TaskEventService events,
-                       UserRepository users) {
+                       UserRepository users, RuleProposalRepository proposals) {
         this.tasks = tasks;
         this.documents = documents;
         this.requirements = requirements;
@@ -51,6 +52,7 @@ public class TaskService {
         this.deliveries = deliveries;
         this.events = events;
         this.users = users;
+        this.proposals = proposals;
     }
 
     // ===================== 생성 =====================
@@ -134,6 +136,26 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
+    public List<RuleProposal> proposals(UUID taskId) {
+        get(taskId);
+        return proposals.findByTaskIdOrderByProposalKeyAscRoundAsc(taskId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> contractImpacts(UUID taskId) {
+        List<Map<String, Object>> items = get(taskId).getContractImpacts();
+        return items == null ? List.of() : items;
+    }
+
+    /** 가장 최근 확인(REVIEW) 기록. 제안마다 반영 · 제외를 붙일 때 쓴다. */
+    @Transactional(readOnly = true)
+    public Optional<Approval> latestReview(UUID taskId) {
+        List<Approval> reviews = approvals.findByTaskIdOrderByIdAsc(taskId).stream()
+                .filter(a -> a.getStep() == Approval.Step.REVIEW).toList();
+        return reviews.isEmpty() ? Optional.empty() : Optional.of(reviews.get(reviews.size() - 1));
+    }
+
+    @Transactional(readOnly = true)
     public List<Delivery> deliveries(UUID taskId) {
         return deliveries.findByTaskIdOrderByIdAsc(taskId);
     }
@@ -149,13 +171,12 @@ public class TaskService {
         return new ArrayList<>(latest.values());
     }
 
-    // ===================== interrupt ① 요건 확정 (OFFICER) =====================
+    // ===================== interrupt ① 요건 확정 (옛 흐름) =====================
 
     public record RequirementDecision(Long requirementId, Requirement.Status decision) {}
 
     @Transactional
     public Approval approveRequirements(UUID taskId, AuthUser me, List<RequirementDecision> decisions, String comment) {
-        requireRole(me, User.Role.OFFICER, "요건 확정은 준법감시·상품기획 담당자만 할 수 있습니다");
         AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REQUIREMENT_APPROVAL);
 
         List<Requirement> reqs = requirements.findByTaskIdOrderByIdAsc(taskId);
@@ -194,11 +215,12 @@ public class TaskService {
         return saved;
     }
 
-    // ===================== interrupt ② 검토 · 승인 (DEVELOPER) =====================
+    // ===================== interrupt ② 확인 (v2 제안 확인 · 옛 흐름 패치 검토) =====================
 
     @Transactional
-    public Approval review(UUID taskId, AuthUser me, Approval.Decision decision, String comment, List<String> excludedSpecKeys) {
-        requireRole(me, User.Role.DEVELOPER, "검토·승인은 개발자만 할 수 있습니다");
+    public Approval review(UUID taskId, AuthUser me, Approval.Decision decision, String comment,
+                           List<String> excludedSpecKeys, List<String> excludedProposalKeys) {
+        if (proposals.existsByTaskId(taskId)) return reviewProposals(taskId, me, decision, comment, excludedProposalKeys);
         if (decision != Approval.Decision.APPROVE && decision != Approval.Decision.REJECT
                 && decision != Approval.Decision.REQUEST_CHANGES) {
             throw bad("decision 은 APPROVE | REJECT | REQUEST_CHANGES 입니다");
@@ -243,6 +265,44 @@ public class TaskService {
         return saved;
     }
 
+    /**
+     * v2 사용자 확인 (10.3). APPROVE 는 제외하지 않은 change_required 제안을 반영 대상으로 확정한다.
+     * 역할 검사는 없다. 로그인한 사용자 누구나.
+     */
+    private Approval reviewProposals(UUID taskId, AuthUser me, Approval.Decision decision, String comment,
+                                     List<String> excludedProposalKeys) {
+        if (decision != Approval.Decision.APPROVE && decision != Approval.Decision.REJECT) {
+            throw bad("decision 은 APPROVE | REJECT 입니다");
+        }
+        AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REVIEW);
+        List<RuleProposal> latest = Proposals.latest(proposals.findByTaskIdOrderByProposalKeyAscRoundAsc(taskId));
+        List<String> changeKeys = Proposals.changeKeys(latest);
+        List<String> excluded = excludedProposalKeys == null ? List.of() : List.copyOf(new LinkedHashSet<>(excludedProposalKeys));
+        Map<String, Object> payload = new LinkedHashMap<>();
+
+        if (decision == Approval.Decision.APPROVE) {
+            if (!Proposals.canApprove(task.getStatus(), latest)) {
+                throw conflict("근거 검사를 통과하지 못한 변경 제안이 있거나 반영할 제안이 없습니다");
+            }
+            List<String> unknown = excluded.stream().filter(k -> !changeKeys.contains(k)).toList();
+            if (!unknown.isEmpty()) throw bad("변경 필요 제안이 아닌 키입니다: " + unknown);
+            List<String> approved = changeKeys.stream().filter(k -> !excluded.contains(k)).toList();
+            if (approved.isEmpty()) throw bad("반영할 제안이 없습니다. 전부 제외하려면 REJECT 를 쓰세요");
+            payload.put("approvedProposalKeys", approved);
+        }
+        payload.put("excludedProposalKeys", excluded);
+
+        Approval saved = approvals.save(new Approval(taskId, Approval.Step.REVIEW, decision, me.id(), comment, payload));
+        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "REVIEW", "decision", decision.name(),
+                "by", me.username(), "approvalId", saved.getId()));
+        if (decision == Approval.Decision.APPROVE) {
+            events.append(taskId, "STEP", Map.<String, Object>of("node", "apply"));
+        } else {
+            events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.REJECTED.name()));
+        }
+        return saved;
+    }
+
     // ===================== helpers =====================
 
     private AnalysisTask lockAndExpect(UUID taskId, TaskStatus expected) {
@@ -252,10 +312,6 @@ public class TaskService {
             throw conflict("작업 상태가 " + task.getStatus() + " 입니다 (필요: " + expected + ")");
         }
         return task;
-    }
-
-    private static void requireRole(AuthUser me, User.Role role, String message) {
-        if (me.role() != role) throw new ResponseStatusException(HttpStatus.FORBIDDEN, message);
     }
 
     private static String readText(MultipartFile file, String field) {

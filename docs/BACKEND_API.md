@@ -318,7 +318,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 `POST /api/ai/tasks/{id}/review` ([예시](./contracts/review.post.json))
 
 ```json
-{"decision": "APPROVE", "excludedProposalKeys": ["P011:DSR_LIMIT"], "comment": "P011은 번역본 정비 후 반영"}
+{"decision": "APPROVE", "excludedProposalKeys": ["P005:DSR_LIMIT"], "comment": "P005는 화면 문구 정비 후 반영"}
 ```
 
 | 결정 | 검사 | 결과 |
@@ -327,6 +327,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | `REJECT` | | `REJECTED` |
 
 - 수정 요청(`REQUEST_CHANGES`)은 없다.
+- 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction.role`은 항상 null이고, `counts.proposals`(현재 회차 제안 수)가 붙는다.
 - Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다.
 
 ### 10.4 반영 (쓰기 도구 · 승인 필요)

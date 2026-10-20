@@ -8,6 +8,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -50,6 +51,11 @@ public class AnalysisTask {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> evaluation;
+
+    /** 경과조치로 종전 기준이 유지되는 계약 (v2 10.6). Agent 가 통째로 바꾼다. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "contract_impacts", columnDefinition = "jsonb")
+    private List<Map<String, Object>> contractImpacts;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;

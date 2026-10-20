@@ -22,6 +22,8 @@ import java.util.UUID;
  *   PUT  /internal/tasks/{id}/change-specs locate_agent 결과 (specKey upsert)
  *   POST /internal/tasks/{id}/test-cases   test_agent 결과 (한 번만, 이후 고정)
  *   PUT  /internal/tasks/{id}/patches      design 패치 · verify 결과 (bundle·round·filePath upsert)
+ *   PUT  /internal/tasks/{id}/proposals          v2 제안 · 근거 검사 결과 ((proposalKey, round) upsert)
+ *   PUT  /internal/tasks/{id}/contract-impacts   v2 경과조치 계약 영향 (전체 교체)
  *   PUT  /internal/tasks/{id}/report       report 노드 결과
  *   PUT  /internal/tasks/{id}/evaluation   정답지 점수 · 키워드 검색 비교
  */
@@ -87,6 +89,16 @@ public class InternalTaskController {
     @PutMapping("/patches")
     public Map<String, Object> patches(@PathVariable UUID taskId, @RequestBody Items<AgentResultService.PatchItem> body) {
         return Map.<String, Object>of("saved", results.upsertPatches(taskId, body.items()));
+    }
+
+    @PutMapping("/proposals")
+    public Map<String, Object> proposals(@PathVariable UUID taskId, @RequestBody Items<Proposals.Item> body) {
+        return Map.<String, Object>of("saved", results.upsertProposals(taskId, body.items()));
+    }
+
+    @PutMapping("/contract-impacts")
+    public Map<String, Object> contractImpacts(@PathVariable UUID taskId, @RequestBody Items<Map<String, Object>> body) {
+        return Map.<String, Object>of("saved", results.replaceContractImpacts(taskId, body.items()));
     }
 
     @PutMapping("/report")
