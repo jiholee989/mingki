@@ -11,7 +11,7 @@ async def test_tools_are_registered():
     async with Client(mcp) as c:
         names = {t.name for t in await c.list_tools()}
     assert names == {
-        "diff_versions", "search_regulation", "get_article", "list_articles", "search_product_docs", "get_product_doc",
+        "list_regulations", "diff_versions", "search_regulation", "get_article", "list_articles", "search_product_docs", "get_product_doc",
     }
 
 
@@ -68,3 +68,22 @@ async def test_missing_article_resource_errors():
     async with Client(mcp) as c:
         with pytest.raises(Exception):
             await c.read_resource("reg://credit-loan-ops/v4/999")
+
+
+async def test_list_regulations_over_mcp():
+    async with Client(mcp) as c:
+        regs = {r["regulation_id"]: r for r in (await c.call_tool("list_regulations", {})).data}
+    assert {"credit-loan-ops", "dsr-management", "consumer-explanation", "senior-protection"} <= set(regs)
+    ops = regs["credit-loan-ops"]
+    assert ops["latest_version"] == "v4"
+    assert [v["version"] for v in ops["versions"]] == ["v3", "v4"]
+    assert ops["versions"][1] == {"version": "v4", "effective_from": "2026-12-01", "previous_version": "v3",
+                                  "uri": "reg://credit-loan-ops/v4"}
+
+
+async def test_diff_versions_defaults_to_latest_and_previous():
+    async with Client(mcp) as c:
+        r = await c.call_tool("diff_versions", {"regulation_id": "credit-loan-ops"})
+        first = await c.call_tool("diff_versions", {"regulation_id": "senior-protection"}, raise_on_error=False)
+    assert (r.data["old_version"], r.data["new_version"]) == ("v3", "v4")
+    assert first.is_error and "첫 버전" in first.content[0].text

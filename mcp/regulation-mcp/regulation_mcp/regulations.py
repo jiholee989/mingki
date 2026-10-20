@@ -96,8 +96,15 @@ def list_articles(regulation_id: str, version: str, root: Path = REGULATIONS_DIR
     ]
 
 
-def diff_versions(regulation_id: str, old_version: str, new_version: str, root: Path = REGULATIONS_DIR) -> dict:
-    """원문 기준 결정적 diff. 바뀐 조항만 돌려준다 (자구 수정 포함 — 실질 여부 판단은 Agent 몫)."""
+def diff_versions(
+    regulation_id: str, old_version: str | None = None, new_version: str | None = None, root: Path = REGULATIONS_DIR
+) -> dict:
+    """원문 기준 결정적 diff. 바뀐 조항만 돌려준다 (자구 수정 포함 — 실질 여부 판단은 Agent 몫).
+
+    new_version을 생략하면 최신 버전, old_version을 생략하면 new_version의 frontmatter previous_version.
+    """
+    new_version = new_version or latest_version(regulation_id, root)
+    old_version = old_version or previous_version(regulation_id, new_version, root)
     old = load(regulation_id, old_version, root)
     new = load(regulation_id, new_version, root)
     changes = []
@@ -130,6 +137,42 @@ def latest_version(regulation_id: str, root: Path = REGULATIONS_DIR) -> str:
     if regulation_id not in versions:
         raise RegulationError(f"규정이 없습니다: {regulation_id} (가능: {list(versions)})")
     return versions[regulation_id][-1]
+
+
+def previous_version(regulation_id: str, version: str, root: Path = REGULATIONS_DIR) -> str:
+    """frontmatter previous_version. 없거나 그 파일이 없으면 RegulationError."""
+    prev = load(regulation_id, version, root)["meta"].get("previous_version")
+    if not prev:
+        raise RegulationError(f"{regulation_id} {version}은 이전 버전이 없는 첫 버전입니다. old_version을 직접 지정하세요")
+    if prev not in list_versions(root).get(regulation_id, []):
+        raise RegulationError(f"{regulation_id} {version}의 이전 버전 {prev} 원문이 없습니다 (가능: {list_versions(root)[regulation_id]})")
+    return prev
+
+
+def _frontmatter_list(value: str | None) -> list[str] | None:
+    """'[P001, P002]' → ['P001', 'P002']. 값이 없으면 None (정보 없음과 빈 목록을 구분)."""
+    if value is None:
+        return None
+    return [v.strip() for v in value.strip().strip("[]").split(",") if v.strip()]
+
+
+def list_regulations(root: Path = REGULATIONS_DIR) -> list[dict]:
+    """규정 목록. 버전별 시행일 · 이전 버전과, 최신 버전 frontmatter의 applies_to(적용 상품)."""
+    out = []
+    for rid, versions in list_versions(root).items():
+        metas = [load(rid, v, root)["meta"] for v in versions]
+        out.append({
+            "regulation_id": rid,
+            "title": metas[-1].get("title", rid),
+            "latest_version": versions[-1],
+            "applies_to": _frontmatter_list(metas[-1].get("applies_to")),
+            "versions": [
+                {"version": v, "effective_from": m.get("effective_from"),
+                 "previous_version": m.get("previous_version"), "uri": uri(rid, v)}
+                for v, m in zip(versions, metas)
+            ],
+        })
+    return out
 
 
 def resolve_scope(regulation_id: str | None, version: str | None, root: Path = REGULATIONS_DIR) -> list[tuple[str, str]]:

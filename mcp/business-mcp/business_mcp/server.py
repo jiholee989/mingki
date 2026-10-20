@@ -21,6 +21,7 @@ mcp = FastMCP(
     "business-mcp",
     instructions=(
         "리플은행 개인신용대출의 상품 · 상품 규칙 · 계약 데이터 (Spring 백엔드 응답 그대로). "
+        "어떤 규칙 키가 있는지는 list_rule_keys로 먼저 본다. "
         "상품 규칙은 effectiveTo가 null이면 현재 유효하다. "
         "create_work_ticket은 검토 · 승인(approval_id) 이후 publish 단계에서만 쓴다."
     ),
@@ -39,36 +40,69 @@ def _call(fn, *args, **kwargs):
 # ---------- 읽기 ----------
 
 @mcp.tool(annotations={"readOnlyHint": True})
-def get_products() -> list[dict]:
+def get_products(status: Literal["ON_SALE", "SALE_ENDED"] | None = None) -> list[dict]:
     """상품 목록.
+
+    Args:
+        status: ON_SALE(판매 중) | SALE_ENDED(판매 중단). 생략하면 전체
 
     Returns:
         [{productId, name, description, repaymentTypes, minTermMonths, maxTermMonths, status}]
     """
-    return _call(backend.get, "/internal/products")
+    products = _call(backend.get, "/internal/products")
+    return [p for p in products if status is None or p.get("status") == status]
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
-def get_product_rules(rule_key: str | None = None, product_id: str | None = None) -> list[dict]:
+def get_product_rules(
+    rule_key: str | None = None, product_id: str | None = None, active_only: bool = False
+) -> list[dict]:
     """상품 규칙 (rule_key · product_id로 좁힐 수 있음, 둘 다 없으면 전체).
 
     같은 숫자라도 rule_key가 다르면 의미가 다르다 (예: DSR_LIMIT 0.40 vs MORTGAGE_LTV_LIMIT 0.40).
+    어떤 키가 있는지 모르면 list_rule_keys를 먼저 본다.
 
     Args:
         rule_key: 규칙 키 (예: "DSR_LIMIT", "ELIGIBLE_MIN_AGE")
         product_id: 상품 ID (예: "P002")
+        active_only: True면 지금 유효한 행(effectiveTo가 null)만. 종료된 옛 버전 행을 뺀다
 
     Returns:
         [{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]
-        unit: ratio | percent_point | krw | age | score | bool
+        unit: ratio | percent | percent_point | krw | age | score | bool | years | months … (상품마다 다를 수 있음)
     """
     if product_id:
         # URL 경로에 들어가므로 ../ 같은 값으로 다른 /internal API에 닿지 못하게 막는다
         if not _PRODUCT_ID.match(product_id):
             raise ToolError(f"잘못된 product_id: {product_id!r} (예: P002)")
         rules = _call(backend.get, f"/internal/products/{product_id}/rules")
-        return [r for r in rules if rule_key is None or r.get("ruleKey") == rule_key]
-    return _call(backend.get, "/internal/product-rules", {"key": rule_key})
+        rules = [r for r in rules if rule_key is None or r.get("ruleKey") == rule_key]
+    else:
+        rules = _call(backend.get, "/internal/product-rules", {"key": rule_key})
+    return [r for r in rules if not active_only or r.get("effectiveTo") is None]
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def list_rule_keys() -> list[dict]:
+    """상품 규칙 키 목록과 어느 상품에 있는지. 어떤 규칙이 있는지 모를 때 먼저 본다.
+
+    같은 개념이라도 상품마다 키 이름이나 단위가 다를 수 있다 (예: DSR_LIMIT · MAX_DSR_RATIO,
+    EXPLANATION_RECORD_YEARS · EXPLANATION_RECORD_MONTHS). 키 이름만 보지 말고 단위와 상품을 함께 본다.
+
+    Returns:
+        [{ruleKey, units: [unit], productIds: [지금 유효한 행이 있는 상품], activeRows, closedRows}] ruleKey 순
+    """
+    keys: dict[str, dict] = {}
+    for r in _call(backend.get, "/internal/product-rules"):
+        k = keys.setdefault(r["ruleKey"], {"ruleKey": r["ruleKey"], "units": set(), "productIds": set(),
+                                           "activeRows": 0, "closedRows": 0})
+        k["units"].add(r.get("unit"))
+        if r.get("effectiveTo") is None:
+            k["productIds"].add(r.get("productId"))
+            k["activeRows"] += 1
+        else:
+            k["closedRows"] += 1
+    return [{**k, "units": sorted(k["units"]), "productIds": sorted(k["productIds"])} for _, k in sorted(keys.items())]
 
 
 @mcp.tool(annotations={"readOnlyHint": True})

@@ -15,6 +15,14 @@ RULES = [
      "effectiveFrom": "2024-01-01", "effectiveTo": None},
     {"ruleId": "R011", "productId": "P002", "ruleKey": "DSR_LIMIT", "value": "0.40", "unit": "ratio",
      "effectiveFrom": "2024-01-01", "effectiveTo": None},
+    {"ruleId": "R050", "productId": "P012", "ruleKey": "DSR_LIMIT", "value": "0.45", "unit": "ratio",
+     "effectiveFrom": "2020-01-01", "effectiveTo": "2023-12-31"},
+    {"ruleId": "R060", "productId": "P007", "ruleKey": "MAX_DSR_RATIO", "value": "40", "unit": "percent",
+     "effectiveFrom": "2024-01-01", "effectiveTo": None},
+]
+PRODUCTS = [
+    {"productId": "P001", "name": "리플 직장인 신용대출", "status": "ON_SALE"},
+    {"productId": "P012", "name": "리플 직장인 신용대출(구)", "status": "SALE_ENDED"},
 ]
 
 
@@ -30,8 +38,10 @@ class FakeSpring:
         if path == "/internal/product-rules":
             key = req.url.params.get("key")
             return httpx.Response(200, json=[r for r in RULES if key is None or r["ruleKey"] == key])
+        if path == "/internal/products":
+            return httpx.Response(200, json=PRODUCTS)
         if path == "/internal/products/P002/rules":
-            return httpx.Response(200, json=RULES)
+            return httpx.Response(200, json=[r for r in RULES if r["productId"] == "P002"])
         if path == "/internal/products/P999/rules":
             return httpx.Response(404, json={"error": "NOT_FOUND", "message": "product not found"})
         if path == "/internal/contracts/impact":
@@ -59,7 +69,8 @@ async def call(name, args=None):
 async def test_tools_are_registered():
     async with Client(server.mcp) as c:
         names = {t.name for t in await c.list_tools()}
-    assert names == {"get_products", "get_product_rules", "get_db_schema", "get_contract_impact", "create_work_ticket"}
+    assert names == {"get_products", "get_product_rules", "list_rule_keys", "get_db_schema", "get_contract_impact",
+                     "create_work_ticket"}
 
 
 async def test_sends_internal_token_and_caller(spring):
@@ -69,7 +80,7 @@ async def test_sends_internal_token_and_caller(spring):
 
 async def test_product_rules_pass_backend_response_through(spring):
     rules = await call("get_product_rules", {"rule_key": "DSR_LIMIT"})
-    assert rules == [RULES[1]]   # camelCase 그대로, 가공 없음
+    assert rules == [RULES[1], RULES[2]]   # camelCase 그대로, 가공 없음 (종료된 행도 기본으로 포함)
     assert spring.requests[0].url.params["key"] == "DSR_LIMIT"
 
 
@@ -120,3 +131,22 @@ async def test_backend_down_is_tool_error(monkeypatch):
     monkeypatch.setattr(server, "backend", Backend("http://spring", "t", transport=httpx.MockTransport(refuse)))
     with pytest.raises(ToolError, match="연결할 수 없습니다"):
         await call("get_products")
+
+
+async def test_products_filter_by_status(spring):
+    assert [p["productId"] for p in await call("get_products", {"status": "ON_SALE"})] == ["P001"]
+    assert len(await call("get_products")) == 2
+
+
+async def test_product_rules_active_only_drops_closed_rows(spring):
+    rules = await call("get_product_rules", {"rule_key": "DSR_LIMIT", "active_only": True})
+    assert [r["ruleId"] for r in rules] == ["R011"]
+
+
+async def test_list_rule_keys_summarizes_keys_units_and_products(spring):
+    keys = {k["ruleKey"]: k for k in await call("list_rule_keys")}
+    assert keys["DSR_LIMIT"] == {"ruleKey": "DSR_LIMIT", "units": ["ratio"], "productIds": ["P002"],
+                                 "activeRows": 1, "closedRows": 1}
+    # 같은 개념, 다른 키 · 단위도 그대로 드러난다
+    assert keys["MAX_DSR_RATIO"]["units"] == ["percent"]
+    assert "key" not in spring.requests[0].url.params   # 전체 규칙에서 집계
