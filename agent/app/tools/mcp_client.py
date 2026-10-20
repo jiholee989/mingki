@@ -15,9 +15,9 @@ from fastmcp import Client
 from app.tools.base import ToolBelt
 
 DEFAULT_URLS = {
-    "regulation": os.getenv("REGULATION_MCP_URL", "http://localhost:8001/mcp"),
-    "code": os.getenv("CODE_MCP_URL", "http://localhost:8002/mcp"),
-    "business": os.getenv("BUSINESS_MCP_URL", "http://localhost:8003/mcp"),
+    "regulation": "http://localhost:8001/mcp",
+    "code": "http://localhost:8002/mcp",
+    "business": "http://localhost:8003/mcp",
 }
 
 # 도구 → 서버 (mcp/README.md)
@@ -44,7 +44,12 @@ class McpTools:
 
     def __init__(self, urls: dict[str, str] | None = None, timeout: float = 120):
         """urls: {"regulation" | "code" | "business": "http://…/mcp"} (빠진 것은 환경 변수 · 기본값)"""
-        self.urls = {**DEFAULT_URLS, **(urls or {})}
+        # run.py가 .env를 읽은 뒤 생성하므로 환경변수도 이 시점에 읽는다.
+        self.urls = {
+            name: os.getenv(f"{name.upper()}_MCP_URL") or default
+            for name, default in DEFAULT_URLS.items()
+        }
+        self.urls.update(urls or {})
         self.timeout = timeout
         self.calls: list[tuple[str, dict]] = []
         self._loop = asyncio.new_event_loop()
@@ -104,7 +109,7 @@ class McpTools:
                                     "function": {
                                         "name": tool.name,
                                         "description": tool.description or tool.name,
-                                        "parameters": tool.inputSchema,
+                                        "parameters": tool.input_schema,
                                     },
                                 }
                             )

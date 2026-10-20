@@ -81,7 +81,9 @@ def test_generated_tests_run_and_system_tests_only_in_integration():
     assert res["results"][0]["ok"] is True          # 개별: boundary 통과, system은 아직 안 돌림
     assert res["system"]["ok"] is False             # 통합: rate.py(age > 64)를 놓쳐서 실패
     assert any("test_62_gets_discount" in e for e in res["system"]["errors"])
-    assert res["tests"] == {"generated": 2, "skipped_without_code": 1}
+    assert res["tests"]["generated"] == 2
+    assert res["tests"]["skipped_without_code"] == 1
+    assert res["tests"]["executed"] > 0
 
 
 def test_multiple_hunks_in_one_file_apply_bottom_up():
@@ -103,3 +105,17 @@ def test_sandbox_runs_inside_container(monkeypatch, tmp_path):
     (tmp_path / ".dockerenv").touch()
     monkeypatch.setattr(sandbox, "CONTAINER_MARKERS", (tmp_path / ".dockerenv",))
     assert check_patch([SENIOR], [])["system"]["ok"] is True
+
+
+def test_empty_repo_is_not_verified(tmp_path):
+    res = check_patch([], [], root=tmp_path)
+    assert res["system"]["ok"] is False
+    assert res["tests"]["executed"] == 0
+
+
+def test_skipped_tests_are_not_execution_evidence(tmp_path):
+    cases = [{"id": "skip", "kind": "unit", "code": "import pytest\n@pytest.mark.skip(reason='pending')\ndef test_pending():\n    pass\n"}]
+    res = check_patch([], cases, root=tmp_path)
+    assert res["system"]["ok"] is False
+    assert res["tests"]["generated"] == 1
+    assert res["tests"]["executed"] == 0

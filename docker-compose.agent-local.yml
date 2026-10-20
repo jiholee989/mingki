@@ -1,0 +1,12 @@
+# 호스트에서 실행하는 Agent가 컨테이너 MCP에 연결할 때 사용한다.
+# docker compose -f docker-compose.yml -f docker-compose.agent-local.yml up -d --build regulation-mcp code-mcp business-mcp
+services:
+  regulation-mcp:
+    ports:
+      - "127.0.0.1:8001:8001"
+  code-mcp:
+    ports:
+      - "127.0.0.1:8002:8002"
+  business-mcp:
+    ports:
+      - "127.0.0.1:8003:8003"

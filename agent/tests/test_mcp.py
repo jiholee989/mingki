@@ -19,7 +19,7 @@ def test_mcp_discovers_tools_calls_and_closes_thread(monkeypatch):
                 SimpleNamespace(
                     name="search_code",
                     description="코드 검색",
-                    inputSchema={
+                    input_schema={
                         "type": "object",
                         "properties": {"query": {"type": "string"}},
                     },
@@ -44,3 +44,12 @@ def test_mcp_discovers_tools_calls_and_closes_thread(monkeypatch):
         tools.close()
     assert not tools._thread.is_alive()
     tools.close()
+
+
+def test_mcp_reads_environment_when_created(monkeypatch):
+    monkeypatch.setenv("CODE_MCP_URL", "http://localhost:9182/mcp")
+    tools = mcp_client.McpTools()
+    try:
+        assert tools.urls["code"] == "http://localhost:9182/mcp"
+    finally:
+        tools.close()

@@ -61,6 +61,19 @@ uv run python run.py --mode llm --auto
 uv run python run.py --mode live
 ```
 
+호스트에서 Agent를 실행한다면 루트에서 먼저 다음 명령으로 MCP와 의존 서비스를 올린다.
+로컬 포트는 127.0.0.1에만 공개하고, 기본 compose의 내부 통신 설정은 유지한다.
+
+```bash
+# 저장소 루트
+docker compose -f docker-compose.yml -f docker-compose.agent-local.yml up -d --build regulation-mcp code-mcp business-mcp
+# 이후 agent/에서 실행
+uv run python run.py --mode live
+```
+
+`agent/.env`의 MCP URL은 `.env.example`의 localhost:8001/8002/8003을 사용한다.
+Spring은 business-mcp의 상품 조회 때문에 필요하다. 이 명령으로 Agent의 HTTP API까지 연결되지는 않는다.
+
 - `LlmReasoner`: 프롬프트와 구조화 출력으로 요건/테스트/수정안을 만든다.
 - 영향 탐색에서는 모델이 MCP의 도구 설명을 읽고 읽기 도구와 인자를 선택한다.
 - 근거 없는 코드 경로/줄은 거부하고, 수정 범위를 확정 위치로 제한한다.
@@ -103,7 +116,7 @@ uv run python run.py --mode live --publish --approval-id 42
    `generated`는 실행 증거가 아니다. 실행 수가 없거나 0이면 발행을 차단한다.
 5. 쓰기 도구는 기존 `task_id`, `approval_id`, `idempotency_key`, `spec_keys`를 받고
    `{jobId, status, duplicate?, branch?, url?}`를 반환한다.
-6. 현재 checkout에는 MCP 서버 소스가 없다. 실제 연결은 서버가 준비된 뒤 확인해야 한다.
+6. MCP 서버 소스는 루트 `mcp/`에 있다. 코드 조회 대상은 `mcp/sample_repo`이며, 업무 조회는 Spring을 사용한다.
 
 ## 백엔드 연결 지점 (HTTP 서버는 아직 연결하지 않음)
 

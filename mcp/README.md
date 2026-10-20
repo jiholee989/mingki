@@ -62,7 +62,7 @@ async with Client("http://code-mcp:8002/mcp") as c:
 | `search_code` | 읽기 | `query, regex=False, path_glob="**/*", max_results=200` | `[{file, line, symbol, snippet, kind}]` |
 | `get_file` | 읽기 | `path` | 파일 내용 (str) |
 | `find_usages` | 읽기 | `symbol` | `[{file, line, symbol, snippet, kind}]` (식별자 정확히 일치) |
-| `check_patch` | 샌드박스 | `patches: [{bundle_id, diff}], test_cases=[]` | `{results: [{bundle_id, ok, errors, files}], system: {ok, errors, missed_locations}, tests: {generated, skipped_without_code}}` |
+| `check_patch` | 샌드박스 | `patches: [{bundle_id, diff}], test_cases=[]` | `{results: [{bundle_id, ok, errors, files}], system: {ok, errors, missed_locations}, tests: {generated, executed, skipped_without_code}}` |
 | `create_draft_pr` | 쓰기 · 승인 | `task_id, approval_id, idempotency_key, title, patches, spec_keys=[]` | `{jobId, status, duplicate, branch, commit}` |
 
 - `kind`: `code` · `config` · `ui` · `test`. `symbol`: 그 줄이 속한 함수 · 클래스 · 상수 · 설정 키.
@@ -70,6 +70,7 @@ async with Client("http://code-mcp:8002/mcp") as c:
   줄은 앞뒤 공백을 무시하고 비교하며, 줄 번호가 어긋나도 같은 내용이 파일에 한 곳뿐이면 그 위치에 적용한다.
 - `check_patch`: 샘플 레포 **복사본**에서 묶음별(적용 → 문법 → pytest) 검증 후, 통과한 묶음을 합쳐 통합 검증. 원본은 바뀌지 않는다.
   - pytest 환경 변수는 PATH 등 최소한만 넘긴다 (토큰 없음), 60초 제한.
+  - `tests.executed`는 통합 실행의 pytest 결과에서 건너뜀·설정 오류를 제외한 건수다. 0건이면 검증 성공으로 처리하지 않는다.
   - `test_cases` 중 `code`(pytest 소스) 가 있는 것만 실행한다. `kind: system` 은 통합 검증에서만 돈다.
 - `create_draft_pr`: 복사본에 브랜치 `rule-ripple/{task_id 앞 8자}` · 커밋을 준비 → 백엔드 `POST /internal/jobs` (`CREATE_DRAFT_PR`) 가 승인 검증 → **통과했을 때만** `PUBLISH_DIR` 에 남긴다. PR 링크는 `GET /internal/jobs/{jobId}` 결과에 있다.
 
@@ -85,21 +86,32 @@ async with Client("http://code-mcp:8002/mcp") as c:
 | `get_contract_impact` | 읽기 | `GET /internal/contracts/impact` | `{ageFrom, ageTo, total, byProduct, grandfathered?, contracts}` |
 | `create_work_ticket` | 쓰기 · 승인 | `POST /internal/work-tickets` | `{jobId, status, duplicate}` |
 
-## Agent mock(`app/tools/mock.py`)과 다른 점
+## Agent 연결 계약
 
-| 도구 | mock | 실제 |
-|---|---|---|
-| `get_product_rules` | snake_case + `product_name` | camelCase, 상품명은 `get_products` |
-| `get_db_schema(table)` | `{table: [컬럼명]}` | 인자 없음, `[{table, columns}]` |
-| `create_work_ticket` | `(title, body, approval_id, idempotency_key)` → `{url}` | `task_id` 필수, `approval_id` 는 숫자, `body` → `description`, 결과는 `{jobId, …}` |
-| `create_draft_pr` | `(title, patches, approval_id, idempotency_key)` → `{url}` | `task_id` 필수, `spec_keys` 추가, 결과는 `{jobId, branch, commit, …}` |
-| `check_patch` | `system.missed_locations` 로 놓친 위치를 알려줌 | 샘플 레포에 정답 정보가 없어 항상 `[]`. 대신 `system.ok` · `system.errors` 를 본다 |
-| `read_resource` | 메서드 | MCP Resource (`client.read_resource`) 또는 `get_article` 도구 |
-| (없음) | | `get_products`, `get_contract_impact`, `get_article`, `list_articles` 추가 |
+Agent의 `MockTools`와 `McpTools`는 같은 도구 이름과 입력 형식을 사용한다.
+차이는 조회 대상이다. Mock은 로컬 JSON·고정 코드 발췌문을 읽고,
+MCP는 규정 파일·샘플 저장소 전체 파일·Spring 업무 API를 조회한다.
+
+- 업무 응답은 camelCase를 유지한다.
+- `read_resource`는 MCP Resource(`client.read_resource`)를 사용한다.
+- `check_patch.tests.executed`는 실제 실행 증거이며, Agent는 누락·0건이면 발행을 차단한다.
+- PR·티켓 쓰기는 유효한 백엔드 승인 ID가 필요하다. `QUEUED`는 완료 상태가 아니다.
 
 ## 남은 일
 
 - [ ] 실제 샘플 코드 레포로 교체 (`mcp/sample_repo` 는 Agent mock 위치에 맞춘 임시본) → compose `SAMPLE_REPO_DIR` 마운트만 바꾸면 된다
 - [ ] `search_regulation` 을 Vector DB 검색으로 교체
-- [ ] test_agent가 실행 가능한 테스트(`code`)를 내도록 Agent와 합의
+- [x] Agent test_agent의 실행 가능한 테스트(`code`) 및 실제 실행 건수 계약 연결
 - [ ] 실제 백엔드와 연결 확인 (`docker compose up`)
+
+
+## 호스트 Agent와 연결
+
+```bash
+# 저장소 루트: localhost:8001~8003을 호스트 Agent에 공개
+docker compose -f docker-compose.yml -f docker-compose.agent-local.yml up -d --build regulation-mcp code-mcp business-mcp
+cd agent
+uv run python run.py --mode live
+```
+
+Agent의 `.env`는 `.env.example`을 참고한다. `llm` 모드는 계속 MCP 없이 로컬 샘플로 실행된다.
