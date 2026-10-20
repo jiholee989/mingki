@@ -1,0 +1,62 @@
+# 상품별 제안 정답 — DSR 시나리오 (Agent에 노출 금지). 사람이 읽는 설명은 answer_key.md 2~3절.
+#
+# 결과 형식(팀 합의): product_id, requirement_id, rule_id, impact, current, proposed, basis, reason,
+#                    effective_date, transition, follow_up
+#
+# 채점 규칙
+#   products   : 12개 상품 모두 판정이 있어야 한다. impact가 같아야 정답.
+#                change_required는 rule_id · proposed(value, unit)도 같아야 정답.
+#                basis_any는 근거로 인정하는 조항 ("{regulation_id}/{article_id}"). keep · needs_check는 이유 근거로 채점.
+#   must_not   : 이 rule_id에 낸 변경 제안은 오답 (trap: true는 함정)
+#   bonus      : follow_up · extra · contracts는 가산점. 채점 제외 항목은 info
+
+scenario: dsr-limit
+requirement: { article: credit-loan-ops/8, from: { value: "0.40", unit: ratio }, to: { value: "0.35", unit: ratio } }
+effective_date: "2026-12-01"
+close_previous_on: "2026-11-30"
+first_new_rule_id: R083
+transition: "시행일 전 신청분과 기존 계약 기간 연장은 종전 0.40 (부칙 제2조)"
+
+products:
+  - { product_id: P001, impact: change_required, rule_id: R001, current: { value: "0.40", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8] }
+  - { product_id: P002, impact: change_required, rule_id: R011, current: { value: "0.40", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8] }
+  - { product_id: P003, impact: keep, rule_id: R015, current: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8, credit-loan-ops/3], reason: 이미 신 기준과 같음 }
+  - { product_id: P004, impact: keep, rule_id: R037, current: { value: "0.30", unit: ratio }, basis_any: [credit-loan-ops/8, credit-loan-ops/3], reason: 신 기준보다 엄격 }
+  - { product_id: P005, impact: change_required, rule_id: R044, current: { value: "40", unit: percent }, proposed: { value: "35", unit: percent }, basis_any: [credit-loan-ops/8], trap: 단위 }
+  - { product_id: P006, impact: keep, rule_id: null, basis_any: [dsr-management/10, dsr-management/2], reason: 소액신용대출 한도 적용 제외 }
+  - { product_id: P007, impact: change_required, rule_id: R056, current: { value: "0.4", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8], trap: 키 이름 }
+  - { product_id: P008, impact: change_required, rule_id: R062, current: { value: "0.40", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8] }
+  - { product_id: P009, impact: keep, rule_id: null, basis_any: [dsr-management/3], reason: 사업자대출은 DSR 적용 대상 아님 }
+  - { product_id: P010, impact: needs_check, rule_id: null, basis_any: [credit-loan-ops/3, credit-loan-ops/8], reason: 현재 DSR 기준 데이터 없음, 문서 정비 중 }
+  - { product_id: P011, impact: change_required, rule_id: R075, current: { value: "0.40", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8], trap: 종료된 옛 행 R074 }
+  - { product_id: P012, impact: keep, rule_id: R079, current: { value: "0.40", unit: ratio }, basis_any: [credit-loan-ops/21], reason: 판매 중단, 연장은 계약 당시 기준 }
+
+must_not:
+  - { rule_id: R007, trap: true, reason: "LTV 0.40" }
+  - { rule_id: R018, trap: true, reason: "LTV 0.40" }
+  - { rule_id: R040, trap: true, reason: "LTV 0.40" }
+  - { rule_id: R070, trap: true, reason: "종료된 옛 행 0.45" }
+  - { rule_id: R074, trap: true, reason: "종료된 옛 행 0.50" }
+  - { rule_id: R015, reason: "keep 대상 (0.35)" }
+  - { rule_id: R037, reason: "keep 대상 (0.30)" }
+  - { rule_id: R079, reason: "keep 대상 (판매 중단)" }
+  - { rule_id: R020, reason: "DSR 산정 기간, 제8조와 무관" }
+  - { rule_id: R034, reason: "DSR 산정 기간, 제8조와 무관" }
+  - { rule_id: R060, reason: "DSR 산정 기간, 제8조와 무관" }
+  - { rule_id: R054, reason: "소액 기준 금액, 제8조와 무관" }
+
+bonus:
+  follow_up:
+    - { product_id: P001, item: "화면 문구 'DSR 40% 이내' 수정", source: "doc://P001" }
+    - { product_id: P005, item: "화면 문구 · 심사 절차 '40퍼센트' 수정", source: "doc://P005" }
+    - { product_id: P008, item: "상품 설명 · 화면 문구 'DSR 40% 이내' 수정", source: "products.description, doc://P008" }
+    - { product_id: P011, item: "화면 문구 'DSR 40% 이내' + 번역본 3종 수정", source: "doc://P011" }
+  extra:
+    - { product_id: P007, item: "갱신 시 한도를 늘리지 않으면 제8조 미적용", basis: credit-loan-ops/22 }
+    - { product_id: P008, item: "무증액 대환은 한도 적용 제외", basis: dsr-management/10 }
+  contracts:
+    applied_before_effective: [C0004, C0029, C0064, C0102, C0092, C0010, C0037, C0051, C0072]
+    extension_keeps_old_limit: [C0006, C0068]
+  info:
+    - "P006 계약의 DSR 0.40 초과 건은 소액 예외라 원래 한도 미적용 (채점 제외)"
+    - "P012 문구는 판매 종료 후 미노출이라 수정하지 않아도 정답"
