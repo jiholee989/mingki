@@ -40,15 +40,31 @@ public class TaskEventService {
         this.sse = sse;
     }
 
+    /** 서버 내부(승인 API · 큐 워커 · 디스패처)용. 전이를 검사하지 않는다. */
     @Transactional
     public TaskEvent append(UUID taskId, String type, Map<String, Object> payload) {
+        return append(taskId, type, payload, false);
+    }
+
+    /** Agent 콜백용. TaskStatus.agentCanMoveTo 에 없는 전이는 409. */
+    @Transactional
+    public TaskEvent appendFromAgent(UUID taskId, String type, Map<String, Object> payload) {
+        return append(taskId, type, payload, true);
+    }
+
+    private TaskEvent append(UUID taskId, String type, Map<String, Object> payload, boolean fromAgent) {
         AnalysisTask task = tasks.findForUpdate(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
         Map<String, Object> body = payload == null ? Map.of() : payload;
 
         int seq = events.maxSeq(taskId) + 1;
         TaskEvent saved = events.save(new TaskEvent(taskId, seq, type, body));
+        TaskStatus before = task.getStatus();
         applyTransition(task, type, body);
+        if (fromAgent && !before.agentCanMoveTo(task.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    type + " 이벤트로 " + before + " → " + task.getStatus() + " 전이는 할 수 없습니다");
+        }
         tasks.save(task);
         boolean terminal = task.getStatus().isTerminal();
 
