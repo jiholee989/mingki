@@ -23,8 +23,8 @@ public class Approval {
     /** REQUIREMENTS: interrupt ① 요건 확정 (OFFICER). REVIEW: interrupt ② 검토·승인 (DEVELOPER). */
     public enum Step { REQUIREMENTS, REVIEW }
 
-    /** REQUIREMENTS → CONFIRM | HOLD.  REVIEW → APPROVE | REJECT | REQUEST_CHANGES. */
-    public enum Decision { CONFIRM, HOLD, APPROVE, REJECT, REQUEST_CHANGES }
+    /** REQUIREMENTS → CONFIRMED | HELD (요건 결정과 같은 값).  REVIEW → APPROVE | REJECT | REQUEST_CHANGES. */
+    public enum Decision { CONFIRMED, HELD, APPROVE, REJECT, REQUEST_CHANGES }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
