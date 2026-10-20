@@ -64,3 +64,48 @@ HTTP 서버·콜백·Postgres 체크포인터는 별도 어댑터와 연결한�
 | `app/validation.py` | 제안·입력 검증 |
 | `app/tools/` | 로컬 자료·MCP 조회 및 반영 호출 |
 | `app/backend.py`, `app/schemas.py` | 백엔드 변환·데이터 모델 |
+
+현재 조회 순서는 코드가 정한다. 모델이 MCP 도구를 자유롭게 선택하는 루프는 아직 없다.
+`live`는 `REGULATION_MCP_URL`, `BUSINESS_MCP_URL`을 쓴다. code-mcp는 사용하지 않는다.
+live는 최신 MCP의 `list_regulations` → `list_articles` · `get_article`, `get_product_doc`, `get_products`, `get_product_rules(as_of=기준일)`을 호출한다.
+관련 규정은 개정 시행일에 유효한 버전을 고르고, 상품 문서는 서버가 준 `doc://상품#섹션` URI를 인용 근거로 유지한다.
+시작할 때 서버 도구 목록을 검사한다. 구버전 MCP면 최신 main에서 서버를 다시 실행하라는 오류를 낸다.
+문서가 없으면 자료 누락으로 표시하며 로컬 자료로 대체하지 않는다. 백엔드 DB는 Git의 data 파일을 받는 것만으로 갱신되지 않는다.
+
+Docker를 사용한다면 최신 main을 받은 뒤 규정·업무 MCP 이미지를 다시 빌드한다. 서버 실행 설정은 [MCP 안내](../mcp/README.md)를 참고한다.
+
+## 백엔드 연결 (HTTP 어댑터)
+
+Spring이 `/run` · `/resume`을 부르면 바로 202를 돌려주고 그래프는 백그라운드에서 돈다. 진행 상황과 산출물은 `callbackBaseUrl` 아래 `/internal/tasks/{taskId}/**`로 보낸다. 계약은 `docs/BACKEND_API.md` 10절.
+
+```bash
+AGENT_MODE=llm AGENT_CHECKPOINT_DB=postgresql://ruleripple:ruleripple@localhost:5432/ruleripple \
+uv run uvicorn app.server:create_app --factory --port 8000
+```
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `AGENT_MODE` | `llm` | `llm`(로컬 자료) · `live`(MCP). 둘 다 실제 LLM 키 필요 |
+| `AGENT_CHECKPOINT_DB` | 없음 | 있으면 Postgres 체크포인터(`agent` 스키마). 승인 대기 중 재시작해도 재개된다 |
+| `INTERNAL_TOKEN` | `rr-internal-dev-token` | Spring과 주고받는 `X-Internal-Token` |
+| `REGULATION_ID` | `credit-loan-ops` | 분석할 등록 규정. 업로드 원문 sha256이 로컬 원문과 다르면 FAILED |
+
+| 파일 | 역할 |
+|---|---|
+| `app/server.py` | FastAPI `/run` · `/resume` · `/health`, 토큰 검사 |
+| `app/bridge.py` | 노드 시작 · 완료를 Spring 콜백으로. 백엔드 확인을 제안별 결정 + `apply` 승인으로 바꾼다 |
+| `app/backend.py` | Agent 제안(상품 × 요건, `changes[]`)을 백엔드 행(상품 × 규칙)으로 펼친다. 유지 판정은 `keep` 행 |
+| `app/spring.py` | Spring `/internal/**` 클라이언트. 연결 실패 · 5xx 는 짧게 재시도, 4xx 는 바로 실패 |
+| `app/checkpoint.py` | Postgres 체크포인터 |
+
+사람 확인은 1번이다 (SIMPLIFICATION v2). 백엔드의 `APPROVE + approvedProposalKeys · excludedProposalKeys`를 제안별 `approve` · `reject` + `finish`로 바꾸고, `approvalId`와 반영 키를 `apply_approval`로 넘긴다. 승인 · 제외 키는 Agent가 보낸 현재 변경 제안 행과 정확히 같아야 한다(아니면 400). 검토 대기 중이 아닌 thread는 409. 수정 요청 · 직접 편집은 CLI에서만 쓰고 백엔드 경로에서는 쓰지 않는다.
+
+승인 뒤 `apply` 노드가 반영 키마다 business-mcp `apply_rule_version`을 부르고(멱등키 `{taskId}:apply:{proposalKey}`), 이 요청의 콜백 주소로 `/internal/jobs/{id}`를 `DONE` · `DEAD`까지 조회한다. 큐 조회 함수는 그래프가 아니라 재개할 때 `config["configurable"]["job_reader"]`로 넘긴다.
+
+판정 · 상태 대응: `no_change → keep`, `needs_review → needs_check`, 리포트 `DONE → DONE`, `FAILED → FAILED {reason}`, `NO_ACTION → NO_CHANGE`, `REJECTED → REJECTED`. 반영 없이 `APPROVED`로 끝나면 종료 상태가 아니라 `FAILED`로 보고한다.
+
+재작성 회차에서 빠진 규칙 행은 백엔드가 현재 제안에서 제외한다(`Proposals.latest`: 묶음 `reqKey × productId`마다 최고 회차). 같은 상품 · 규칙을 두 요건이 함께 바꾸면 백엔드 행 하나로 보낼 수 없어 `FAILED`로 끝낸다.
+
+`tests/test_server.py`가 가짜 Spring으로 콜백 순서 · 제안 펼치기 · 확인 번역 · 반영 · 종료 상태 · 재시도를 확인한다.
+
+커밋은 매번 사용자의 명시적인 허락을 받은 뒤 수행한다.

@@ -1,13 +1,18 @@
-"""CLI와 향후 FastAPI가 공유할 실행기. HTTP·업무 DB는 이 모듈 밖에 둔다."""
+"""CLI와 FastAPI가 공유할 실행기. HTTP·업무 DB는 이 모듈 밖에 둔다."""
 
 from threading import Lock
 from langgraph.types import Command
 from app.backend import ResumeRequest, RunRequest
+from app.bridge import review_decision
 from app.nodes.review import validate_review
 
 
 class DecisionError(ValueError):
     """그래프 실행 전에 거부된 결정. 사용자가 다시 입력할 수 있다."""
+
+
+class NotWaitingError(DecisionError):
+    """승인을 기다리는 thread 가 아니다 (없거나 이미 끝났다)."""
 
 
 class AgentRunner:
@@ -17,8 +22,8 @@ class AgentRunner:
         self.on_update = on_update
 
     @staticmethod
-    def config(thread_id):
-        return {"configurable": {"thread_id": thread_id}, "recursion_limit": 100}
+    def config(thread_id, **configurable):
+        return {"configurable": {"thread_id": thread_id, **configurable}, "recursion_limit": 100}
 
     def start(
         self,
@@ -29,6 +34,7 @@ class AgentRunner:
         *,
         thread_id=None,
         article_ids=None,
+        listener=None,
     ):
         thread_id = thread_id or task_id
         config = self.config(thread_id)
@@ -47,54 +53,75 @@ class AgentRunner:
                     "article_ids": article_ids or [],
                 },
                 config,
+                listener,
             )
 
-    def resume(self, thread_id, decision, *, task_id=None, step=None):
-        config = self.config(thread_id)
+    def resume(self, thread_id, decision, *, task_id=None, step=None, listener=None, job_reader=None):
+        """job_reader: 반영(apply) 노드가 큐 작업을 조회할 함수. 요청마다 다를 수 있어 그래프가 아니라 실행 config 로 넘긴다."""
+        config = self.config(thread_id, **({"job_reader": job_reader} if job_reader else {}))
         with self._lock:
             snapshot = self.graph.get_state(config)
             interrupts = [i for task in snapshot.tasks for i in task.interrupts]
             if not interrupts:
-                raise DecisionError("승인을 기다리는 작업이 없습니다")
+                raise NotWaitingError("승인을 기다리는 작업이 없습니다")
             if task_id and snapshot.values["task_id"] != task_id:
                 raise DecisionError("다른 작업의 재개 요청입니다")
             expected = "REVIEW"
             if step and step != expected:
                 raise DecisionError("현재는 상품별 제안 검토 단계입니다. 중간 요건 승인은 사용하지 않습니다")
-            if isinstance(decision, ResumeRequest):
-                try:
-                    decision = decision.to_decision(snapshot.values.get("proposals", []))
-                except ValueError as exc:
-                    raise DecisionError(str(exc)) from exc
-            validator = validate_review
             try:
-                validator(snapshot.values, decision)
+                validate_review(snapshot.values, decision)
             except ValueError as exc:
                 raise DecisionError(str(exc)) from exc
-            return self._invoke(Command(resume=decision), config)
+            return self._invoke(Command(resume=decision), config, listener)
 
-    def _invoke(self, value, config):
-        if self.on_update is None:
+    def _invoke(self, value, config, listener=None):
+        """listener: node_started(node) · node_updated(node, delta)를 가진 객체. 호출 단위로 받는다."""
+        if listener is None and self.on_update is None:
             return self.graph.invoke(value, config)
+        on_update = listener.node_updated if listener else self.on_update
         interrupts = ()
-        for update in self.graph.stream(value, config, stream_mode="updates"):
-            for node, delta in update.items():
+        for mode, chunk in self.graph.stream(value, config, stream_mode=["updates", "tasks"]):
+            if mode == "tasks":
+                # 시작 알림에만 input이 있다. 끝 알림은 updates로 받는다.
+                if listener and "input" in chunk:
+                    listener.node_started(chunk["name"])
+                continue
+            for node, delta in chunk.items():
                 if node == "__interrupt__":
                     interrupts = delta
                 else:
-                    self.on_update(node, delta)
+                    on_update(node, delta)
         out = dict(self.graph.get_state(config).values)
         if interrupts:
             out["__interrupt__"] = interrupts
         return out
 
-    def resume_backend(self, request: ResumeRequest):
-        return self.resume(
-            request.thread_id,
-            request,
-            task_id=request.task_id,
-            step=request.step,
-        )
+    # ---------- 백엔드 확인 (docs/BACKEND_API.md 10.3) ----------
 
-    def start_backend(self, request: RunRequest, *, regulation_id):
-        return self.start(**request.to_input(regulation_id))
+    def waiting_review(self, thread_id):
+        snapshot = self.graph.get_state(self.config(thread_id))
+        return any(task.interrupts for task in snapshot.tasks)
+
+    def current_proposals(self, thread_id):
+        """검토 대기 중인 제안 (버전 포함). 백엔드 확인 결과를 제안별 결정으로 바꿀 때 쓴다."""
+        return list(self.graph.get_state(self.config(thread_id)).values.get("proposals", []))
+
+    def backend_decision(self, request: ResumeRequest):
+        """백엔드 확인 요청 → 그래프 검토 명령. 그래프를 돌리기 전에 거부할 수 있다 (400 · 409)."""
+        if request.step != "REVIEW":
+            raise DecisionError("현재는 상품별 제안 검토 단계입니다. 중간 요건 승인은 사용하지 않습니다")
+        if not self.waiting_review(request.thread_id):
+            raise NotWaitingError("승인을 기다리는 작업이 없습니다")
+        try:
+            return review_decision(self.current_proposals(request.thread_id), request.decision, request.payload,
+                                   request.comment, approval_id=request.approval_id)
+        except ValueError as exc:
+            raise DecisionError(str(exc)) from exc
+
+    def resume_backend(self, request: ResumeRequest, *, listener=None, job_reader=None):
+        return self.resume(request.thread_id, self.backend_decision(request), task_id=request.task_id,
+                           step=request.step, listener=listener, job_reader=job_reader)
+
+    def start_backend(self, request: RunRequest, *, regulation_id, listener=None):
+        return self.start(**request.to_input(regulation_id), listener=listener)

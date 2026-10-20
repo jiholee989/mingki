@@ -1,6 +1,14 @@
-"""Spring 전송 계약 변환. HTTP 호출/DB 접근 없이 테스트할 수 있는 연결 지점."""
+"""Spring 전송 계약 변환. HTTP 호출/DB 접근 없이 테스트할 수 있는 연결 지점.
+
+Agent 와 백엔드는 제안 단위가 다르다. Agent 는 상품 × 요건 1건에 규칙 변경 여러 개(changes)를 담고,
+백엔드는 상품 × 규칙 1행이다 (docs/BACKEND_API.md 10.2). 여기서 펼친다. 유지 판정(no_change)은 Agent 에서
+제안이 아니지만 백엔드는 모든 상품에 행 하나를 요구해서 keep 행으로 보낸다.
+"""
 
 from pydantic import BaseModel, ConfigDict, Field
+
+VERIFY = {"pending": "PENDING", "passed": "PASSED", "failed": "FAILED"}
+
 
 class DocumentInfo(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -36,46 +44,16 @@ class RunRequest(BaseModel):
 
 
 class ResumeRequest(BaseModel):
+    """백엔드 확인(10.3) 재개 요청. 그래프 명령으로 바꾸는 일은 app.bridge.review_decision 이 한다."""
     model_config = ConfigDict(populate_by_name=True)
     task_id: str = Field(alias="taskId")
     thread_id: str = Field(alias="threadId")
     step: str
-    decision: str = "REVIEW_PROPOSALS"
+    decision: str
     approval_id: int | None = Field(default=None, alias="approvalId")
     comment: str | None = None
     payload: dict = Field(default_factory=dict)
-
-    def to_decision(self, proposals=None):
-        if self.step != "REVIEW":
-            raise ValueError("상품 제안 검토는 step=REVIEW를 사용합니다")
-        if self.decision == "REVIEW_PROPOSALS":
-            return {"decisions": self.payload.get("decisions", []), "finish": self.payload.get("finish", False)}
-        if self.decision not in ("APPROVE", "REJECT") or proposals is None:
-            raise ValueError("검토 결정과 현재 제안이 필요합니다")
-        approved = self.payload.get("approvedProposalKeys", [])
-        excluded = self.payload.get("excludedProposalKeys", [])
-        if not all(isinstance(keys, list) and all(isinstance(k, str) and k for k in keys)
-                   and len(keys) == len(set(keys)) for keys in (approved, excluded)):
-            raise ValueError("승인·제외 키는 중복 없는 문자열 목록이어야 합니다")
-        rows = rule_proposals_payload(proposals)["items"]
-        change_keys = {row["proposalKey"] for row in rows if row["impact"] == "change_required"}
-        if self.decision == "APPROVE":
-            if not approved or set(approved) & set(excluded) or set(approved) | set(excluded) != change_keys:
-                raise ValueError("승인·제외 키가 현재 변경 제안과 일치하지 않습니다")
-            from app.schemas import ApplyApproval
-            approval = ApplyApproval(approval_id=self.approval_id, proposal_keys=approved)
-        else:
-            if approved:
-                raise ValueError("거절 요청에 승인 대상이 포함되어 있습니다")
-            approval = None
-        decisions = []
-        for proposal in proposals:
-            keys = {row["proposalKey"] for row in proposal_rows(proposal) if row["impact"] == "change_required"}
-            decisions.append({"proposal_id": proposal.id, "version": proposal.version,
-                              "action": "approve" if keys & set(approved) else "reject",
-                              "comment": self.comment or "백엔드 검토 결정"})
-        return {"decisions": decisions, "finish": True,
-                "apply_approval": approval.model_dump() if approval else None}
+    callback_base_url: str | None = Field(default=None, alias="callbackBaseUrl")
 
 
 def requirements_payload(items):
@@ -99,51 +77,66 @@ def requirements_payload(items):
     }
 
 
+def proposal_keys(proposal):
+    """Agent 제안 하나가 백엔드에서 차지하는 행의 키. 규칙 변경이 있으면 규칙마다, 없으면 요건 하나."""
+    if proposal.impact == "change_required" and proposal.changes:
+        return [f"{proposal.product_id}:{c.rule_key}" for c in proposal.changes]
+    return [f"{proposal.product_id}:{proposal.requirement_id}"]
+
+
 def proposal_rows(proposal):
-    """검토 묶음을 백엔드의 상품 × 규칙 행으로 펼친다. 키는 작성 버전이 바뀌어도 유지한다."""
-    p = proposal
-    rows = []
-    for change in p.changes or [None]:
-        rows.append({
-            "proposalKey": f"{p.product_id}:{change.rule_key}" if change else p.id,
-            "reqKey": p.requirement_id, "productId": p.product_id,
-            "ruleId": change.rule_id if change else None, "ruleKey": change.rule_key if change else None,
-            "impact": "change_required" if change and p.impact == "change_required" else "needs_check",
-            "current": p.current, "proposed": p.recommendation,
-            "unit": change.unit if change else None,
-            "currentValue": change.current_value if change else None,
-            "proposedValue": change.proposed_value if change else None,
-            "effectiveDate": p.effective_date.isoformat() if p.effective_date else None,
-            "basis": p.article_ref, "reason": p.reason, "transition": p.transitional,
-            "followUp": p.actions + p.optional_actions, "round": p.attempt,
-            "verifyStatus": p.verification.upper(), "verifyLog": p.generation_error,
-        })
-    return rows
+    """Agent 제안 1건 → 백엔드 제안 행들 (docs/contracts/proposals.put.json 모양). 키는 작성 버전이 바뀌어도 유지한다."""
+    base = {
+        "reqKey": proposal.requirement_id,
+        "productId": proposal.product_id,
+        "current": proposal.current,
+        "proposed": proposal.recommendation,
+        "effectiveDate": proposal.effective_date.isoformat() if proposal.effective_date else None,
+        "basis": proposal.article_ref,
+        "reason": proposal.reason,
+        "transition": proposal.transitional,
+        "followUp": [*proposal.actions, *proposal.optional_actions],
+        "round": proposal.attempt,
+        "verifyStatus": VERIFY[proposal.verification],
+        "verifyLog": proposal.generation_error,
+    }
+    if proposal.impact == "change_required" and proposal.changes:
+        return [{**base, "proposalKey": f"{proposal.product_id}:{c.rule_key}", "ruleId": c.rule_id,
+                 "ruleKey": c.rule_key, "impact": "change_required", "unit": c.unit,
+                 "currentValue": c.current_value, "proposedValue": c.proposed_value}
+                for c in proposal.changes]
+    return [{**base, "proposalKey": f"{proposal.product_id}:{proposal.requirement_id}", "ruleId": None,
+             "ruleKey": None, "impact": "needs_check", "unit": None, "currentValue": None, "proposedValue": None}]
 
 
-def rule_proposals_payload(items, unchanged=(), rules=()):
-    """BACKEND_API 10.2: 유지 판정도 빠짐없이 전송한다. HTTP 전송은 어댑터가 담당한다."""
-    rows = [row for proposal in items for row in proposal_rows(proposal)]
-    known = {r["ruleId"]: r for r in rules}
-    for impact in unchanged:
-        evidence = [known[rid] for rid in impact.evidence_rule_ids if rid in known]
-        rule = evidence[0] if len(evidence) == 1 else None
-        rows.append({"proposalKey": impact.id, "reqKey": impact.requirement_id,
-                     "productId": impact.product_id, "ruleId": rule["ruleId"] if rule else None,
-                     "ruleKey": rule["ruleKey"] if rule else None, "impact": "keep",
-                     "current": impact.current, "proposed": None,
-                     "unit": rule["unit"] if rule else None, "currentValue": rule["value"] if rule else None,
-                     "proposedValue": None, "effectiveDate": None, "basis": None,
-                     "reason": impact.reason, "transition": None, "followUp": [],
-                     "round": 1, "verifyStatus": "PASSED", "verifyLog": None})
-    keys = [row["proposalKey"] for row in rows]
-    if len(keys) != len(set(keys)):
-        raise ValueError("같은 상품·규칙의 제안이 중복되었습니다. 요건을 확인하세요")
-    return {"items": rows}
+def keep_row(impact, round_):
+    """유지 판정은 Agent 제안이 아니라서 영향 판단에서 행을 만든다. 근거 검사 대상이 아니라 PASSED.
+
+    유지는 바꿀 규칙이 없어서 target_rule_ids 가 비어 있다. 근거 규칙이 하나면 그것을 ruleId 로 둔다.
+    """
+    evidence = list(dict.fromkeys(impact.evidence_rule_ids))
+    return {"proposalKey": f"{impact.product_id}:{impact.requirement_id}", "reqKey": impact.requirement_id,
+            "productId": impact.product_id, "ruleId": evidence[0] if len(evidence) == 1 else None,
+            "ruleKey": None, "impact": "keep", "current": impact.current, "proposed": None, "unit": None,
+            "currentValue": None, "proposedValue": None, "effectiveDate": None, "basis": None,
+            "reason": impact.reason, "transition": None, "followUp": [], "round": round_,
+            "verifyStatus": "PASSED", "verifyLog": None}
+
+
+def proposal_items(proposals, keep_impacts, round_):
+    """PUT /proposals 본문. 백엔드는 상품 × 규칙 1행이라 같은 키가 두 번 나오면 조용히 덮어쓰지 않고 거부한다."""
+    items = [row for p in proposals for row in proposal_rows(p)]
+    items += [keep_row(i, round_) for i in keep_impacts]
+    keys = [row["proposalKey"] for row in items]
+    duplicated = sorted({k for k in keys if keys.count(k) > 1})
+    if duplicated:
+        raise ValueError(f"같은 상품 · 규칙의 제안이 중복됩니다: {duplicated}. "
+                         "요건 두 개가 같은 규칙을 바꾸면 백엔드 행 하나로 보낼 수 없습니다")
+    return {"items": items}
 
 
 def product_proposals_payload(items):
-    """기존 CLI 검토 형식. 백엔드 10.2 저장에는 rule_proposals_payload를 사용한다."""
+    """기존 CLI 검토 형식. 백엔드 10.2 저장에는 proposal_items 를 사용한다."""
     return {"items": [{
         "proposalKey": p.id, "reqKey": p.requirement_id,
         "productId": p.product_id, "productName": p.product_name,
