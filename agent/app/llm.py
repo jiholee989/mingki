@@ -1,18 +1,16 @@
-"""LLM 판단과 제한된 읽기 도구 루프. 외부 쓰기는 이 모듈에 제공하지 않는다."""
+"""실제 LLM으로 법령 요건·상품 영향·변경 제안을 작성한다."""
 
-import ast
 import json
 import logging
 import os
-import re
 import time
 from pathlib import Path
 
-from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from app.reasoning import BehaviorOutput, Draft, LocationsOutput, RequirementsOutput, TestsOutput
-from app.schemas import Requirement
+from langchain_core.messages import HumanMessage, SystemMessage
+from app.reasoning import BehaviorOutput, ProductAssessmentsOutput, RequirementsOutput
+from app.schemas import Requirement, ProductDraft, ProductRevision, RevisionCheck, ProposalText, RevisionText, RuleChange
+from app.validation import condition_errors, exemption_needs_customer_data, ground_conditions
 
 logger = logging.getLogger(__name__)
 PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
@@ -24,7 +22,7 @@ def encode(value):
     )
 
 
-def output_schema(model):
+def output_schema(model, payload=None):
     """API에서 필드 누락·잘못된 enum을 막고, 세부 검증은 Pydantic에서 한다."""
     schema = model.model_json_schema()
     def strict(node):
@@ -40,14 +38,24 @@ def output_schema(model):
             for value in node:
                 strict(value)
     strict(schema)
+    if model is ProductAssessmentsOutput and payload:
+        properties = schema["$defs"]["ProductAssessment"]["properties"]
+        ids = sorted({r["ruleId"] for r in payload["rules"]})
+        if ids:
+            for name in ("target_rule_ids", "evidence_rule_ids"):
+                properties[name]["items"]["enum"] = ids
+        documents = sorted({d["uri"] for d in payload["documents"]})
+        if documents:
+            properties["document_refs"]["items"]["enum"] = documents
+        sources = sorted({a["uri"] for a in payload["regulation_context"]} | set(documents))
+        if sources:
+            schema["$defs"]["ScopeCondition"]["properties"]["source_ref"]["enum"] = sources
     return schema
 
 
 class LlmReasoner:
-    is_demo = False
-
     def __init__(
-        self, model=None, *, max_turns=8, timeout=120, max_context_chars=60000
+        self, model=None, *, timeout=120, max_context_chars=60000
     ):
         if model is None:
             from langchain_openai import ChatOpenAI
@@ -59,8 +67,6 @@ class LlmReasoner:
                 )
             model = ChatOpenAI(model=name, timeout=timeout, max_retries=2)
         self.model = model
-        self.max_turns = max_turns
-        self.timeout = timeout
         self.max_context_chars = max_context_chars
 
     def _prompt(self, name):
@@ -69,7 +75,7 @@ class LlmReasoner:
     def _check_context(self, content):
         if len(content) > self.max_context_chars:
             raise ValueError(
-                "모델 문맥 한도 초과: 요건·파일을 더 작은 작업으로 나누세요"
+                "모델 문맥 한도 초과: 요건·상품을 더 작은 작업으로 나누세요"
             )
 
     def _ask(self, prompt, schema, payload):
@@ -84,7 +90,7 @@ class LlmReasoner:
         for attempt in range(2):
             try:
                 output = self.model.with_structured_output(
-                    output_schema(schema), method="json_schema", strict=True
+                    output_schema(schema, payload), method="json_schema", strict=True
                 ).invoke(messages)
                 output = schema.model_validate(output)
                 break
@@ -133,292 +139,71 @@ class LlmReasoner:
                                    {"requirement": item, "source": source})
                 item.behavior_change = detail.behavior_change.strip()
             except ValueError:
-                pass  # 형식 보완 실패 시에도 실제 원문을 보존해 첫 검토로 넘긴다.
+                pass  # 형식 보완 실패 시에도 실제 원문을 보존해 제안 검토로 넘긴다.
             if not item.behavior_change:
                 item.behavior_change = (
                     f"기존 원문: {source.get('old_text') or '없음'} / "
                     f"개정 원문: {source.get('new_text') or '없음'}"
-                    " (동작 영향 설명 미생성: 첫 검토에서 확인 필요)"
+                    " (동작 영향 설명 미생성: 제안 검토에서 확인 필요)"
                 )
                 item.summary += " [동작 영향 확인 필요]"
                 logger.warning("동작 설명 미생성 article=%s: 원문과 함께 검토 필요로 표시", item.article_id)
         logger.info("요건 선별: 채택 %s / 제외 %s", len(items), len(candidates) - len(items))
         return items
 
-    def locate(self, state, tools):
-        payload = {
-            k: state[k]
-            for k in ("regulation_id", "old_version", "new_version", "requirements")
-        }
-        messages = [
-            SystemMessage(content=self._prompt("locate.md")),
-            HumanMessage(content=encode(payload)),
-        ]
-        model = self.model.bind_tools(tools.describe())
-        started, counts, records = time.monotonic(), {}, []
-        for turn in range(self.max_turns):
-            if time.monotonic() - started >= self.timeout:
-                raise TimeoutError("영향 탐색 제한 시간 초과")
-            self._check_context(encode([m.content for m in messages]))
-            response = model.invoke(messages)
-            messages.append(response)
-            logger.info("locate turn=%s usage=%s", turn + 1, response.usage_metadata)
-            if not response.tool_calls:
-                if payload["requirements"] and "search_code" in tools.names and not any(
-                    r["tool"] == "search_code" for r in records
-                ):
-                    messages.append(HumanMessage(content=
-                        "코드 검색이 아직 없습니다. search_code로 정책 키·종전 값·조건을 조사한 뒤 "
-                        "후보 파일을 get_file로 확인하세요. 관련 코드가 없다는 결과도 근거로 남기세요."
-                    ))
-                    continue
-                break
-            for call in response.tool_calls:
-                name = call["name"]
-                counts[name] = counts.get(name, 0) + 1
-                if name not in tools.names:
-                    raise ValueError(f"도구 호출 권한 초과: {name}")
-                if counts[name] > (8 if name == "get_file" else 3):
-                    messages.append(
-                        ToolMessage(
-                            content=encode(
-                                {
-                                    "error": "이 도구의 호출 한도에 도달했습니다. 다른 도구를 사용하거나 현재 근거로 탐색을 마치세요."
-                                }
-                            ),
-                            tool_call_id=call["id"],
-                        )
-                    )
-                    continue
-                if time.monotonic() - started >= self.timeout:
-                    raise TimeoutError("영향 탐색 제한 시간 초과")
-                try:
-                    logger.info("조회 tool=%s", name)
-                    result = getattr(tools, name)(**call["args"])
-                    # 잘린 결과를 완전한 근거로 쓰지 않도록 초과 응답은 오류로 돌린다.
-                    text = encode(result)
-                    if len(text) > 12000:
-                        text = encode(
-                            {
-                                "error": "결과가 큽니다. 검색 범위와 max_results를 줄이세요"
-                            }
-                        )
-                    else:
-                        records.append(
-                            {"tool": name, "args": call["args"], "result": result}
-                        )
-                except (ToolError, ValueError, TypeError, RuntimeError) as exc:
-                    text = encode({"error": str(exc)})
-                messages.append(ToolMessage(content=text, tool_call_id=call["id"]))
-        else:
-            raise ValueError("영향 탐색 턴 한도 초과")
-        # 키 검색이 놓치는 하드코딩 수치도 후보로 모은다. 선정 판단은 모델에 맡긴다.
-        if "search_code" in tools.names and counts.get("search_code", 0) < 3:
-            terms = set()
-            for req in state["requirements"]:
-                for value in re.findall(r"\d+(?:\.\d+)?", req.old_value or ""):
-                    number = float(value)
-                    terms.add(re.escape(value))
-                    if number >= 1 and "%" in (req.old_text or ""):
-                        terms.add(re.escape(f"{number / 100:g}"))
-                    if number.is_integer() and "세" in (req.old_text or ""):
-                        terms.update(re.escape(str(int(n))) for n in (number - 1, number * 12))
-            if terms:
-                self._collect_evidence(tools, records, "search_code", {"query": "|".join(sorted(terms)), "regex": True})
-        # 검색 한 줄만 보고 끝내는 모델을 보완해 후보 파일의 본문을 공급한다.
-        if "get_file" in tools.names:
-            loaded = {r["args"]["path"] for r in records if r["tool"] == "get_file"}
-            paths = dict.fromkeys(
-                row["file"] for r in records if r["tool"] in ("search_code", "find_usages")
-                for row in r["result"] if isinstance(row, dict) and row.get("file") and row.get("kind") != "test"
-            )
-            for path in paths:
-                if path not in loaded and len(loaded) < 8:
-                    if self._collect_evidence(tools, records, "get_file", {"path": path}):
-                        loaded.add(path)
+    def product_impacts(self, requirements, products, rules, regulation_context=None, documents=None, data_gaps=None):
         items = []
-        # 같은 후보를 여러 요건에 잘못 연결하지 않도록 요건별로 정리한다.
-        for req in state["requirements"]:
-            logger.info("영향 위치 정리 requirement=%s", req.id)
-            items.extend(self._ask(
-                "locations-output.md", LocationsOutput,
-                {"task": {**payload, "requirements": [req]}, "evidence": records},
-            ).items)
-        self._ground_locations(items, records)
+        # 모든 상품을 빠짐없이 다루되 한 번의 모델 입력은 작게 유지한다.
+        for req in requirements:
+            for offset in range(0, len(products), 4):
+                batch = products[offset:offset + 4]
+                ids = {p["productId"] for p in batch}
+                payload = {"requirement": req, "products": batch,
+                           "rules": [row for row in rules if row["productId"] in ids],
+                           "documents": [doc for doc in documents or [] if doc["productId"] in ids],
+                           "regulation_context": regulation_context or [], "data_gaps": data_gaps or []}
+                for attempt in range(2):
+                    rows = self._ask("product-impacts.md", ProductAssessmentsOutput, payload).items
+                    errors = []
+                    for pid in ids:
+                        matched = [row for row in rows if row.product_id == pid and row.requirement_id == req.id]
+                        if len(matched) != 1:
+                            errors.append(f"{pid}: 정확히 한 번 판단해야 합니다")
+                    for row in rows:
+                        known_rules = {r["ruleId"] for r in payload["rules"] if r["productId"] == row.product_id}
+                        known_docs = {d["uri"] for d in payload["documents"] if d["productId"] == row.product_id}
+                        if row.product_id not in ids or row.requirement_id != req.id:
+                            errors.append("요청 범위 밖의 상품·요건이 있습니다")
+                        if not set(row.target_rule_ids + row.evidence_rule_ids) <= known_rules or not set(row.document_refs) <= known_docs:
+                            bad_rules = sorted(set(row.target_rule_ids + row.evidence_rule_ids) - known_rules)
+                            bad_docs = sorted(set(row.document_refs) - known_docs)
+                            errors.append(f"{row.product_id}: 미조회 규칙 {bad_rules}·문서 {bad_docs}를 제거하세요. 변경 대상만 target_rule_ids, 참조 근거만 evidence_rule_ids에 넣고 목록 전체를 복사하지 마세요")
+                        sources = {a["uri"]: a["text"] for a in regulation_context or []}
+                        sources.update({d["uri"]: d["content"] for d in payload["documents"] if d["productId"] == row.product_id})
+                        ground_conditions(row, sources)
+                        errors.extend(condition_errors(row, sources))
+                        own_rules = [r for r in payload["rules"] if r["productId"] == row.product_id]
+                        if row.applicability == "excluded" and exemption_needs_customer_data(req, own_rules):
+                            errors.append(f"{row.product_id}: 수치로 정한 DSR 예외 한도는 차주별 조건입니다. 차주 자료 없이 상품 전체를 제외하지 말고 needs_review/unknown 또는 조건부 범위로 설명하세요")
+                    if not errors:
+                        break
+                    logger.warning("상품 영향 근거 보완: %s", errors)
+                    if not attempt:
+                        payload["previous_assessments"] = rows
+                        payload["correction"] = errors
+                items.extend(rows)
         return items
 
-    @staticmethod
-    def _collect_evidence(tools, records, name, args):
-        logger.info("본문·검색 보충 tool=%s", name)
-        try:
-            result = getattr(tools, name)(**args)
-            if len(encode(result)) <= 12000:
-                records.append({"tool": name, "args": args, "result": result})
-                return True
-        except (ToolError, ValueError, TypeError, RuntimeError) as exc:
-            logger.warning("조회 보충 실패 tool=%s: %s", name, exc)
+    def draft_product(self, context):
+        # 조회 원문에서 계산된 필수 값은 모델에게 다시 생성시키지 않는다.
+        changes = [RuleChange(**c) for c in context.get("mandatory_changes", []) if c["proposed_value"] is not None]
+        if context.get("previous_proposal") and context.get("comment", "").strip():
+            text = self._ask("product-revision.md", RevisionText, context)
+            if not text.revision_response.strip():
+                raise ValueError("수정 의견의 반영 설명이 없습니다")
+            return ProductRevision(**text.model_dump(), changes=changes)
+        text = self._ask("product-proposal.md", ProposalText, context)
+        return ProductDraft(**text.model_dump(), changes=changes)
 
-    @staticmethod
-    def _ground_locations(items, records):
-        hits, rules, files, products = [], [], {}, set()
-
-        def rows(value):
-            if isinstance(value, list):
-                for row in value:
-                    yield from rows(row)
-            elif isinstance(value, dict):
-                yield value
-                for row in value.values():
-                    yield from rows(row)
-
-        for record in records:
-            if record["tool"] in ("search_code", "find_usages"):
-                hits.extend(rows(record["result"]))
-            elif record["tool"] == "get_product_rules":
-                rules.extend(rows(record["result"]))
-            elif record["tool"] == "get_products":
-                products.update(row["productId"] for row in rows(record["result"]) if row.get("productId"))
-            elif record["tool"] == "get_file":
-                result = record["result"]
-                files[record["args"]["path"]] = (
-                    result if isinstance(result, str) else result.get("content", "")
-                )
-        for spec in items:
-            if spec.needs_review or (spec.is_target and (not spec.before.strip() or not spec.after.strip())):
-                spec.needs_review, spec.is_target = True, False
-                spec.reason += " / 추가 확인 필요: 관련성 또는 변경 전후 설명 부족"
-            if spec.kind == "new":
-                continue  # 신규 위치는 관측한 파일이라고 주장하지 않는다. 티켓만 만든다.
-            if spec.kind in ("db", "product_rule"):
-                ids = set(re.findall(r"\bR\d+\b", spec.symbol))
-                matches = list(
-                    {
-                        row["ruleId"]: row for row in rules if row.get("ruleId") in ids
-                    }.values()
-                )
-                if len(matches) != 1:
-                    LlmReasoner._defer_location(spec, "업무 규칙 ID를 조회 결과에서 확인할 수 없음")
-                    continue
-                # ID로 원본을 찾고 나머지 표기를 고정한다. 0.40/0.4 차이를 허위 근거로 오판하지 않는다.
-                row = matches[0]
-                spec.file = "db/product_rules"
-                spec.line = int(row["ruleId"].lstrip("R"))
-                spec.symbol = f"{row['ruleId']} {row['productId']}.{row['ruleKey']}"
-                spec.snippet = f"{row['ruleKey']} = {row['value']}"
-                if spec.is_target and row['productId'] not in products:
-                    spec.needs_review, spec.is_target = True, False
-                    spec.reason += " / 추가 확인 필요: 상품 설명 미조회"
-                continue
-            snippet = spec.snippet.strip()
-            lines = files.get(spec.file, "").splitlines()
-            found = bool(snippet) and (
-                any(row.get("file") == spec.file and row.get("line") == spec.line
-                    and str(row.get("snippet", "")).strip() == snippet for row in hits)
-                or 0 < spec.line <= len(lines) and lines[spec.line - 1].strip() == snippet
-            )
-            if not found and snippet:
-                # 원문이 파일에서 한 번만 나타날 때만 잘못 적힌 줄 번호를 보정한다.
-                positions = {i for i, line in enumerate(lines, 1) if line.strip() == snippet}
-                if not lines:
-                    positions = {row["line"] for row in hits
-                                 if row.get("file") == spec.file and row.get("line", 0) > 0
-                                 and str(row.get("snippet", "")).strip() == snippet}
-                if len(positions) == 1:
-                    old = spec.location
-                    spec.line = positions.pop()
-                    logger.info("근거로 줄 번호 보정 %s → %s", old, spec.location)
-                    found = True
-            if not found:
-                LlmReasoner._defer_location(spec, "코드 원문·위치를 조회 결과에서 유일하게 확인할 수 없음")
-                continue
-            # 검색 한 줄만으로 주변 로직의 의미를 확정하지 않는다.
-            if spec.is_target and not files.get(spec.file, "").strip():
-                spec.needs_review, spec.is_target = True, False
-                spec.reason += " / 추가 확인 필요: 파일 본문 미조회"
-
-    @staticmethod
-    def _defer_location(spec, reason):
-        claimed = spec.location
-        spec.is_target, spec.needs_review = False, True
-        spec.line, spec.snippet = 0, ""
-        spec.reason += f" / 추가 확인 필요: {reason} (모델 제안 위치: {claimed})"
-        logger.warning("위치 확인 보류 %s: %s", claimed, reason)
-
-    def tests(self, state, tools):
-        files = {}
-        for spec in state["change_specs"]:
-            if (
-                spec.is_target
-                and spec.kind in ("config", "code", "ui")
-                and spec.file not in files
-            ):
-                files[spec.file] = tools.get_file(spec.file)
-        items = []
-        for req in state["requirements"]:
-            specs = [s for s in state["change_specs"] if s.requirement_id == req.id]
-            paths = {s.file for s in specs if s.is_target}
-            payload = {"requirements": [req], "files": {p: value for p, value in files.items() if p in paths},
-                       "change_specs": specs}
-            for case in self._tests_for_requirement(payload):
-                if case.requirement_id != req.id:
-                    raise ValueError("생성 테스트가 요청한 요건과 다릅니다")
-                items.append(case.model_copy(update={"id": f"{req.id}:{case.id}"}))
-        return items
-
-    def _tests_for_requirement(self, payload):
-        files = payload["files"]
-        functions = {}
-        for path, content in files.items():
-            if path.endswith(".py") and isinstance(content, str):
-                try:
-                    nodes = ast.parse(content).body
-                except SyntaxError:
-                    continue  # 로컬 mock은 전체 파일이 아닌 발췌문일 수 있다.
-                for node in nodes:
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        functions[node.name] = node.args
-        for attempt in range(2):
-            items = self._ask("tests.md", TestsOutput, payload).items
-            errors, invalid = [], set()
-            for case in items:
-                if not case.code:
-                    continue
-                count = len(errors)
-                try:
-                    tree = ast.parse(case.code)
-                    modules = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-                    modules += [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
-                    # 저장소 모듈 import 또는 실제 파일 읽기 근거가 있어야 한다.
-                    roots = {path.split("/")[1] for path in files if path.startswith("src/") and len(path.split("/")) > 2}
-                    project_import = any(m.removeprefix("src.").split(".")[0] in roots for m in modules)
-                    literals = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
-                    file_read = any(path in literals or all(part in literals for part in path.split("/")) for path in files) and any(
-                        isinstance(node, ast.Call) and (
-                            isinstance(node.func, ast.Name) and node.func.id == "open" or
-                            isinstance(node.func, ast.Attribute) and node.func.attr in ("read_text", "read_bytes", "open")
-                        ) for node in ast.walk(tree)
-                    )
-                    if not project_import and not file_read:
-                        errors.append(f"{case.id}: 실제 저장소 함수 import 또는 파일 읽기가 없습니다")
-                    for call in ast.walk(tree):
-                        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id in functions:
-                            args = functions[call.func.id]
-                            allowed = {a.arg for a in args.args + args.kwonlyargs}
-                            if not args.kwarg and any(k.arg and k.arg not in allowed for k in call.keywords):
-                                errors.append(f"{case.id}: {call.func.id}에 없는 인자를 사용했습니다. 허용 인자: {sorted(allowed)}")
-                except SyntaxError:
-                    errors.append(f"{case.id}: 테스트 문법 오류")
-                if len(errors) > count:
-                    invalid.add(case.id)
-            if not errors:
-                return items
-            if attempt:
-                logger.warning("실행 코드가 없는 테스트는 명세로 보류합니다: %s", sorted(invalid))
-                return [case.model_copy(update={"code": None, "description": case.description + " (실제 코드 검증 필요)"})
-                        if case.id in invalid else case for case in items]
-            payload["correction"] = errors
-            payload["previous_tests"] = items
-        raise AssertionError("unreachable")
-
-    def draft(self, context):
-        return self._ask("design.md", Draft, context)
+    def check_revision(self, context):
+        return self._ask("revision-check.md", RevisionCheck, context)

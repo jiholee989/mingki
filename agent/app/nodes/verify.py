@@ -1,102 +1,49 @@
-from app.nodes.design import MAX_ROUND
+"""값·단위·근거 검사와 재작성의 요청 반영 검토. 항목당 최대 두 번 작성한다."""
+
 from app.schemas import Event
+from app.validation import validate_proposal
+from app.nodes.proposal import changed_fields, CONTENT_FIELDS
 
 
-def make_verify(tools):
+def make_verify(reasoner):
     def verify(state):
-        patches = state.get("code_patches", [])
-        code = [p for p in patches if p.status != "ticket_only"]
-        errors, updated = [], []
-        executed = 0
-        if state.get("demo"):
-            errors = [
-                "LLM 분석 확인 모드: 로컬 샘플 사용, 실제 패치·테스트 미실행"
-                if state.get("llm_used")
-                else "시연 모드: 실제 패치와 테스트를 실행하지 않았습니다"
-            ]
-            updated = [
-                p.model_copy(update={"status": "unverified"}) if p in code else p
-                for p in patches
-            ]
-        elif not patches:
-            errors = ["검증할 수정안이 없습니다. 확인 필요 후보와 수정 범위를 먼저 검토하세요"]
-        elif not code:
-            updated = patches
-        elif any(p.status == "patch_failed" for p in code):
-            # 잘못 생성된 패치를 실행 도구에 보내지 않고 모델에 오류를 돌려준다.
-            updated = patches
-            errors = [error for p in code for error in p.errors]
-        else:
-            cases = state.get("test_cases", [])
-            covered = {t.requirement_id for t in cases if t.code}
-            affected = {
-                s.requirement_id
-                for s in state["change_specs"]
-                if s.is_target and s.id in {i for p in code for i in p.spec_ids}
-            }
-            if not affected <= covered:
-                errors = ["코드 수정 요건마다 실행 가능한 테스트가 필요합니다"]
-            else:
-                result = tools.check_patch(
-                    patches=[p.model_dump(mode="json") for p in code],
-                    test_cases=[t.model_dump(mode="json") for t in cases if t.code],
-                )
-                system = result.get("system", {})
-                if system.get("ok") is not True:
-                    errors = system.get("errors") or ["시스템 검증 실패"]
-                # generated는 실행 증거가 아니다. 실제 실행 수가 없으면 발행을 차단한다.
-                executed = result.get("tests", {}).get("executed", 0)
-                if (
-                    not isinstance(executed, int)
-                    or isinstance(executed, bool)
-                    or executed < 1
-                ):
-                    errors = [
-                        *errors,
-                        "실행한 테스트 수(tests.executed)를 확인할 수 없습니다",
-                    ]
-                by_id = {r["bundle_id"]: r for r in result.get("results", [])}
-                for patch in code:
-                    row = by_id.get(patch.bundle_id, {})
-                    ok = row.get("ok") is True
-                    updated.append(
-                        patch.model_copy(
-                            update={
-                                "status": "passed"
-                                if ok and not errors
-                                else "patch_failed",
-                                "errors": [*row.get("errors", []), *errors]
-                                or ([] if ok else ["검증 결과 없음"]),
-                            }
-                        )
-                    )
-            if not updated:
-                updated = [
-                    p.model_copy(update={"status": "unverified", "errors": errors})
-                    for p in code
-                ]
-            updated += [p for p in patches if p.status == "ticket_only"]
-        included = {sid for patch in updated for sid in patch.spec_ids}
-        covered = {s.requirement_id for s in state.get("change_specs", []) if s.is_target and s.id in included}
-        missing = {r.id for r in state.get("requirements", [])} - covered
-        if missing:
-            errors.append(f"수정안 또는 작업 명세에 빠진 확정 요건: {sorted(missing)}")
-        return {
-            "code_patches": updated,
-            "system_errors": errors,
-            "events": [
-                Event(
-                    node="verify",
-                    message=("작업 명세만 생성: 코드 패치·테스트 검증 대상 없음"
-                             if patches and not code and not errors else
-                             f"테스트 실행 {executed}건 / {'미검증·실패' if errors or any(p.status == 'patch_failed' for p in updated) else '검증 완료'}"),
-                )
-            ],
-        }
-
+        proposals, checked, failed = [], 0, 0
+        baselines = state.get("revision_baselines", {})
+        for item in state["proposals"]:
+            if item.status != "pending" or item.verification != "pending":
+                proposals.append(item)
+                continue
+            proposal = item.model_copy(deep=True)
+            baseline = baselines.get(item.id)
+            errors = [item.generation_error] if item.generation_error else validate_proposal(state, item, baseline)
+            if baseline and not errors:
+                if not changed_fields(baseline, item):
+                    errors.append("재작성 결과에 본문 변경이 없습니다")
+                else:
+                    req = next(r for r in state["requirements"] if r.id == item.requirement_id)
+                    try:
+                        result = reasoner.check_revision({"requirement": req.model_dump(mode="json"),
+                            "previous_proposal": baseline.model_dump(mode="json"),
+                            "comment": baseline.review_comment, "candidate": item.model_dump(mode="json")})
+                        if not result.feedback_addressed or not result.mandatory_preserved:
+                            errors.append("수정 요청·필수 변경 검토 실패: " + result.reason)
+                    except ValueError as exc:
+                        errors.append(str(exc))
+            proposal.verification = "failed" if errors else "passed"
+            proposal.generation_error = "; ".join(errors) if errors else None
+            proposal.changed_fields = changed_fields(baseline, item) if baseline and not errors else []
+            if errors and item.attempt >= 2 and baseline:
+                # 실패한 새 본문을 기존 승인 가능한 제안처럼 보여주지 않는다.
+                for name in CONTENT_FIELDS:
+                    setattr(proposal, name, getattr(baseline.model_copy(deep=True), name))
+            proposals.append(proposal)
+            checked += 1
+            failed += bool(errors)
+        return {"proposals": proposals,
+                "events": [Event(node="verify", message=f"제안 {checked}건 검사 / 보완 필요 {failed}건")]}
     return verify
 
 
 def route_after_verify(state):
-    retry = any(p.status == "patch_failed" for p in state.get("code_patches", []))
-    return "design_agent" if retry and state["retry_count"] < MAX_ROUND else "review"
+    return "proposal_agent" if any(p.verification == "failed" and p.attempt < 2 and p.status == "pending"
+                                   for p in state["proposals"]) else "review"

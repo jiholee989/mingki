@@ -1,4 +1,4 @@
-"""레포 루트 data/ 읽기. mock 도구 전용 — 실제 운영에서는 MCP 서버가 같은 파일을 읽는다.
+"""레포 루트 data/ 읽기. 로컬 조회 전용 — 실제 운영에서는 MCP 서버가 같은 파일을 읽는다.
 
 포맷 규칙은 data/regulations/README.md, data/business/README.md 참고.
 """
@@ -18,13 +18,6 @@ _ARTICLE = re.compile(r"^### (부칙 )?제(\d+)조(?:의(\d+))?\((.+)\)$")
 def article_id(supplementary: bool, num: str, sub: str | None) -> str:
     aid = f"{num}-{sub}" if sub else num
     return f"supp-{aid}" if supplementary else aid
-
-
-def article_label(aid: str) -> str:
-    """'15-2' → '제15조의2', 'supp-2' → '부칙 제2조'"""
-    prefix = "부칙 " if aid.startswith("supp-") else ""
-    num, _, sub = aid.removeprefix("supp-").partition("-")
-    return f"{prefix}제{num}조" + (f"의{sub}" if sub else "")
 
 
 @lru_cache
@@ -53,3 +46,18 @@ def load_regulation(regulation_id: str, version: str, data_dir: Path = DATA_DIR)
 @lru_cache
 def load_business(name: str, data_dir: Path = DATA_DIR) -> list[dict]:
     return json.loads((data_dir / "business" / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def list_regulations(data_dir: Path = DATA_DIR) -> list[dict]:
+    """정답지 대신 규정 파일의 메타데이터에서 목록을 만든다."""
+    return [load_regulation(path.parent.name, path.stem, data_dir)["meta"]
+            for path in sorted((data_dir / "regulations").glob("*/*.md"))]
+
+
+def active_rules(rows: list[dict], as_of: str) -> list[dict]:
+    """종료일은 포함한다. 종료·미시행 행을 현재 규칙으로 사용하지 않는다."""
+    from datetime import date
+    point = date.fromisoformat(as_of)
+    return [row for row in rows
+            if date.fromisoformat(row["effectiveFrom"]) <= point
+            and (not row.get("effectiveTo") or point <= date.fromisoformat(row["effectiveTo"]))]

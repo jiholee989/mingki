@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from app.schemas import Event, Requirement
 
 
@@ -7,6 +7,20 @@ def make_requirement_agent(tools, reasoner):
         diff = tools.diff_versions(
             state["regulation_id"], state["old_version"], state["new_version"]
         )
+        # 바뀌지 않은 적용 범위·정의·부칙도 판단에 필요하다.
+        context = tools.get_regulation_context(state["regulation_id"], state["new_version"])
+        articles = context["articles"]
+        diff["regulation_context"] = articles
+        primary = [a for a in articles if a["regulation_id"] == state["regulation_id"]]
+        supplementary = "\n".join(f"{a['title']}: {a['text']}" for a in primary if a["article_id"].startswith("supp-"))
+        if state.get("article_ids"):
+            requested = set(state["article_ids"])
+            known = {c["article_id"] for c in diff["changes"] if not c["article_id"].startswith("supp-")}
+            if not requested <= known:
+                raise ValueError("변경 본문에 없는 조항을 선택했습니다")
+            diff["changes"] = [c for c in diff["changes"] if c["article_id"] in requested or c["article_id"].startswith("supp-")]
+        snapshot_date = ((date.fromisoformat(diff["effective_from"]) - timedelta(days=1)).isoformat()
+                         if diff.get("effective_from") else date.today().isoformat())
         changes = {c["article_id"]: c for c in diff["changes"]}
         requirements, seen = [], set()
         for item in reasoner.requirements(diff):
@@ -22,19 +36,18 @@ def make_requirement_agent(tools, reasoner):
                 old_text=source["old_text"],
                 new_text=source["new_text"],
                 change=source["change"],
-                effective_date=item.effective_date
-                or (
-                    date.fromisoformat(diff["effective_from"])
-                    if diff.get("effective_from")
-                    else None
-                ),
+                transitional=supplementary or item.transitional,
+                effective_date=(date.fromisoformat(diff["effective_from"])
+                                if diff.get("effective_from") else item.effective_date),
             )
             requirements.append(Requirement.model_validate(data))
             seen.add(item.id)
         return {
             "requirements": requirements,
-            "demo": reasoner.is_demo or tools.is_mock,
-            "llm_used": not reasoner.is_demo,
+            "regulation_context": articles,
+            "data_gaps": context["data_gaps"],
+            "snapshot_date": snapshot_date,
+            "mode": "llm" if tools.is_local else "live",
             "events": [
                 Event(
                     node="requirement_agent", message=f"변경 요건 {len(requirements)}건"
@@ -46,4 +59,4 @@ def make_requirement_agent(tools, reasoner):
 
 
 def route_after_requirement(state):
-    return "locate_agent" if state.get("requirements") else "report"
+    return "product_impact_agent" if state.get("requirements") else "report"

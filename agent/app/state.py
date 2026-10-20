@@ -1,15 +1,8 @@
+"""상품 변경 제안 작업의 공통 상태. 승인·수정 이력은 누적한다."""
+
 import operator
-from typing import Annotated, TypedDict
-from app.schemas import (
-    Approval,
-    ChangeSpec,
-    Delivery,
-    Event,
-    PatchResult,
-    Report,
-    Requirement,
-    TestCase,
-)
+from typing import Annotated, Literal, TypedDict
+from app.schemas import Event, Requirement, ProductImpact, ProductProposal, ProposalReviewRecord, ProductReport
 
 
 class RippleState(TypedDict, total=False):
@@ -17,19 +10,19 @@ class RippleState(TypedDict, total=False):
     regulation_id: str
     old_version: str
     new_version: str
+    article_ids: list[str]
+    snapshot_date: str
+    data_gaps: list[str]
+    product_documents: list[dict]
+    regulation_context: list[dict]
     requirements: list[Requirement]
-    change_specs: list[ChangeSpec]
-    test_cases: list[TestCase]
-    code_patches: list[PatchResult]
-    design_round: int
-    retry_count: int
-    system_errors: list[str]
-    review_decision: dict
-    revision_comment: str
-    blocked_reason: str | None
-    demo: bool
-    llm_used: bool
-    approvals: Annotated[list[Approval], operator.add]
+    products: list[dict]
+    product_rules: list[dict]
+    product_impacts: list[ProductImpact]
+    proposals: list[ProductProposal]
+    revision_baselines: dict[str, ProductProposal]
+    review_history: Annotated[list[ProposalReviewRecord], operator.add]
+    review_finish: bool
     events: Annotated[list[Event], operator.add]
-    deliveries: list[Delivery]
-    result: Report
+    mode: Literal["llm", "live"]
+    result: ProductReport

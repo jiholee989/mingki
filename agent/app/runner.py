@@ -3,7 +3,6 @@
 from threading import Lock
 from langgraph.types import Command
 from app.backend import ResumeRequest, RunRequest
-from app.nodes.confirm import validate_confirmation
 from app.nodes.review import validate_review
 
 
@@ -29,6 +28,7 @@ class AgentRunner:
         new_version="v4",
         *,
         thread_id=None,
+        article_ids=None,
     ):
         thread_id = thread_id or task_id
         config = self.config(thread_id)
@@ -44,6 +44,7 @@ class AgentRunner:
                     "regulation_id": regulation_id,
                     "old_version": old_version,
                     "new_version": new_version,
+                    "article_ids": article_ids or [],
                 },
                 config,
             )
@@ -57,17 +58,10 @@ class AgentRunner:
                 raise DecisionError("승인을 기다리는 작업이 없습니다")
             if task_id and snapshot.values["task_id"] != task_id:
                 raise DecisionError("다른 작업의 재개 요청입니다")
-            expected = (
-                "REQUIREMENTS"
-                if interrupts[0].value["type"] == "confirm_requirements"
-                else "REVIEW"
-            )
+            expected = "REVIEW"
             if step and step != expected:
-                raise DecisionError("현재 대기 중인 승인 단계와 다릅니다")
-            # 잘못된 결정을 체크포인트에 넣기 전에 거부해야 다시 입력할 수 있다.
-            validator = (
-                validate_confirmation if expected == "REQUIREMENTS" else validate_review
-            )
+                raise DecisionError("현재는 상품별 제안 검토 단계입니다. 중간 요건 승인은 사용하지 않습니다")
+            validator = validate_review
             try:
                 validator(snapshot.values, decision)
             except ValueError as exc:

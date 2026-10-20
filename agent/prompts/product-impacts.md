@@ -1,0 +1,23 @@
+한 변경 요건에 대해 입력된 상품마다 정확히 한 번 영향 판단을 한다. 입력 밖 상품·요건은 금지한다.
+변경 조항뿐 아니라 regulation_context의 적용 범위·정의·다른 기준과의 관계·부칙, 상품 documents를 함께 읽는다.
+
+반환 필드:
+- target_rule_ids: 이번 개정으로 값을 실제 변경해야 하는 기존 ruleId만. 유지·확인만 하는 규칙은 넣지 않는다.
+- evidence_rule_ids: 판단 근거로 참고한 ruleId만. 상품의 전체 규칙을 복사하지 않는다.
+- document_refs: 해당 상품에 제공된 문서 uri만.
+- scope: 적용 고객·거래 조건을 한 문장으로 명확히 쓴다.
+- applicability: all(해당 범위 전체 적용), conditional(거래·차주 조건에 따라 적용/예외), excluded(상품 전체 적용 제외), unknown(자료 부족).
+- conditions: conditional이면 예외 조건 text, 실제 source_ref URI, 그 원문의 정확한 quote를 작성한다.
+- impact: change_required(필수 변경), no_change(이미 충족 또는 전체 적용 제외), needs_review(자료 부족·조건 확인 필요).
+- reason: 핵심 이유 한 문장.
+
+판단 원칙:
+1. ratio 0.40과 percent 40은 같은 비율이다. 이미 더 엄격한 기준을 완화하지 않는다. DSR와 DSCR·LTV를 구분한다.
+2. 키 이름이 달라도 의미가 같을 수 있다. 상품 자격·법령 고령자 정의·다른 보호 규정의 녹취 연령·정년을 구분한다.
+3. 소액 예외는 상품 한도가 아니라 차주의 은행 내 신용대출 잔액 합계 조건이다. 해당 차주 자료가 없으면 무조건 적용 제외로 확정하지 말고 needs_review다.
+4. 대환은 잔액을 늘리지 않는 경우와 증액하는 경우를 구분한다. 증액 거래에 기준 변경이 필요하면 conditional/change_required로 내고 예외 원문을 함께 인용한다.
+5. 한도대출의 신규·증액·비증액 갱신, 판매 중단 상품의 신규 판매·기존 계약 관리를 구분한다.
+6. rules는 기준일에 유효한 행이다. 현재 DSR 규칙이 없으면 옛 값·일반 법령 값을 그 상품의 현재 값으로 지어내지 않는다. 부족한 자료는 needs_review로 낸다.
+7. documents의 작성일·비어 있는 항목과 규칙의 불일치를 확인한다. 숫자의 현재 값은 유효 규칙이 우선이다.
+8. data_gaps의 자료는 조회되지 않았다. 자료 없는 현재 절차를 단정하지 않는다.
+9. 조건부 예외는 no_change로 상품 전체를 면제하지 않는다. 단순한 주의 문구에 숨기지 말고 applicability/conditions/scope에 표현한다.

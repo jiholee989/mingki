@@ -22,102 +22,115 @@ class Requirement(BaseModel):
     transitional: str | None = None
 
 
-class TestCase(BaseModel):
-    __test__ = False
-    id: str
-    requirement_id: str
-    kind: Literal["boundary", "effective_date", "system", "unit"]
-    description: str
-    inputs: str
-    expected: str
-    code: str | None = Field(
-        default=None, description="격리된 code-mcp에서 실행할 pytest 소스"
-    )
-
-
-class ChangeSpec(BaseModel):
-    id: str
-    requirement_id: str
-    file: str
-    line: int = Field(ge=0)
-    symbol: str
-    snippet: str
-    kind: Literal["config", "code", "db", "product_rule", "ui", "new"]
-    is_target: bool
-    reason: str
-    before: str = Field(default="", description="현재 동작 또는 현재 값")
-    after: str = Field(default="", description="요건 반영 후 필요한 동작 또는 값")
-    needs_review: bool = Field(default=False, description="관련성 근거가 부족해 추가 확인이 필요한 후보")
-
-    @property
-    def location(self) -> str:
-        return f"{self.file}:{self.line}"
-
-
-class PatchResult(BaseModel):
-    bundle_id: str
-    files: list[str]
-    spec_ids: list[str]
-    locations: list[str]
-    diff: str
-    proposal: str = ""
-    status: Literal[
-        "pending", "passed", "patch_failed", "unverified", "ticket_only"
-    ] = "pending"
-    round: int = Field(default=1, ge=1, description="작성 회차. 실패 횟수와 구분한다")
-    errors: list[str] = Field(default_factory=list)
-
-
-class Approval(BaseModel):
-    stage: Literal["requirements", "review"]
-    approved: bool
-    approval_id: int | None = None
-    comment: str | None = None
-
-
-class Delivery(BaseModel):
-    kind: Literal["draft_pr", "work_ticket"]
-    job_id: str
-    status: str
-    idempotency_key: str
-    duplicate: bool = False
-    branch: str | None = None
-    url: str | None = None
-
-
-class ChangeSheet(BaseModel):
-    requirement_id: str
-    basis: str
-    summary: str
-    effective_date: date | None = None
-    transitional: str | None = None
-    locations: list[str]
-    non_targets: list[str]
-    proposals: list[str]
-    tests: list[str]
-    verification: Literal["passed", "failed", "not_run"]
-
-
-class Report(BaseModel):
-    status: Literal[
-        "DONE",
-        "NO_CHANGE",
-        "HELD",
-        "REJECTED",
-        "BLOCKED",
-        "QUEUED",
-        "READY",
-        "DEMO",
-        "LLM_PREVIEW",
-    ]
-    summary: str
-    requirement_ids: list[str] = Field(default_factory=list)
-    change_sheets: list[ChangeSheet] = Field(default_factory=list)
-    deliveries: list[Delivery] = Field(default_factory=list)
-    failed_bundle_ids: list[str] = Field(default_factory=list)
-    blocked_reason: str | None = None
-
-
 class Event(BaseModel):
     node: str
     message: str
+
+
+class ScopeCondition(BaseModel):
+    text: str
+    source_ref: str
+    quote: str
+
+
+class ProductAssessment(BaseModel):
+    requirement_id: str
+    product_id: str
+    reason: str
+    target_rule_ids: list[str] = Field(default_factory=list, description="실제로 바꿀 기존 규칙 ID만. 참고한 전체 목록 금지")
+    evidence_rule_ids: list[str] = Field(default_factory=list, description="판단에 참고한 규칙 ID")
+    document_refs: list[str] = Field(default_factory=list)
+    scope: str = Field(default="", description="변경을 적용할 고객·거래 범위")
+    applicability: Literal["all", "conditional", "excluded", "unknown"] = "unknown"
+    conditions: list[ScopeCondition] = Field(default_factory=list)
+    impact: Literal["change_required", "no_change", "needs_review"]
+
+
+class ProductImpact(ProductAssessment):
+    id: str
+    product_name: str
+    current: str
+
+
+class RuleChange(BaseModel):
+    rule_id: str
+    rule_key: str
+    current_value: str
+    proposed_value: str
+    unit: str
+
+
+class ProposalText(BaseModel):
+    recommendation: str = Field(max_length=220)
+    actions: list[str] = Field(max_length=3)
+    optional_actions: list[str] = Field(default_factory=list, max_length=2)
+    precautions: list[str] = Field(max_length=2)
+
+
+class ProductDraft(ProposalText):
+    changes: list[RuleChange] = Field(default_factory=list)
+
+
+class RevisionText(ProposalText):
+    revision_response: str = Field(max_length=300, description="요청별 실제 반영 내용·반영 불가 사유")
+
+
+class ProductRevision(ProductDraft):
+    revision_response: str = Field(max_length=300, description="요청별 실제 반영 내용·반영 불가 사유")
+
+
+class RevisionCheck(BaseModel):
+    feedback_addressed: bool
+    mandatory_preserved: bool
+    reason: str
+
+
+class ProductProposal(BaseModel):
+    id: str
+    product_id: str
+    product_name: str
+    requirement_id: str
+    article_ref: str
+    impact: Literal["change_required", "needs_review"]
+    target_rule_ids: list[str]
+    evidence_rule_ids: list[str]
+    current: str
+    reason: str
+    recommendation: str
+    actions: list[str]
+    precautions: list[str]
+    effective_date: date | None = None
+    transitional: str | None = None
+    changes: list[RuleChange] = Field(default_factory=list)
+    scope: str = ""
+    applicability: Literal["all", "conditional", "excluded", "unknown"] = "unknown"
+    conditions: list[ScopeCondition] = Field(default_factory=list)
+    optional_actions: list[str] = Field(default_factory=list)
+    verification: Literal["pending", "passed", "failed"] = "pending"
+    attempt: int = 1
+    status: Literal["pending", "approved", "rejected", "revision_requested"] = "pending"
+    version: int = Field(default=1, ge=1)
+    review_comment: str = ""
+    human_edited: bool = False
+    document_refs: list[str] = Field(default_factory=list)
+    generation_error: str | None = None
+    revision_response: str = ""
+    changed_fields: list[str] = Field(default_factory=list)
+
+
+class ProposalReviewRecord(BaseModel):
+    proposal_id: str
+    version: int
+    action: Literal["approve", "reject", "request_changes", "edit"]
+    comment: str
+    snapshot: ProductProposal
+
+
+class ProductReport(BaseModel):
+    status: Literal["NO_CHANGE", "NO_ACTION", "APPROVED", "PARTIALLY_APPROVED", "REJECTED", "IN_REVIEW"]
+    mode: Literal["llm", "live"]
+    summary: str
+    proposals: list[ProductProposal]
+    unchanged: list[ProductImpact]
+    approved_count: int
+    rejected_count: int

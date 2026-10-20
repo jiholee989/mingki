@@ -1,8 +1,6 @@
-"""실제 MCP 서버 3개(regulation · code · business)에 붙는 도구. MockTools와 메서드 이름 · 반환 형태가 같다.
+"""규정·업무 MCP에서 상품 제안에 필요한 자료만 조회한다.
 
-주소는 docker-compose의 agent 환경 변수 (REGULATION_MCP_URL · CODE_MCP_URL · BUSINESS_MCP_URL).
-그래프 노드는 동기 함수라서, 전용 이벤트 루프 스레드에서 fastmcp Client를 돌리고 결과만 기다린다.
-도구가 실패하면 fastmcp.exceptions.ToolError(이유 한 줄)가 그대로 올라온다.
+동기 노드가 전용 이벤트 루프 스레드의 fastmcp Client를 통해 도구를 호출한다.
 """
 
 import asyncio
@@ -10,9 +8,11 @@ import logging
 import os
 import threading
 import time
+from datetime import date
 from typing import Any
 
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from app.tools.base import ToolBelt
 
@@ -20,34 +20,26 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_URLS = {
     "regulation": "http://localhost:8001/mcp",
-    "code": "http://localhost:8002/mcp",
     "business": "http://localhost:8003/mcp",
 }
 
 # 도구 → 서버 (mcp/README.md)
 TOOL_SERVER = {
+    "list_regulations": "regulation",
+    "get_product_doc": "regulation",
     "diff_versions": "regulation",
-    "search_regulation": "regulation",
-    "get_article": "regulation",
     "list_articles": "regulation",
-    "search_code": "code",
-    "get_file": "code",
-    "find_usages": "code",
-    "check_patch": "code",
-    "create_draft_pr": "code",
+    "get_article": "regulation",
     "get_products": "business",
     "get_product_rules": "business",
-    "get_db_schema": "business",
-    "get_contract_impact": "business",
-    "create_work_ticket": "business",
 }
 
 
 class McpTools:
-    is_mock = False
+    is_local = False
 
     def __init__(self, urls: dict[str, str] | None = None, timeout: float = 120):
-        """urls: {"regulation" | "code" | "business": "http://…/mcp"} (빠진 것은 환경 변수 · 기본값)"""
+        """urls: {"regulation" | "business": "http://…/mcp"} (빠진 것은 환경 변수 · 기본값)"""
         # run.py가 .env를 읽은 뒤 생성하므로 환경변수도 이 시점에 읽는다.
         self.urls = {
             name: os.getenv(f"{name.upper()}_MCP_URL") or default
@@ -98,49 +90,6 @@ class McpTools:
             if not self._thread.is_alive():
                 self._loop.close()
 
-    def describe(self, *names):
-        async def discover():
-            definitions = []
-            for server in sorted(
-                {TOOL_SERVER[n] for n in names if n != "read_resource"}
-            ):
-                logger.info("%s-mcp 도구 목록 조회", server)
-                async with Client(self.urls[server], timeout=self.timeout) as client:
-                    for tool in await client.list_tools():
-                        if tool.name in names:
-                            definitions.append(
-                                {
-                                    "type": "function",
-                                    "function": {
-                                        "name": tool.name,
-                                        "description": tool.description or tool.name,
-                                        "parameters": tool.input_schema,
-                                    },
-                                }
-                            )
-            return definitions
-
-        definitions = self._run(discover())
-        if "read_resource" in names:
-            definitions.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "read_resource",
-                        "description": "검색 결과의 reg:// URI로 규정 원문을 읽는다",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {"uri": {"type": "string"}},
-                            "required": ["uri"],
-                        },
-                    },
-                }
-            )
-        found = {d["function"]["name"] for d in definitions}
-        if found != set(names):
-            raise ValueError(f"MCP 도구가 없습니다: {set(names)-found}")
-        return definitions
-
     async def _call_tool(self, server: str, name: str, args: dict) -> Any:
         async with Client(self.urls[server], timeout=self.timeout) as c:
             res = await c.call_tool(name, args)
@@ -164,19 +113,65 @@ class McpTools:
         logger.info("%s-mcp tool=%s 완료 (%.2fs)", server, name, time.monotonic() - started)
         return result
 
-    def read_resource(self, uri: str) -> str:
-        """reg://{regulation_id}/{version}[/{article_id}]"""
-        self.calls.append(("read_resource", {"uri": uri}))
+    def check_connection(self):
+        """구버전 서버나 잘못된 URL이면 분석을 시작하기 전에 안내한다."""
+        async def check():
+            for server in self.urls:
+                async with Client(self.urls[server], timeout=self.timeout) as client:
+                    available = {tool.name for tool in await client.list_tools()}
+                required = {name for name, owner in TOOL_SERVER.items() if owner == server}
+                missing = required - available
+                if missing:
+                    raise ValueError(f"{server}-mcp 도구 누락: {', '.join(sorted(missing))}. 최신 main의 MCP 서버를 다시 실행하세요")
+        self._run(check())
 
-        async def read() -> str:
-            async with Client(self.urls["regulation"], timeout=self.timeout) as c:
-                contents = await c.read_resource(uri)
-            return "".join(getattr(b, "text", "") for b in contents)
+    def get_regulation_context(self, regulation_id: str, version: str) -> dict:
+        catalog = self.list_regulations()
+        primary = next((row for row in catalog if row["regulation_id"] == regulation_id), None)
+        versions = primary["versions"] if primary else []
+        selected = next((v for v in versions if v["version"] == version), None)
+        if not selected or not selected.get("effective_from"):
+            raise ValueError("조회한 규정 목록에서 분석 버전과 시행일을 확인할 수 없습니다")
+        # 분석 대상의 시행일 이후에 개정된 관련 규정은 근거로 사용하지 않는다.
+        horizon = date.fromisoformat(selected["effective_from"])
+        targets = [(regulation_id, version)]
+        gaps = []
+        for row in catalog:
+            if row["regulation_id"] == regulation_id:
+                continue
+            candidates = [v for v in row["versions"] if v.get("effective_from")
+                          and date.fromisoformat(v["effective_from"]) <= horizon]
+            if candidates:
+                chosen = max(candidates, key=lambda v: (v["effective_from"], int(v["version"].removeprefix("v"))))
+                targets.append((row["regulation_id"], chosen["version"]))
+            elif any(not v.get("effective_from") for v in row["versions"]):
+                gaps.append(f"{row['regulation_id']}: 시행일이 없어 관련 규정 버전을 선택할 수 없음")
+        articles = []
+        for rid, selected_version in targets:
+            articles.extend({**self.get_article(rid, selected_version, row["article_id"]),
+                             "regulation_id": rid, "version": selected_version}
+                            for row in self.list_articles(rid, selected_version))
+        return {"articles": articles, "data_gaps": gaps}
 
-        logger.info("regulation-mcp resource 읽기 요청")
-        result = self._run(read())
-        logger.info("regulation-mcp resource 읽기 완료")
-        return result
+    def get_product_documents(self, product_ids: list[str]) -> dict:
+        documents, gaps = [], []
+        for pid in dict.fromkeys(product_ids):
+            try:
+                doc = self.get_product_doc(pid)
+            except ToolError as exc:
+                gaps.append(f"{pid}: 상품 문서 조회 실패: {exc}")
+                continue
+            if doc["product_id"] != pid:
+                raise ValueError("MCP 상품 문서의 상품 ID가 요청과 다릅니다")
+            sections = [section for section in doc["sections"] if section["text"].strip()]
+            if not sections:
+                gaps.append(f"{pid}: 상품 문서에 확인 가능한 본문이 없음")
+            # 서버가 준 섹션 URI를 유지해 인용·출처 검사가 실제 조회 자료와 일치하게 한다.
+            documents.extend({"productId": pid, "uri": section["uri"],
+                              "content": f"## {section['section']}\n{section['text']}",
+                              "updated_at": doc.get("updated_at")}
+                             for section in sections)
+        return {"documents": documents, "data_gaps": gaps}
 
     def __getattr__(self, name: str):
         if name not in TOOL_SERVER:
@@ -184,39 +179,15 @@ class McpTools:
         return lambda *args, **kwargs: self.call(name, **_bind(name, args, kwargs))
 
 
-# 위치 인자로 부르는 노드 코드(예: search_regulation(term, regulation_id, version))를 키워드 인자로 바꾼다
+# 노드의 위치 인자를 MCP 요청의 키워드 인자로 바꾼다
 _PARAMS = {
+    "list_regulations": (),
+    "get_product_doc": ("product_id",),
     "diff_versions": ("regulation_id", "old_version", "new_version"),
-    "search_regulation": ("query", "regulation_id", "version"),
-    "get_article": ("regulation_id", "version", "article_id"),
     "list_articles": ("regulation_id", "version"),
-    "search_code": ("query", "regex", "path_glob", "max_results"),
-    "get_file": ("path",),
-    "find_usages": ("symbol",),
-    "check_patch": ("patches", "test_cases"),
-    "create_draft_pr": (
-        "task_id",
-        "approval_id",
-        "idempotency_key",
-        "title",
-        "patches",
-        "spec_keys",
-    ),
+    "get_article": ("regulation_id", "version", "article_id"),
     "get_products": (),
-    "get_product_rules": ("rule_key", "product_id"),
-    "get_db_schema": (),
-    "get_contract_impact": ("age_from", "age_to", "applied_before"),
-    "create_work_ticket": (
-        "task_id",
-        "approval_id",
-        "idempotency_key",
-        "title",
-        "description",
-        "type",
-        "target_ref",
-        "spec_keys",
-        "assignee",
-    ),
+    "get_product_rules": ("rule_key", "product_id", "as_of"),
 }
 
 

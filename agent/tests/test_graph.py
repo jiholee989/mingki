@@ -1,544 +1,370 @@
-"""그래프 경로·발행 차단·Spring/MCP 계약. 외부 API는 호출하지 않는다."""
-
+"""상품별 제안·부분 검토·버전 충돌을 외부 API 없이 검증한다."""
 import copy
 import subprocess
 import sys
 
 import pytest
-from app.backend import (
-    ResumeRequest,
-    change_specs_payload,
-    patches_payload,
-    requirements_payload,
-)
-from app.demo import DemoReasoner
-from app.graph import LLM_NODES, NODE_TOOLS, build_graph
-from app.reasoning import Draft
-from app.runner import AgentRunner
-from app.schemas import ChangeSpec, TestCase
-from app.tools.base import WRITE_TOOLS
-from app.tools.mock import MockTools
+from app.backend import ResumeRequest, product_proposals_payload
+from app.graph import NODE_TOOLS, build_graph
+from app.runner import AgentRunner, DecisionError
+from app.schemas import ProductDraft, ProductAssessment, Requirement, RuleChange, RevisionCheck
+from app.tools.local import LocalTools
+from app.cli import select_proposals, review_command
 
 
-def start(tools=None, reasoner=None):
-    tools = tools or MockTools()
-    runner = AgentRunner(build_graph(tools, reasoner))
-    return runner, runner.start("T1", "credit-loan-ops"), tools
-
-
-def test_first_approval_includes_evidence_and_locations_before_any_design():
-    runner, out, tools = start()
-    value = out["__interrupt__"][0].value
-    assert value["type"] == "confirm_requirements"
-    assert len(value["requirements"]) == 3 and len(value["change_specs"]) == 21
-    assert all(r["article_ref"] for r in value["requirements"])
-    assert not out.get("code_patches") and not out.get("test_cases")
-    assert tools.called("search_code") and not tools.called("check_patch")
-
-
-def test_demo_never_claims_verification_or_creates_deliveries():
-    runner, _, tools = start()
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["__interrupt__"][0].value["type"] == "review"
-    assert {p.status for p in out["code_patches"]} == {"unverified", "ticket_only"}
-    assert all(t.code is None for t in out["test_cases"])
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["result"].status == "DEMO"
-    assert not tools.called("create_draft_pr") and not tools.called(
-        "create_work_ticket"
-    )
-    assert not tools.called("check_patch")
-
-
-def test_rejection_stops_before_design():
-    runner, _, tools = start()
-    out = runner.resume("T1", {"action": "reject"})
-    assert out["result"].status == "HELD"
-    assert not out.get("code_patches")
-
-
-def test_partial_confirmation_and_scope_exclusion():
-    runner, out, _ = start()
-    excluded = next(s.id for s in out["change_specs"] if s.symbol == "senior_discount")
-    out = runner.resume(
-        "T1",
-        {
-            "action": "approve",
-            "confirmed_req_keys": ["REQ-15"],
-            "excluded_spec_keys": [excluded],
-        },
-    )
-    assert {r.id for r in out["requirements"]} == {"REQ-15"}
-    assert all(
-        s.requirement_id == "REQ-15" and s.id != excluded for s in out["change_specs"]
-    )
-    assert all(t.requirement_id == "REQ-15" for t in out["test_cases"])
-
-
-def test_invalid_confirmation_can_be_retried_without_losing_checkpoint():
-    runner, _, _ = start()
-    with pytest.raises(ValueError):
-        runner.resume("T1", {"action": "approve", "confirmed_req_keys": ["unknown"]})
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["__interrupt__"][0].value["type"] == "review"
-
-
-def test_runner_rejects_duplicate_start_wrong_task_and_wrong_stage():
-    runner, _, _ = start()
-    with pytest.raises(ValueError):
-        runner.start("T1", "credit-loan-ops")
-    with pytest.raises(ValueError):
-        runner.resume("T1", {"action": "approve"}, task_id="other")
-    with pytest.raises(ValueError):
-        runner.resume("T1", {"action": "approve"}, step="REVIEW")
-    with pytest.raises(ValueError):
-        runner.resume("missing", {"action": "approve"})
-
-
-def test_spring_resume_translation():
-    runner, _, _ = start()
-    req = ResumeRequest.model_validate(
-        {
-            "taskId": "T1",
-            "threadId": "T1",
-            "step": "REQUIREMENTS",
-            "decision": "CONFIRM",
-            "payload": {"confirmedReqKeys": ["REQ-8"]},
-        }
-    )
-    out = runner.resume_backend(req)
-    assert {r.id for r in out["requirements"]} == {"REQ-8"}
-    assert out["__interrupt__"][0].value["type"] == "review"
-
-
-class FixtureReasoner(DemoReasoner):
-    """외부 모델을 대신하는 고정 응답. 생성 패치의 동작은 실제 pytest로 확인한다."""
-
-    is_demo = False
-
-    def __init__(self, fail_first=False):
+class DsrReasoner:
+    """외부 API 없이 검토 상태 전이를 확인하는 테스트 대역."""
+    def __init__(self):
         self.contexts = []
-        self.fail_first = fail_first
 
     def requirements(self, diff):
-        return [r for r in super().requirements(diff) if r.id == "REQ-8"]
+        source = next(c for c in diff["changes"] if c["article_id"] == "8")
+        return [Requirement(id="REQ-8", article_id="8", article="제8조",
+                            article_ref=source["new_uri"], change="modified", summary="DSR 40%에서 35%로",
+                            target="DSR_LIMIT", old_value="0.40", new_value="0.35")]
 
-    def locate(self, state, tools):
-        return [
-            ChangeSpec(
-                id="s",
-                requirement_id="REQ-8",
-                file="loan.py",
-                line=1,
-                symbol="LIMIT",
-                snippet="LIMIT = 0.40",
-                kind="code",
-                is_target=True,
-                reason="DSR 적용",
-            )
-        ]
+    def product_impacts(self, requirements, products, rules, regulation_context=None, documents=None, data_gaps=None):
+        result = []
+        for req in requirements:
+            for p in products:
+                ids = [r["ruleId"] for r in rules if r["productId"] == p["productId"] and r["ruleKey"] == "DSR_LIMIT"]
+                keep = p["productId"] == "P003"
+                result.append(ProductAssessment(requirement_id=req.id, product_id=p["productId"],
+                    target_rule_ids=[] if keep else ids, evidence_rule_ids=ids,
+                    scope="시행일 이후 신규 신청", applicability="all",
+                    impact="no_change" if keep else "change_required", reason="테스트 자료의 DSR 비교"))
+        return result
 
-    def tests(self, state, tools):
-        return [
-            TestCase(
-                id="dsr",
-                requirement_id="REQ-8",
-                kind="boundary",
-                description="DSR 경계",
-                inputs="{}",
-                expected="35% 허용, 37% 거절",
-                code="from loan import allowed\ndef test_limit():\n    assert allowed(0.35)\n    assert not allowed(0.37)\n",
-            )
-        ]
-
-    def draft(self, context):
+    def draft_product(self, context):
         self.contexts.append(copy.deepcopy(context))
-        value = "0.40" if self.fail_first and len(self.contexts) == 1 else "0.35"
-        extra = " # 첫 시도" if value == "0.40" else ""
-        return Draft(
-            diff=f"@@ loan.py:1 @@\n-LIMIT = 0.40\n+LIMIT = {value}{extra}",
-            proposal="DSR 한도 변경",
-        )
+        actions = ["신규 신청에 개정 기준 적용"]
+        if context.get("comment"):
+            actions.append(f"{context['comment']} (검토 {context['previous_proposal']['version']}차)")
+        return ProductDraft(recommendation="DSR 35%로 변경", actions=actions, precautions=["경과조치 확인"],
+                            changes=[RuleChange(**row) for row in context["mandatory_changes"]])
+
+    def check_revision(self, context):
+        return RevisionCheck(feedback_addressed=True, mandatory_preserved=True, reason="요청 반영 확인")
 
 
-class LocalSandbox(MockTools):
-    """테스트 소유 임시 폴더에만 패치를 적용하고 실제 pytest를 실행한다."""
+class ThreeProductTools(LocalTools):
+    """검토 상태 전이 테스트는 최초 3개 상품으로 작게 유지한다."""
+    def get_products(self):
+        return super().get_products()[:3]
 
-    is_mock = False
-
-    def __init__(self, path):
-        super().__init__()
-        self.path = path
-        self.base = "LIMIT = 0.40\ndef allowed(dsr):\n    return dsr <= LIMIT\n"
-
-    def get_file(self, path):
-        return self.base
-
-    def check_patch(self, patches, test_cases):
-        self._log("check_patch", patches=patches, test_cases=test_cases)
-        root = self.path / f'round-{len(self.called("check_patch"))}'
-        root.mkdir()
-        added = [
-            line[1:] for line in patches[0]["diff"].splitlines() if line.startswith("+")
-        ]
-        (root / "loan.py").write_text(
-            "\n".join(added) + "\n" + "\n".join(self.base.splitlines()[1:]) + "\n"
-        )
-        (root / "test_policy.py").write_text("\n".join(t["code"] for t in test_cases))
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "-q",
-                "-p",
-                "no:cacheprovider",
-                "--confcutdir",
-                str(root),
-            ],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        ok = result.returncode == 0
-        return {
-            "results": [
-                {
-                    "bundle_id": patches[0]["bundle_id"],
-                    "ok": ok,
-                    "errors": [] if ok else [result.stdout],
-                }
-            ],
-            "system": {"ok": ok, "errors": [] if ok else [result.stdout]},
-            "tests": {"executed": 1},
-        }
+    def get_product_rules(self, *args, **kwargs):
+        return [row for row in super().get_product_rules(*args, **kwargs) if int(row["ruleId"][1:]) <= 19]
 
 
-def test_actual_patch_and_tests_then_queue_not_done(tmp_path):
-    reasoner = FixtureReasoner()
-    runner, _, tools = start(LocalSandbox(tmp_path), reasoner)
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["code_patches"][0].status == "passed"
-    assert "LIMIT = 0.40" in reasoner.contexts[0]["content"]
-    out = runner.resume("T1", {"action": "approve", "approval_id": 42})
-    assert out["result"].status == "QUEUED"  # 접수와 완료를 구분한다.
-    assert tools.called("create_draft_pr")[0]["approval_id"] == 42
+def start(reasoner=None):
+    reasoner = reasoner or DsrReasoner()
+    tools = ThreeProductTools()
+    runner = AgentRunner(build_graph(tools, reasoner))
+    return runner, runner.start("T1", "credit-loan-ops"), reasoner, tools
 
 
-def test_retry_uses_real_failure_feedback_and_keeps_tests(tmp_path):
-    reasoner = FixtureReasoner(fail_first=True)
-    runner, _, tools = start(LocalSandbox(tmp_path), reasoner)
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["code_patches"][0].status == "passed"
-    assert len(reasoner.contexts) == 2 and reasoner.contexts[1]["errors"]
-    assert reasoner.contexts[0]["previous_diff"] is None
-    assert "첫 시도" in reasoner.contexts[1]["previous_diff"]
-    assert (
-        tools.called("check_patch")[0]["test_cases"]
-        == tools.called("check_patch")[1]["test_cases"]
-    )
-    assert out["code_patches"][0].round == 2
+def decision(proposal, action="approve", **extra):
+    return {"proposal_id": proposal.id, "version": proposal.version, "action": action, **extra}
 
 
-@pytest.mark.parametrize("mode", ["system_failure", "no_execution_count", "no_result"])
-def test_unverified_or_system_failure_blocks_approval_and_writes(tmp_path, mode):
-    class Broken(LocalSandbox):
-        def check_patch(self, patches, test_cases):
-            return {
-                "results": []
-                if mode == "no_result"
-                else [{"bundle_id": patches[0]["bundle_id"], "ok": True, "errors": []}],
-                "system": {
-                    "ok": mode != "system_failure",
-                    "errors": ["integration failed"]
-                    if mode == "system_failure"
-                    else [],
-                },
-                "tests": {"executed": 0 if mode == "no_execution_count" else 1},
-            }
-
-    runner, _, tools = start(Broken(tmp_path), FixtureReasoner())
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["code_patches"][0].status == "patch_failed"
-    with pytest.raises(ValueError, match="미검증"):
-        runner.resume("T1", {"action": "approve", "approval_id": 42})
-    out = runner.resume("T1", {"action": "reject"})
-    assert out["result"].status == "REJECTED" and not tools.called("create_draft_pr")
+def test_only_review_after_proposals_without_code_or_write_tools():
+    _, out, reasoner, tools = start()
+    assert out["__interrupt__"][0].value["type"] == "product_review"
+    assert len(out["proposals"]) == 2 and len(reasoner.contexts) == 2
+    assert {p.id for p in out["proposals"]} == {"REQ-8:P001", "REQ-8:P002"}
+    assert all(p.article_ref == "reg://credit-loan-ops/v4/8" for p in out["proposals"])
+    assert "R001 DSR_LIMIT=0.40" in out["proposals"][0].current
+    assert tools.called("get_products") and tools.called("get_product_rules")
+    for tool in ("get_file", "search_code", "check_patch", "create_draft_pr", "create_work_ticket"):
+        assert not tools.called(tool)
+    assert set(sum((list(v) for v in NODE_TOOLS.values()), [])) == {"diff_versions", "get_regulation_context", "get_products", "get_product_rules", "get_product_documents"}
 
 
-def test_missing_test_code_is_unverified(tmp_path):
-    class NoCode(FixtureReasoner):
-        def tests(self, state, tools):
-            return [
-                t.model_copy(update={"code": None}) for t in super().tests(state, tools)
-            ]
-
-    runner, _, tools = start(LocalSandbox(tmp_path), NoCode())
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["code_patches"][0].status == "unverified"
-    assert not tools.called("check_patch")
+def test_partial_approval_stays_in_review_without_new_generation():
+    runner, out, reasoner, _ = start()
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0])]})
+    assert [p.status for p in out["proposals"]] == ["approved", "pending"]
+    assert out["__interrupt__"] and len(reasoner.contexts) == 2
+    assert len(out["review_history"]) == 1
 
 
-def test_request_changes_rebuilds_and_reverifies_before_new_approval(tmp_path):
-    reasoner = FixtureReasoner()
-    runner, _, tools = start(LocalSandbox(tmp_path), reasoner)
-    runner.resume("T1", {"action": "approve"})
-    out = runner.resume(
-        "T1", {"action": "request_changes", "comment": "경계값 설명 보완"}
-    )
-    assert out["__interrupt__"][0].value["type"] == "review"
-    assert reasoner.contexts[-1]["comment"] == "경계값 설명 보완"
-    assert len(tools.called("check_patch")) == 2
-    assert out["code_patches"][0].round == 2
-    assert not tools.called("create_draft_pr")
+def test_revision_only_selected_preserves_approved_and_supports_repeat():
+    runner, out, reasoner, _ = start()
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0])]})
+    approved = out["proposals"][0].model_dump()
+    for version in (2, 3):
+        out = runner.resume("T1", {"decisions": [decision(out["proposals"][1], "request_changes", comment="적용 시점을 구분해 주세요")]})
+        assert out["proposals"][0].model_dump() == approved
+        assert out["proposals"][1].version == version
+        assert out["proposals"][1].status == "pending"
+        assert reasoner.contexts[-1]["comment"] == "적용 시점을 구분해 주세요"
+    assert len(reasoner.contexts) == 4
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][1])], "finish": True})
+    assert out["result"].status == "APPROVED"
 
 
-def test_final_exclusion_requires_reverification(tmp_path):
-    runner, _, _ = start(LocalSandbox(tmp_path), FixtureReasoner())
-    out = runner.resume("T1", {"action": "approve"})
-    with pytest.raises(ValueError, match="재검증"):
-        runner.resume(
-            "T1",
-            {
-                "action": "approve",
-                "approval_id": 42,
-                "excluded_spec_keys": [out["change_specs"][0].id],
-            },
-        )
+def test_edit_revokes_approval_and_requires_new_version_approval():
+    runner, out, reasoner, _ = start()
+    out = runner.resume("T1", {"decisions": [decision(p) for p in out["proposals"]]})
+    assert out["__interrupt__"]  # 완료 전에는 승인 항목도 다시 열 수 있다.
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0], "edit", edits={"recommendation": "신규 신청에만 변경 기준 적용", "actions": ["시행일로 신청 구분"]})]})
+    a, b = out["proposals"]
+    assert (a.version, a.status, a.human_edited) == (2, "pending", True)
+    assert b.status == "approved" and b.version == 1
+    assert len(reasoner.contexts) == 2
+    assert out["review_history"][0].snapshot.version == 1
+    assert out["review_history"][0].snapshot.status == "approved"
+    out = runner.resume("T1", {"decisions": [decision(a)], "finish": True})
+    assert out["result"].approved_count == 2
 
 
-def test_backend_payloads_keep_ids_and_one_based_round(tmp_path):
-    runner, first, _ = start(LocalSandbox(tmp_path), FixtureReasoner())
-    assert requirements_payload(first["requirements"])["items"][0]["reqKey"] == "REQ-8"
-    assert (
-        change_specs_payload(first["change_specs"])["items"][0]["specKey"] == "SPEC-1"
-    )
-    out = runner.resume("T1", {"action": "approve"})
-    row = patches_payload(out["code_patches"])["items"][0]
-    assert (
-        row["round"] == 1
-        and row["verifyStatus"] == "PASSED"
-        and row["specKeys"] == ["SPEC-1"]
-    )
+@pytest.mark.parametrize("bad", [
+    {"proposal_id": "unknown", "version": 1, "action": "approve"},
+    {"proposal_id": "REQ-8:P002", "version": 2, "action": "approve"},
+    {"proposal_id": "REQ-8:P002", "version": 1, "action": "request_changes", "comment": " "},
+    {"proposal_id": "REQ-8:P002", "version": 1, "action": "edit", "edits": {"product_id": "P003"}},
+    {"proposal_id": "REQ-8:P002", "version": 1, "action": "edit", "edits": {"recommendation": " "}},
+])
+def test_bad_batch_is_atomic_and_checkpoint_can_retry(bad):
+    runner, out, _, _ = start()
+    before = [p.model_dump() for p in out["proposals"]]
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"decisions": [decision(out["proposals"][0]), bad]})
+    snapshot = runner.graph.get_state(runner.config("T1")).values
+    assert [p.model_dump() for p in snapshot["proposals"]] == before
+    out = runner.resume("T1", {"decisions": [decision(p) for p in out["proposals"]], "finish": True})
+    assert out["result"].status == "APPROVED"
 
 
-@pytest.mark.parametrize("node", sorted(LLM_NODES))
-def test_no_write_tools_in_analysis_nodes(node):
-    assert not WRITE_TOOLS.intersection(NODE_TOOLS[node])
-
-
-def test_toolbelt_rejects_write_access():
-    belt = MockTools().subset("search_code")
-    with pytest.raises(PermissionError):
-        belt.create_draft_pr()
-
-
-def test_streaming_boundary_reports_updates_and_still_resumes():
-    updates = []
-    runner = AgentRunner(
-        build_graph(MockTools()),
-        on_update=lambda node, delta: updates.append((node, delta)),
-    )
-    out = runner.start("stream", "credit-loan-ops")
-    assert [name for name, _ in updates] == ["requirement_agent", "locate_agent"]
-    assert out["__interrupt__"][0].value["type"] == "confirm_requirements"
-    out = runner.resume("stream", {"action": "approve"})
-    assert out["__interrupt__"][0].value["type"] == "review"
-    out = runner.resume("stream", {"action": "reject"})
-    assert out["result"].status == "REJECTED" and updates[-1][0] == "report"
-
-
-def test_same_location_keeps_multiple_requirement_relations():
-    class Shared(DemoReasoner):
-        def locate(self, state, tools):
-            return [
-                ChangeSpec(
-                    id="",
-                    requirement_id=r.id,
-                    file="shared.py",
-                    line=1,
-                    symbol="check",
-                    snippet="check(dsr, age)",
-                    kind="code",
-                    is_target=True,
-                    reason="두 정책을 함께 사용하는 코드",
-                )
-                for r in state["requirements"]
-                if r.change == "modified"
-            ]
-
-    _, out, _ = start(reasoner=Shared())
-    assert {s.requirement_id for s in out["change_specs"]} == {"REQ-8", "REQ-15"}
-    assert len({s.id for s in out["change_specs"]}) == 2
-
-
-def test_run_payload_uses_document_versions_and_explicit_mcp_registration():
-    from app.backend import RunRequest
-
-    request = RunRequest.model_validate(
-        {
-            "taskId": "backend-task",
-            "threadId": "backend-thread",
-            "documents": [
-                {"side": "OLD", "versionLabel": "v3"},
-                {"side": "NEW", "versionLabel": "v4"},
-            ],
-        }
-    )
-    runner = AgentRunner(build_graph(MockTools()))
-    out = runner.start_backend(request, regulation_id="credit-loan-ops")
-    assert out["task_id"] == "backend-task"
-    assert out["__interrupt__"][0].value["type"] == "confirm_requirements"
+def test_duplicate_ids_finish_and_wrong_task_stage_rejected():
+    runner, out, _, _ = start()
+    item = decision(out["proposals"][0])
+    for command in ({"decisions": [item, item]}, {"finish": True}, {}):
+        with pytest.raises(DecisionError):
+            runner.resume("T1", command)
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"decisions": [item]}, task_id="other")
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"decisions": [item]}, step="REQUIREMENTS")
     with pytest.raises(ValueError):
-        request.to_input(None)
+        runner.start("T1", "credit-loan-ops")
 
 
-def test_no_changes_does_not_wait_for_approval():
-    class NoChanges(DemoReasoner):
+@pytest.mark.parametrize("actions, expected", [(["approve", "reject"], "PARTIALLY_APPROVED"), (["reject", "reject"], "REJECTED")])
+def test_final_status_and_completed_thread_cannot_resume(actions, expected):
+    runner, out, _, _ = start()
+    out = runner.resume("T1", {"decisions": [decision(p, a) for p, a in zip(out["proposals"], actions)], "finish": True})
+    assert out["result"].status == expected and out["result"].mode == "llm"
+    assert len(out["result"].unchanged) == 1
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"finish": True})
+
+
+def test_no_requirements_and_no_affected_products_skip_review():
+    class Empty(DsrReasoner):
         def requirements(self, diff):
             return []
-
-    _, out, tools = start(reasoner=NoChanges())
-    assert out["result"].status == "NO_CHANGE" and "__interrupt__" not in out
-    assert not tools.called("search_code")
-
-
-def test_preview_does_not_require_spring_id_or_write(tmp_path):
-    runner, _, tools = start(LocalSandbox(tmp_path), FixtureReasoner())
-    runner.resume("T1", {"action": "approve"})
-    out = runner.resume("T1", {"action": "approve", "publish": False})
-    assert out["result"].status == "READY" and not tools.called("create_draft_pr")
+    assert start(Empty())[1]["result"].status == "NO_CHANGE"
+    class Unchanged(DsrReasoner):
+        def product_impacts(self, *args):
+            return [r.model_copy(update={"impact": "no_change"}) for r in super().product_impacts(*args)]
+    assert start(Unchanged())[1]["result"].status == "NO_ACTION"
 
 
-def test_invalid_model_patch_is_repaired_before_sandbox_execution(tmp_path):
-    class InvalidFirst(FixtureReasoner):
-        def draft(self, context):
-            if not self.contexts:
-                self.contexts.append(copy.deepcopy(context))
-                return Draft(diff="invalid patch", proposal="잘못된 형식")
-            return super().draft(context)
-
-    reasoner = InvalidFirst()
-    runner, _, tools = start(LocalSandbox(tmp_path), reasoner)
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["code_patches"][0].status == "passed"
-    assert "수정안 생성 오류" in reasoner.contexts[1]["errors"][0]
-    assert len(tools.called("check_patch")) == 1
-
-
-def test_llm_with_local_samples_is_distinct_from_fixed_rule_demo():
-    runner, _, tools = start(MockTools(), FixtureReasoner())
-    out = runner.resume("T1", {"action": "approve"})
-    assert out["llm_used"] and out["demo"]
-    assert out["code_patches"][0].status == "unverified"
-    assert not tools.called("check_patch")
-    out = runner.resume("T1", {"action": "approve", "publish": True})
-    assert out["result"].status == "LLM_PREVIEW"
-    assert not tools.called("create_draft_pr") and not tools.called(
-        "create_work_ticket"
-    )
+@pytest.mark.parametrize("kind", ["missing", "duplicate", "wrong_rule"])
+def test_uncertain_impacts_are_deferred_not_silently_excluded(kind):
+    class Uncertain(DsrReasoner):
+        def product_impacts(self, *args):
+            rows = super().product_impacts(*args)
+            if kind == "missing":
+                return rows[1:]
+            if kind == "duplicate":
+                return rows + [rows[0]]
+            rows[0] = rows[0].model_copy(update={"target_rule_ids": ["R015"]})
+            return rows
+    out = start(Uncertain())[1]
+    assert out["proposals"][0].impact == "needs_review"
+    assert not out["proposals"][0].target_rule_ids
+    assert "R015" not in out["proposals"][0].current
 
 
-def test_cli_llm_mode_does_not_construct_mcp_client(monkeypatch, capsys):
-    import run
-    import app.llm
-    import app.tools.mcp_client
-
-    monkeypatch.setattr(app.llm, "LlmReasoner", lambda: FixtureReasoner())
-
-    def no_mcp():
-        raise AssertionError("LLM 로컬 모드에서 MCP 연결을 시도했습니다")
-
-    monkeypatch.setattr(app.tools.mcp_client, "McpTools", no_mcp)
-    monkeypatch.setattr(sys, "argv", ["run.py", "--mode", "llm", "--auto"])
-    run.main()
-    assert "[LLM_PREVIEW]" in capsys.readouterr().out
+def test_generation_failure_blocks_approval_and_manual_edit_recovers():
+    class Broken(DsrReasoner):
+        def draft_product(self, context):
+            raise ValueError("invalid model output")
+    runner, out, _, _ = start(Broken())
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"decisions": [decision(out["proposals"][0])]})
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0], "edit", edits={"recommendation": "DSR 상한 조정", "actions": ["0.40에서 0.35로 변경"]})]})
+    assert out["proposals"][0].generation_error is None
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0])]})
+    assert out["proposals"][0].status == "approved"
 
 
-def test_cli_uses_project_dotenv_instead_of_stale_shell_key(monkeypatch, tmp_path):
-    import os
-    import run
-    import app.llm
-
-    (tmp_path / ".env").write_text(
-        "OPENAI_API_KEY=local-test-key\nOPENAI_MODEL=local-test-model\n"
-    )
-    monkeypatch.setattr(run, "__file__", str(tmp_path / "run.py"))
-    monkeypatch.setenv("OPENAI_API_KEY", "stale-shell-key")
-    monkeypatch.setenv("OPENAI_MODEL", "stale-shell-model")
-
-    def local_reasoner():
-        assert os.environ["OPENAI_API_KEY"] == "local-test-key"
-        assert os.environ["OPENAI_MODEL"] == "local-test-model"
-        return FixtureReasoner()
-
-    monkeypatch.setattr(app.llm, "LlmReasoner", local_reasoner)
-    monkeypatch.setattr(sys, "argv", ["run.py", "--mode", "llm", "--auto"])
-    run.main()
+def test_backend_contract_and_camel_case_payload():
+    runner, out, _, _ = start()
+    payload = product_proposals_payload(out["proposals"])
+    assert payload["items"][0]["proposalKey"] == "REQ-8:P001"
+    assert payload["items"][0]["version"] == 1
+    request = ResumeRequest.model_validate({"taskId": "T1", "threadId": "T1", "step": "REVIEW", "payload": {"decisions": [decision(p) for p in out["proposals"]], "finish": True}})
+    assert runner.resume_backend(request)["result"].status == "APPROVED"
+    with pytest.raises(ValueError):
+        ResumeRequest(taskId="T1", threadId="T1", step="REQUIREMENTS").to_decision()
 
 
-def test_cli_does_not_repeat_approval_when_model_execution_fails(monkeypatch):
-    import run
-    import app.llm
-
-    class BadTests(FixtureReasoner):
-        def tests(self, state, tools):
-            raise ValueError("모델 출력 형식 오류")
-
-    monkeypatch.setattr(app.llm, "LlmReasoner", lambda: BadTests())
-    monkeypatch.setattr(sys, "argv", ["run.py", "--mode", "llm", "--auto"])
-    with pytest.raises(ValueError, match="모델 출력 형식"):
-        run.main()
-
-
-def test_confirming_scope_does_not_turn_uncertain_location_into_patch():
-    class Uncertain(DemoReasoner):
-        def locate(self, state, tools):
-            items = super().locate(state, tools)
-            for item in items:
-                if item.is_target and item.kind in ("code", "config", "ui"):
-                    item.needs_review = True
-            return items
-
-    runner, out, _ = start(reasoner=Uncertain())
-    uncertain = {s.id for s in out["change_specs"] if s.needs_review}
-    assert uncertain
-    assert all(not s.is_target for s in out["change_specs"] if s.needs_review)
-    out = runner.resume("T1", {"action": "approve"})
-    assert all(not uncertain.intersection(p.spec_ids) for p in out["code_patches"])
+def test_cli_selectors_edits_and_removed_demo_mode():
+    _, out, _, _ = start()
+    proposals = [p.model_dump(mode="json") for p in out["proposals"]]
+    assert len(select_proposals("1,P001,2", proposals)) == 2
+    assert review_command("p P002", proposals)["decisions"][0]["proposal_id"] == "REQ-8:P002"
+    answers = iter(["수정안", "항목1|항목2", "", "-", "메모"])
+    command = review_command("e 1", proposals, lambda _: next(answers))
+    assert command["decisions"][0]["edits"]["precautions"] == []
+    assert not command["finish"]
+    for bad in ("p", "p 9", "a 1", "f 2", "e 1,2"):
+        with pytest.raises(ValueError):
+            review_command(bad, proposals)
+    result = subprocess.run([sys.executable, "run.py", "--help"], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "{llm,live}" in result.stdout and "demo" not in result.stdout
+    removed = subprocess.run([sys.executable, "run.py", "--mode", "demo"], capture_output=True, text=True)
+    assert removed.returncode != 0
 
 
-@pytest.mark.parametrize("decision, action", [("CONFIRMED", "approve"), ("HELD", "reject")])
-def test_main_requirement_decision_names(decision, action):
-    request = ResumeRequest.model_validate({
-        "taskId": "T1", "threadId": "T1", "step": "REQUIREMENTS",
-        "decision": decision, "payload": {"confirmedReqKeys": ["REQ-8"]},
+def test_one_batch_approves_one_and_regenerates_another():
+    runner, out, reasoner, _ = start()
+    out = runner.resume("T1", {"decisions": [
+        decision(out["proposals"][0]),
+        decision(out["proposals"][1], "request_changes", comment="신규와 기존 구분"),
+    ]})
+    assert [(p.status, p.version) for p in out["proposals"]] == [("approved", 1), ("pending", 2)]
+    assert len(reasoner.contexts) == 3
+    assert reasoner.contexts[-1]["product"]["productId"] == "P002"
+    assert len(out["review_history"]) == 2
+
+
+def test_scope_and_transitions_reach_proposal_model():
+    _, out, reasoner, _ = start()
+    context = reasoner.contexts[0]
+    articles = {a["article_id"]: a for a in context["regulation_context"] if a["regulation_id"] == "credit-loan-ops"}
+    assert "모든 개인신용대출" in articles["3"]["text"]
+    assert "종전의 규정" in out["proposals"][0].transitional
+    assert "기간을 연장" in out["proposals"][0].transitional
+    assert context["requirement"]["effective_date"] == "2026-12-01"
+
+
+def test_unsupported_no_change_is_kept_for_review():
+    class Unsupported(DsrReasoner):
+        def product_impacts(self, *args):
+            return [row.model_copy(update={"impact": "no_change", "target_rule_ids": [], "evidence_rule_ids": []})
+                    for row in super().product_impacts(*args)]
+    out = start(Unsupported())[1]
+    assert len(out["proposals"]) == 3
+    assert all(p.impact == "needs_review" for p in out["proposals"])
+
+
+def test_policy_key_difference_alone_does_not_override_semantic_judgment():
+    class DifferentPolicy(DsrReasoner):
+        def requirements(self, diff):
+            return [row.model_copy(update={"target": "DEBT_SERVICE_RATIO"}) for row in super().requirements(diff)]
+    out = start(DifferentPolicy())[1]
+    assert len(out["proposals"]) == 2
+    assert all(p.impact == "change_required" for p in out["proposals"])
+
+
+def test_unchanged_revision_retries_then_blocks_approval_and_keeps_previous_body():
+    class Unchanged(DsrReasoner):
+        def draft_product(self, context):
+            self.contexts.append(copy.deepcopy(context))
+            return ProductDraft(recommendation="DSR 35%로 변경", actions=["신규 신청에 개정 기준 적용"], precautions=["경과조치 확인"], changes=[RuleChange(**row) for row in context["mandatory_changes"]])
+    runner, out, reasoner, _ = start(Unchanged())
+    original = out["proposals"][0]
+    approved = out["proposals"][1]
+    out = runner.resume("T1", {"decisions": [decision(approved)]})
+    out = runner.resume("T1", {"decisions": [decision(original, "request_changes", comment="기존 신청은 제외해 주세요")]})
+    revised = out["proposals"][0]
+    assert revised.generation_error and "본문 변경이 없습니다" in revised.generation_error
+    assert revised.actions == original.actions
+    assert revised.recommendation == original.recommendation
+    assert revised.changed_fields == []
+    assert reasoner.contexts[-1]["validation_errors"]
+    assert len(reasoner.contexts) == 4  # 초기 두 항목 + 선택한 항목의 두 시도
+    assert out["proposals"][1].status == "approved"
+    with pytest.raises(DecisionError):
+        runner.resume("T1", {"decisions": [decision(revised)]})
+    out = runner.resume("T1", {"decisions": [decision(revised, "edit", edits={"actions": ["시행일 이후 신규 신청에만 적용"]})]})
+    assert out["proposals"][0].generation_error is None
+    assert out["proposals"][0].changed_fields == ["actions"]
+
+
+def test_unchanged_first_attempt_can_recover_on_retry():
+    class Retry(DsrReasoner):
+        def draft_product(self, context):
+            draft = super().draft_product({**context, "comment": ""})
+            if context.get("validation_errors"):
+                draft.actions = ["신규 신청만 적용하고 기존 신청과 연장은 종전 기준 유지"]
+            return draft
+    runner, out, _, _ = start(Retry())
+    out = runner.resume("T1", {"decisions": [decision(out["proposals"][0], "request_changes", comment="기존 신청 제외")]})
+    revised = out["proposals"][0]
+    assert revised.generation_error is None
+    assert revised.changed_fields == ["actions"]
+    assert "기존 신청" in revised.actions[0]
+
+
+def test_spacing_and_reordering_alone_are_not_body_changes():
+    from app.nodes.proposal import changed_fields
+    before = ProductDraft(recommendation="DSR 35%", actions=["a", "b"], precautions=["경과 조치"])
+    after = ProductDraft(recommendation=" DSR  35% ", actions=["b", "a"], precautions=["경과조치"])
+    assert changed_fields(before, after) == []
+
+
+def test_review_screen_shows_request_response_and_changed_fields(capsys):
+    from app.cli import show_details
+    _, out, _, _ = start()
+    proposal = out["proposals"][0].model_copy(update={
+        "review_comment": "기존 신청 제외", "revision_response": "수행 항목에 기존 신청 제외 추가",
+        "changed_fields": ["actions"], "version": 2,
     })
-    assert request.to_decision()["action"] == action
+    show_details(proposal.model_dump(mode="json"))
+    text = capsys.readouterr().out
+    assert "요청 의견: 기존 신청 제외" in text
+    assert "반영 설명: 수행 항목에 기존 신청 제외 추가" in text
+    assert "변경된 항목: 필수 조치" in text
 
 
-def test_empty_patch_set_is_not_reported_as_verified():
-    from app.nodes.verify import make_verify
-    result = make_verify(MockTools())({"code_patches": [], "demo": False})
-    assert result["system_errors"]
-    assert "검증 완료" not in result["events"][0].message
+def test_document_evidence_allows_keep_without_invented_rule():
+    class DocumentReasoner(DsrReasoner):
+        def product_impacts(self, *args):
+            rows = super().product_impacts(*args)
+            rows[0] = rows[0].model_copy(update={"impact": "no_change", "target_rule_ids": [], "evidence_rule_ids": [], "document_refs": ["product-doc://P001"]})
+            return rows
+    out = start(DocumentReasoner())[1]
+    assert not any(p.product_id == "P001" for p in out["proposals"])
+    assert next(i for i in out["product_impacts"] if i.product_id == "P001").document_refs == ["product-doc://P001"]
 
 
-def test_ticket_only_review_does_not_claim_test_success():
-    from app.nodes.verify import make_verify
-    from app.schemas import PatchResult
-    patch = PatchResult(bundle_id="B:new", files=["new.py"], spec_ids=["S1"], locations=[], diff="", status="ticket_only")
-    result = make_verify(MockTools())({"code_patches": [patch], "demo": False})
-    assert not result["system_errors"]
-    assert "검증 대상 없음" in result["events"][0].message
+def test_another_products_document_cannot_support_keep():
+    class WrongDocument(DsrReasoner):
+        def product_impacts(self, *args):
+            rows = super().product_impacts(*args)
+            rows[0] = rows[0].model_copy(update={"impact": "no_change", "target_rule_ids": [], "evidence_rule_ids": [], "document_refs": ["product-doc://P002"]})
+            return rows
+    out = start(WrongDocument())[1]
+    assert out["proposals"][0].impact == "needs_review"
+    assert not out["proposals"][0].document_refs
 
 
-def test_verified_subset_does_not_hide_missing_confirmed_requirement():
-    from app.nodes.verify import make_verify
-    from app.schemas import PatchResult
-    reqs = DemoReasoner().requirements(MockTools().diff_versions("credit-loan-ops", "v3", "v4"))
-    patch = PatchResult(bundle_id="B:new", files=["new.py"], spec_ids=["S1"], locations=[], diff="", status="ticket_only")
-    location = ChangeSpec(id="S1", requirement_id=reqs[0].id, file="new.py", line=0, symbol="new", snippet="", kind="new", is_target=True, reason="new")
-    result = make_verify(MockTools())({"code_patches": [patch], "requirements": reqs, "change_specs": [location], "demo": False})
-    assert any("빠진 확정 요건" in error for error in result["system_errors"])
+def test_article_filter_preserves_context_and_rejects_unknown_article():
+    class Capture(DsrReasoner):
+        def requirements(self, diff):
+            self.diff = diff
+            return super().requirements(diff)
+    reasoner = Capture()
+    runner = AgentRunner(build_graph(ThreeProductTools(), reasoner))
+    out = runner.start("filtered", "credit-loan-ops", article_ids=["8"])
+    assert {c["article_id"] for c in reasoner.diff["changes"] if not c["article_id"].startswith("supp-")} == {"8"}
+    assert out["snapshot_date"] == "2026-11-30"
+    assert any(a["regulation_id"] == "dsr-management" for a in reasoner.diff["regulation_context"])
+    with pytest.raises(ValueError, match="없는 조항"):
+        runner.start("bad-filter", "credit-loan-ops", article_ids=["999"])

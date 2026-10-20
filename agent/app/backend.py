@@ -40,37 +40,15 @@ class ResumeRequest(BaseModel):
     task_id: str = Field(alias="taskId")
     thread_id: str = Field(alias="threadId")
     step: str
-    decision: str
+    decision: str = "REVIEW_PROPOSALS"
     approval_id: int | None = Field(default=None, alias="approvalId")
     comment: str | None = None
     payload: dict = Field(default_factory=dict)
 
     def to_decision(self):
-        if self.step == "REQUIREMENTS":
-            # main의 최신 계약을 사용하되 기존 호출 이름도 호환한다.
-            if self.decision not in ("CONFIRMED", "HELD", "CONFIRM", "HOLD"):
-                raise ValueError("요건 결정은 CONFIRMED/HELD입니다")
-            return {
-                "action": "approve" if self.decision in ("CONFIRMED", "CONFIRM") else "reject",
-                "confirmed_req_keys": self.payload.get("confirmedReqKeys", []),
-                "comment": self.comment,
-            }
-        if self.step != "REVIEW" or self.decision not in (
-            "APPROVE",
-            "REJECT",
-            "REQUEST_CHANGES",
-        ):
-            raise ValueError("알 수 없는 승인 단계/결정입니다")
-        return {
-            "action": {
-                "APPROVE": "approve",
-                "REJECT": "reject",
-                "REQUEST_CHANGES": "request_changes",
-            }[self.decision],
-            "approval_id": self.approval_id,
-            "comment": self.comment,
-            "excluded_spec_keys": self.payload.get("excludedSpecKeys", []),
-        }
+        if self.step != "REVIEW" or self.decision != "REVIEW_PROPOSALS":
+            raise ValueError("상품별 검토는 step=REVIEW, decision=REVIEW_PROPOSALS를 사용합니다")
+        return {"decisions": self.payload.get("decisions", []), "finish": self.payload.get("finish", False)}
 
 
 def requirements_payload(items):
@@ -94,77 +72,19 @@ def requirements_payload(items):
     }
 
 
-def change_specs_payload(items):
-    kinds = {"product_rule": "PRODUCT", "new": "CODE"}
-    return {
-        "items": [
-            {
-                "specKey": s.id,
-                "reqKey": s.requirement_id,
-                "locationKind": kinds.get(s.kind, s.kind.upper()),
-                "filePath": s.file,
-                "symbol": s.symbol,
-                "lineNo": s.line,
-                "snippet": s.snippet,
-                "changeType": (
-                    "NEW"
-                    if s.kind == "new"
-                    else "DB"
-                    if s.kind in ("db", "product_rule")
-                    else "LOGIC"
-                    if s.kind == "code"
-                    else "VALUE"
-                )
-                if s.is_target
-                else None,
-                "target": s.is_target,
-                "reason": s.reason,
-                "bundle": f"B:{s.file}",
-                "detail": {
-                    "before": s.before,
-                    "after": s.after,
-                    "needsReview": s.needs_review,
-                },
-            }
-            for s in items
-        ]
-    }
-
-
-def patches_payload(items):
-    # 티켓 명세/시연은 코드 패치가 아니다. 백엔드의 PASSED 행으로 저장하지 않는다.
-    return {
-        "items": [
-            {
-                "bundle": p.bundle_id,
-                "round": p.round,
-                "filePath": p.files[0],
-                "specKeys": p.spec_ids,
-                "diff": p.diff,
-                "verifyStatus": {"passed": "PASSED", "patch_failed": "FAILED"}.get(
-                    p.status, "PENDING"
-                ),
-                "verifyLog": "\n".join(p.errors),
-                "detail": {"proposal": p.proposal},
-            }
-            for p in items
-            if p.status != "ticket_only" and p.diff
-        ]
-    }
-
-
-def test_cases_payload(items):
-    return {
-        "items": [
-            {
-                "testKey": t.id,
-                "reqKey": t.requirement_id,
-                "name": t.description,
-                "kind": t.kind.upper(),
-                "code": t.code,
-                "detail": {"inputs": t.inputs, "expected": t.expected},
-            }
-            for t in items
-            if t.code
-        ]
-    }
+def product_proposals_payload(items):
+    """향후 백엔드 상품 제안 저장 API에 전달할 형식. HTTP 전송은 하지 않는다."""
+    return {"items": [{
+        "proposalKey": p.id, "reqKey": p.requirement_id,
+        "productId": p.product_id, "productName": p.product_name,
+        "articleRef": p.article_ref, "impact": p.impact, "targetRuleIds": p.target_rule_ids, "evidenceRuleIds": p.evidence_rule_ids, "documentRefs": p.document_refs,
+        "changes": [c.model_dump() for c in p.changes], "scope": p.scope,
+        "conditions": [c.model_dump() for c in p.conditions], "verification": p.verification,
+        "optionalActions": p.optional_actions, "current": p.current, "reason": p.reason, "proposed": p.recommendation,
+        "actions": p.actions, "precautions": p.precautions,
+        "effectiveDate": p.effective_date.isoformat() if p.effective_date else None,
+        "transitional": p.transitional, "status": p.status, "version": p.version,
+        "humanEdited": p.human_edited, "reviewComment": p.review_comment,
+        "generationError": p.generation_error,
+        "revisionResponse": p.revision_response, "changedFields": p.changed_fields,
+    } for p in items]}
