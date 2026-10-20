@@ -3,6 +3,8 @@
 Spring Boot 백엔드가 프론트(Vue), Agent(FastAPI), MCP 서버와 주고받는 형태.
 설계 근거는 [PROJECT.md](./PROJECT.md), 프론트 쪽 계획은 [FRONTEND_PLAN.md](./FRONTEND_PLAN.md).
 
+> **단순화 흐름(v2)은 [10절](#10-단순화-흐름-계약-v2)이 기준이다.** 5 ~ 7절의 요건 확정 · 패치 · 테스트 · 티켓 · PR은 옛 흐름이며, 새 흐름이 동작한 뒤 정리한다 (10.7).
+
 ## 1. 누가 누구를 부르나
 
 ```
@@ -250,3 +252,126 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 | R007, R018 | `MORTGAGE_LTV_LIMIT 0.40` | 함정 | 같은 0.40이지만 LTV(제10조) |
 | R008 | `INCOME_EST_RETIREMENT_AGE 65` | 함정 | 같은 65지만 소득 추정용 정년(제7조) |
 | R005, R013, R019 | `SENIOR_RATE_DISCOUNT 0.3` | 대상 아님 | 우대 폭은 그대로, 적용 대상만 넓어짐 |
+
+## 10. 단순화 흐름 계약 (v2)
+
+기준: [SIMPLIFICATION.md](./SIMPLIFICATION.md) v2. 요청 · 응답 예시는 [`docs/contracts/`](./contracts/)에 있고, 각 영역 테스트가 같은 파일을 읽는다.
+
+### 10.1 상태 · 노드
+
+```
+EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW ─(APPROVE)─▶ PUBLISHING ─▶ DONE
+     │                                                    └(REJECT)▶ REJECTED
+     └▶ NO_CHANGE                                    어디서든 오류 ▶ FAILED
+```
+
+| 노드 (`STEP {node}`) | 상태 |
+|---|---|
+| `requirement_agent` | `EXTRACTING` |
+| `impact_agent` | `LOCATING` |
+| `proposal_agent` | `DESIGNING` |
+| `verify` (`round` 포함) | `VERIFYING` |
+| interrupt 직전 `APPROVAL_REQUIRED {step:"REVIEW"}` | `WAITING_REVIEW` |
+| `apply` | `PUBLISHING` |
+| `report` 뒤 `DONE {outcome}` | `DONE` · `NO_CHANGE` · `REJECTED` |
+
+- `WAITING_REQUIREMENT_APPROVAL` · `HELD`는 쓰지 않는다.
+- 역할 검사는 없다. 로그인한 사용자 누구나 확인할 수 있다.
+
+### 10.2 제안 (`rule_proposals`)
+
+제안 1건 = 상품 1개 × 규칙 1개. 새 규칙(제15조의2 등)도 상품마다 1건이다.
+
+| 필드 | 형식 | 규칙 |
+|---|---|---|
+| `proposalKey` | 문자열 | Agent가 정한다. 작업 안에서 고유 (권장: `{productId}:{ruleKey}`) |
+| `reqKey` | 문자열 | 근거 요건 |
+| `productId` | `P001` | 필수 |
+| `ruleId` | `R001` \| null | 기존 규칙 변경 · 유지면 필수, 새 규칙이면 null |
+| `ruleKey` | 문자열 | `change_required`면 필수 |
+| `impact` | `change_required` \| `keep` \| `needs_check` | 필수 |
+| `current` · `proposed` | 문자열 | 화면용 글 ("DSR 한도 40%") |
+| `unit` | `ratio` · `percent` · … | `change_required`면 필수. 기존 규칙의 단위를 바꾸지 않는다 |
+| `currentValue` · `proposedValue` | 문자열 | `change_required`면 `proposedValue` 필수, 기존 규칙이면 `currentValue`도 필수 |
+| `effectiveDate` | `YYYY-MM-DD` | `change_required`면 필수 |
+| `basis` | 문자열 | 근거 조항 (`reg://credit-loan-ops/v4/8`) |
+| `reason` | 문자열 | 필수 (`keep` · `needs_check`는 왜 그런지) |
+| `transition` | 문자열 | 경과조치 |
+| `followUp` | 문자열 배열 | 후속 작업 (화면 문구 · 심사 절차 · 설명서) |
+| `round` | 1 이상 | 작성 회차 |
+| `verifyStatus` · `verifyLog` | `PENDING` \| `PASSED` \| `FAILED` | 근거 검사 결과 |
+
+**Agent → Spring** `PUT {callbackBaseUrl}/proposals` `{items:[…]}` ([예시](./contracts/proposals.put.json))
+- `(proposalKey, round)` 기준 upsert. 근거 검사 결과만 보낼 때도 같은 항목을 보낸다.
+- `DESIGNING` · `VERIFYING`에서만 받는다. `WAITING_REVIEW`부터 고정 (사용자가 본 제안과 반영할 제안이 같아야 한다).
+
+**화면** `GET /api/ai/tasks/{id}/proposals`
+- `{task, maxVerifyRounds, latestRound, canApprove, proposals[]}`
+- `proposals`는 회차 전체이고 현재 것은 `latest:true`. 서버가 `decision`(`APPLY` · `EXCLUDE` · null)과 반영 결과 `apply {jobId, status, closedRuleId, newRuleId}`를 붙인다.
+- `canApprove`: `WAITING_REVIEW` + 현재 `change_required` 제안이 1건 이상 + 모두 `PASSED`.
+
+### 10.3 사용자 확인
+
+`POST /api/ai/tasks/{id}/review` ([예시](./contracts/review.post.json))
+
+```json
+{"decision": "APPROVE", "excludedProposalKeys": ["P011:DSR_LIMIT"], "comment": "P011은 번역본 정비 후 반영"}
+```
+
+| 결정 | 검사 | 결과 |
+|---|---|---|
+| `APPROVE` | `canApprove`(아니면 409). 제외 키는 현재 `change_required` 제안이어야 함(400). 제외하고 남는 게 없으면 400 (REJECT로 보낸다) | `PUBLISHING`. 기록 payload `{approvedProposalKeys, excludedProposalKeys}` |
+| `REJECT` | | `REJECTED` |
+
+- 수정 요청(`REQUEST_CHANGES`)은 없다.
+- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다.
+
+### 10.4 반영 (쓰기 도구 · 승인 필요)
+
+business-mcp `apply_rule_version(task_id, approval_id, proposal_key, idempotency_key)` → Spring:
+
+```http
+POST /internal/product-rules/versions
+{"taskId", "approvalId", "proposalKey", "idempotencyKey": "{taskId}:apply:{proposalKey}"}
+
+→ 202 {"jobId", "status": "QUEUED", "duplicate": false}
+```
+
+**Agent는 값을 보내지 않는다.** 서버가 `rule_proposals`의 현재 제안에서 지금 값 · 제안 값 · 단위 · 시행일을 꺼낸다. 사용자가 확인한 값과 다른 값은 들어갈 수 없다.
+
+접수 검사 (실패 시 403 · 409)
+1. `approvalId`가 이 작업의 REVIEW/APPROVE 기록이고, 가장 최근 REVIEW 결정이다 (403)
+2. 작업 상태가 `PUBLISHING`이다 (409)
+3. `proposalKey`가 `approvedProposalKeys`에 있고, 현재 제안이 `change_required` · `PASSED`다 (403)
+4. 기존 규칙이면 그 행이 지금 유효하고 값이 `currentValue`와 같다. 새 규칙이면 같은 상품 · 규칙 키의 유효한 행이 없다. 아니면 409 "이미 바뀐 규칙". 값은 **숫자로 비교**한다 (`0.4` = `0.40`)
+5. 같은 `idempotencyKey`면 새로 만들지 않고 기존 `jobId`를 `duplicate:true`로 돌려준다
+
+대기열 작업 `APPLY_RULE_VERSION` (8절 큐 · 재시도 · DLQ 그대로)
+- 행을 잠그고 4번을 다시 검사한다. 다르면 **재시도하지 않고 바로 `DEAD`** (`lastError` = "이미 바뀐 규칙"). 다시 해도 결과가 같기 때문이다.
+- 기존 행: `effective_to = effectiveDate - 1일`
+- 새 행: `rule_id` = 기존 최대 번호 다음(`R083`부터), `value = proposedValue`, `unit`, `effective_from = effectiveDate`, `effective_to = null`
+- 새 규칙은 닫는 행 없이 새 행만 추가한다.
+- 결과 `GET /internal/jobs/{jobId}` → `{status, result: {proposalKey, productId, closedRuleId, newRuleId, effectiveFrom}}` ([예시](./contracts/apply.job.json)). 새 규칙이면 `closedRuleId: null`.
+- 전달 기록(`deliveries`)에 `RULE_VERSION`으로 남긴다.
+
+Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/jobs/{jobId}`가 `DONE` · `DEAD`가 될 때까지 기다린다. 모두 `DONE`이면 `DONE {outcome:"DONE"}`, 하나라도 `DEAD`면 `FAILED {reason}`.
+
+### 10.5 business-mcp 읽기 (보강)
+
+| Spring | 추가 |
+|---|---|
+| `GET /internal/products` | `?status=ON_SALE\|SALE_ENDED` |
+| `GET /internal/product-rules` | `?productId=`, `?asOf=YYYY-MM-DD` — 그날 유효한 행만 (`effectiveFrom ≤ asOf`, `effectiveTo`가 null이거나 `≥ asOf`) |
+| `GET /internal/product-rules/keys` (신규) | `?asOf=` (기본 오늘) → `[{ruleKey, units, productIds, activeRows, closedRows}]`. #23 `list_rule_keys`와 같은 모양 ([예시](./contracts/rule-keys.get.json)) |
+| `GET /internal/contracts/impact` | `?dsrFrom=&dsrTo=` — `dsr_at_approval`이 (dsrFrom, dsrTo] 안. 나이 조건과 함께 주면 둘 다 만족. 계약마다 `dsrAtApproval` · `repaymentType` · `maturityDate` · `extensionCount` · `maturesAfterEffective`(만기 ≥ `appliedBefore`) 추가. 연장 사례(C0006)는 만기일시 · 연장 이력으로 Agent가 판단한다 ([예시](./contracts/contract-impact.get.json)) |
+
+**"지금 유효"는 `effectiveTo == null`이 아니다.** 반영하면 기존 행은 `effective_to = 2026-11-30`(오늘은 아직 유효), 새 행은 `effective_from = 2026-12-01`(오늘은 아직 아님, `effectiveTo` null)이 된다. 유효 여부는 `asOf`로 판단한다.
+
+### 10.6 계약 영향 저장 · 조회
+
+- Agent: `PUT {callbackBaseUrl}/contract-impacts` `{items:[{contractId, reqKey, reason, grandfathered, maturesAfterEffective}]}` — 전체 교체, `LOCATING` ~ `VERIFYING`.
+- 화면: `GET /api/ai/tasks/{id}/contract-impacts` → `{task, items}`. 계약 값은 바꾸지 않는다.
+
+### 10.7 정리 예정 (옛 흐름)
+
+새 흐름이 끝까지 동작하면 지운다: `/requirements/approval`, `/change-specs`, `/patches`, `/test-cases`, `/internal/work-tickets`, 큐 작업 `CREATE_DRAFT_PR` · `CREATE_TICKET`, `REQUEST_CHANGES`, 역할(`OFFICER` · `DEVELOPER`) 검사.

@@ -1,0 +1,5 @@
+{
+  "decision": "APPROVE",
+  "excludedProposalKeys": ["P011:DSR_LIMIT"],
+  "comment": "P011은 번역본 정비 후 반영"
+}
