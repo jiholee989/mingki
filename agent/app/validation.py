@@ -38,6 +38,13 @@ def expected_value(requirement, unit):
 
 
 _UPPER_LIMIT = re.compile(r"초과할\s*수\s*없|이하|이내")
+_REG_URI = re.compile(r"reg://([a-z0-9-]+)/v\d+/([0-9a-z-]+)")
+
+
+def article_key(uri):
+    """조항 uri를 규칙의 근거 조항 표기로: reg://credit-loan-ops/v4/15 → credit-loan-ops/15. 형식이 다르면 None."""
+    match = _REG_URI.fullmatch(uri or "")
+    return f"{match.group(1)}/{match.group(2)}" if match else None
 
 
 def change_problem(requirement, rule, product):
@@ -48,6 +55,9 @@ def change_problem(requirement, rule, product):
     """
     if product.get("status") == "SALE_ENDED":
         return "needs_review", f"{rule['ruleId']}: 판매가 끝난 상품이라 기준 변경 대신 확인 필요"
+    basis, changed = rule.get("basisArticles") or [], article_key(requirement.article_ref)
+    if basis and changed and changed not in basis:  # 같은 숫자 · 같은 단어여도 다른 조항을 따르는 규칙은 이 개정과 무관하다
+        return "needs_review", f"{rule['ruleId']} {rule['ruleKey']}: {', '.join(basis)}를 따르는 규칙이라 이번 개정({changed})과 무관해 확인 필요"
     if expected_value(requirement, rule["unit"]) is None:  # 예: 35% 개정으로 60개월 · 15일 규칙의 새 값은 정할 수 없다
         return "needs_review", f"{rule['ruleId']} {rule['ruleKey']}: 개정 원문으로 이 규칙({rule['unit']})의 새 값을 정할 수 없어 확인 필요"
     old, new = _single_percent(requirement.old_text), _single_percent(requirement.new_text)

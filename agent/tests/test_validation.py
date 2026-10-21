@@ -352,3 +352,40 @@ def test_basis_text_fits_backend_column():
     assert len(text) <= BASIS_LIMIT and text.startswith("reg://credit-loan-ops/v4/8, reg://dsr-management/v2/1")
     assert basis_text([]) is None
 
+
+
+# ---------- 규칙의 근거 조항 (basisArticles) ----------
+
+AGE_REQ = Requirement(id="REQ-15", article_id="15", article="제15조", article_ref="reg://credit-loan-ops/v4/15",
+                      change="modified", summary="고령자 기준", target="SENIOR_AGE",
+                      old_text="고령자란 신청일 현재 만 65세 이상인 자를 말한다.",
+                      new_text="고령자란 신청일 현재 만 60세 이상인 자를 말한다.")
+
+
+def test_rule_following_another_article_is_not_a_target():
+    """상담 녹음 나이(고령 고객 보호 규정)는 숫자 65와 단위가 같아도 운영기준 제15조 개정과 무관하다."""
+    recording = {**rule("R026", "SENIOR_RECORDING_AGE", "65", "age"), "basisArticles": ["senior-protection/5", "senior-protection/2"]}
+    verdict, note = change_problem(AGE_REQ, recording, ON_SALE)
+    assert verdict == "needs_review" and "senior-protection/5" in note
+    eligible = {**rule("R010", "ELIGIBLE_MIN_AGE", "65", "age"), "basisArticles": ["credit-loan-ops/15"]}
+    assert change_problem(AGE_REQ, eligible, ON_SALE) is None
+    assert change_problem(AGE_REQ, rule("RX", "SENIOR_RECORDING_AGE", "65", "age"), ON_SALE) is None  # 근거 조항이 없으면 기존 판단
+
+
+def test_senior_age_traps_are_filtered_by_rule_basis():
+    """고령자 시나리오 실제 실행: 모델이 P001 · P002의 상담 녹음 나이(R026 · R029)와 보호자 연락 나이(R030)를 함께 골랐다."""
+    class SeniorMistakes(DsrReasoner):
+        def requirements(self, diff):
+            source = next(c for c in diff["changes"] if c["article_id"] == "15")
+            return [AGE_REQ.model_copy(update={"article_ref": source["new_uri"]})]
+
+        def product_impacts(self, requirements, products, rules, *args):
+            picks = {"P001": ["R026"], "P002": ["R010", "R029", "R030"]}
+            return [ProductAssessment(requirement_id="REQ-15", product_id=pid, target_rule_ids=rids, evidence_rule_ids=rids,
+                                      scope="시행일 이후 신규 신청", applicability="all", impact="change_required",
+                                      reason="고령자 기준 변경") for pid, rids in picks.items()]
+    out = AgentRunner(build_graph(LocalTools(), SeniorMistakes())).start("T1", "credit-loan-ops", article_ids=["15"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P002"].target_rule_ids == ["R010"] and impacts["P002"].impact == "change_required"
+    # 모델은 P001을 바꿔야 한다고 봤는데 고른 규칙이 무관하다 → 조용히 유지로 확정하지 않고 사람에게 넘긴다
+    assert impacts["P001"].impact == "needs_review" and impacts["P001"].target_rule_ids == []
