@@ -62,7 +62,7 @@ public class JobWorker {
                 "attempt", msg.attempt(), "maxAttempts", maxAttempts));
 
         try {
-            Map<String, Object> result = process(job);
+            Map<String, Object> result = process(job, msg.attempt());
             job.setStatus(Job.Status.DONE);
             job.setResult(result);
             job.setLastError(null);
@@ -84,15 +84,19 @@ public class JobWorker {
         }
     }
 
-    private Map<String, Object> process(Job job) {
-        maybeFail(job);
+    private Map<String, Object> process(Job job, int attempt) {
+        maybeFail(job, attempt);
         return switch (job.getType()) {
             case APPLY_RULE_VERSION -> ruleVersions.apply(job);
         };
     }
 
-    private void maybeFail(Job job) {
-        if (failureRate > 0 && ThreadLocalRandom.current().nextDouble() < failureRate) {
+    /**
+     * 시연용 실패 주입. 마지막 시도에서는 하지 않는다. 재시도는 보이되, 주입한 실패만으로 반영이 DEAD 가 되지 않게.
+     * DEAD 는 진짜 오류와 다시 해도 같은 실패(PermanentJobFailure)에서만 나온다.
+     */
+    private void maybeFail(Job job, int attempt) {
+        if (failureRate > 0 && attempt < maxAttempts && ThreadLocalRandom.current().nextDouble() < failureRate) {
             throw new IllegalStateException("일시적 오류 (시연용 실패 주입: " + job.getType() + ")");
         }
     }

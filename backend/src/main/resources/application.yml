@@ -61,7 +61,7 @@ ruleripple:
     dead-letter-queue: rr.jobs.dlq
     retry-delay-ms: 3000
     max-attempts: 3
-    # 시연용: 작업 처리 시 이 확률로 일부러 실패 (0.0 ~ 1.0). 0 이면 항상 성공
+    # 재시도 확인용: 이 확률로 일부러 실패 (0.0 ~ 1.0). 마지막 시도에서는 주입하지 않는다. 0 이면 끔
     failure-rate: ${JOB_FAILURE_RATE:0.3}
   business-data:
     # 기동 시 비어 있는 products · product_rules · loan_contracts 에 넣을 JSON 폴더. bootRun 은 backend/ 에서 실행된다

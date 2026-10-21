@@ -21,10 +21,10 @@ class JobWorkerTest {
     private final JobPublisher publisher = mock(JobPublisher.class);
     private final RuleVersionService ruleVersions = mock(RuleVersionService.class);
     private final Channel channel = mock(Channel.class);
-    private final JobWorker worker = new JobWorker(jobs, publisher, mock(TaskEventService.class), ruleVersions, props());
+    private final JobWorker worker = new JobWorker(jobs, publisher, mock(TaskEventService.class), ruleVersions, props(0.0));
 
-    private static RuleRippleProperties props() {
-        var queue = new RuleRippleProperties.Queue("rr.jobs", "rr.jobs.q", "rr.jobs.retry", "rr.jobs.dlq", 3000, 3, 0.0);
+    private static RuleRippleProperties props(double failureRate) {
+        var queue = new RuleRippleProperties.Queue("rr.jobs", "rr.jobs.q", "rr.jobs.retry", "rr.jobs.dlq", 3000, 3, failureRate);
         return new RuleRippleProperties(null, null, null, queue, null, null);
     }
 
@@ -69,5 +69,20 @@ class JobWorkerTest {
 
         assertThat(j.getStatus()).isEqualTo(Job.Status.DONE);
         assertThat(j.getResult()).containsEntry("newRuleId", "R083");
+    }
+
+    @Test
+    void injectedFailureNeverKillsTheLastAttempt() throws Exception {
+        JobWorker alwaysFails = new JobWorker(jobs, publisher, mock(TaskEventService.class), ruleVersions, props(1.0));
+        Job j = job();
+        when(ruleVersions.apply(any())).thenReturn(Map.of("newRuleId", "R083"));
+
+        alwaysFails.onMessage(new JobMessage(j.getId(), 1), channel, 1L);
+        assertThat(j.getStatus()).isEqualTo(Job.Status.RETRYING);
+        verify(ruleVersions, never()).apply(any());
+
+        alwaysFails.onMessage(new JobMessage(j.getId(), 3), channel, 2L);
+        assertThat(j.getStatus()).isEqualTo(Job.Status.DONE);
+        verify(publisher, never()).dead(any());
     }
 }

@@ -168,7 +168,7 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 ```
 
 - 처리 중 `TOOL_START` / `TOOL_END {ok, attempt, retrying, dead}` 이벤트가 화면으로 간다.
-- 시연용으로 `JOB_FAILURE_RATE`(기본 0.3) 확률로 일부러 실패한다. `0`이면 항상 성공.
+- 재시도를 확인하려고 `JOB_FAILURE_RATE`(기본 0.3) 확률로 일부러 실패시킨다. 마지막 시도에서는 주입하지 않아서, 주입한 실패만으로 작업이 `DEAD`가 되지는 않는다. `DEAD`는 진짜 오류와 다시 해도 같은 실패("이미 바뀐 규칙")에서만 나온다. `0`이면 주입하지 않는다.
 - RabbitMQ 콘솔 http://localhost:15672 (guest/guest)에서 retry · DLQ 큐를 보여줄 수 있다.
 
 ## 9. business-mcp 읽기 도구

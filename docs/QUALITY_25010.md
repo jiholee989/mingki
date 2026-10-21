@@ -94,7 +94,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 |---|---|---|---|
 | 큐 메시지 중복 전달로 같은 반영이 두 번 | 멱등키 `{taskId}:apply:{proposalKey}`. 같은 키면 새로 만들지 않고 기존 작업을 돌려줌(`duplicate: true`). 키가 같은데 내용이 다르면 409 | `JobPublisher.publish`, `RuleVersionService.enqueue` | `RuleVersionServiceTest` (#33) |
 | 워커가 반영 뒤 · 작업 완료 기록 전에 죽음 | 규칙 행 · 전달 기록 · 작업 `DONE`을 **한 트랜잭션**에 커밋 | `RuleVersionService.apply` | #33 |
-| 일시 장애 vs 다시 해도 같은 실패 | 일시 실패는 3초 뒤 최대 3회 재시도 → DLQ. "이미 바뀐 규칙"처럼 영구 실패는 `PermanentJobFailure`로 재시도 없이 DEAD | `JobWorker`, `PermanentJobFailure` | `JobWorkerTest` 3개. 실패 주입 50%에서 2 · 3회차 성공 (#29) |
+| 일시 장애 vs 다시 해도 같은 실패 | 일시 실패는 3초 뒤 최대 3회 재시도 → DLQ. "이미 바뀐 규칙"처럼 영구 실패는 `PermanentJobFailure`로 재시도 없이 DEAD | `JobWorker`, `PermanentJobFailure` | `JobWorkerTest` 4개. 실패 주입 50%에서 2 · 3회차 성공 (#29). 주입은 마지막 시도에서 하지 않아, 주입한 실패만으로 반영이 DEAD가 되지 않는다 |
 | Agent 프로세스가 승인 대기 중 죽음 | LangGraph 체크포인터를 Postgres에. 재시작 뒤 같은 `threadId`로 재개 | `agent/app/checkpoint.py` | #30: 검토 대기 중 재시작 → 수정 요청 → 거절까지 이어짐 |
 | Agent가 업로드 직후 · 승인 직후 · 반영 도중 죽음 | "다시 시도" `POST /api/ai/tasks/{id}/retry`. Agent `/continue`를 먼저 보내고 409면 저장된 승인으로 `/resume`, 그것도 없으면 `/run`. FAILED였던 작업은 멈춘 자리로 되돌림 | `TaskController.retryTask`, `AgentClient.continueTask` | #39: 세 경우 모두 `kill -9` 후 복구. 반영 도중 죽은 경우 큐 작업이 같은 멱등키로 재사용돼 건수 그대로 |
 | 반영 일부만 실패 | 한 건이 접수에서 거절돼도 나머지는 계속하고, 어느 건이 왜 실패했는지 결과에 남김. 최종은 FAILED | `agent/app/nodes/apply.py` (#34) | `test_apply.py` |
