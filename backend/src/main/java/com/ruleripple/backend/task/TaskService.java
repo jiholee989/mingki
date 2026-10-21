@@ -3,6 +3,7 @@ package com.ruleripple.backend.task;
 import com.ruleripple.backend.auth.AuthUser;
 import com.ruleripple.backend.auth.User;
 import com.ruleripple.backend.auth.UserRepository;
+import com.ruleripple.backend.config.RuleRippleProperties;
 import com.ruleripple.backend.internal.LoanContract;
 import com.ruleripple.backend.internal.LoanContractRepository;
 import com.ruleripple.backend.internal.Product;
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,13 +47,15 @@ public class TaskService {
     private final JobRepository jobs;
     private final ProductRepository products;
     private final LoanContractRepository contracts;
+    private final RuleRippleProperties props;
 
     public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
                        RequirementRepository requirements, ChangeSpecRepository changeSpecs,
                        CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
                        DeliveryRepository deliveries, TaskEventService events,
                        UserRepository users, RuleProposalRepository proposals, JobRepository jobs,
-                       ProductRepository products, LoanContractRepository contracts) {
+                       ProductRepository products, LoanContractRepository contracts, RuleRippleProperties props) {
+        this.props = props;
         this.tasks = tasks;
         this.documents = documents;
         this.requirements = requirements;
@@ -342,6 +346,53 @@ public class TaskService {
             events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.REJECTED.name()));
         }
         return saved;
+    }
+
+    // ===================== 이어가기 (Agent 가 도중에 죽었을 때) =====================
+
+    /** 다시 시도 준비 결과. wasFailed 면 상태를 되돌린 것이라 Agent 가 거절하면 FAILED 로 되돌려야 한다. */
+    public record RetryPlan(AnalysisTask task, boolean wasFailed) {}
+
+    /**
+     * "다시 시도" 준비. 진행 중이거나 FAILED 인 작업만 (RetryGuard). Agent 호출은 컨트롤러가 커밋 뒤에 동기로 한다.
+     * FAILED 였으면 상태를 멈추기 전 자리로 되돌린다 (TaskStatus.restoredAfterFailure).
+     * Agent 이벤트는 FAILED 에서 나올 수 없어서 백엔드가 먼저 되돌려야 한다.
+     */
+    @Transactional
+    public RetryPlan prepareRetry(UUID taskId, AuthUser me) {
+        AnalysisTask task = tasks.findForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
+        RetryGuard.problem(task.getStatus(), task.getUpdatedAt(), props.agent().retryQuietSeconds(), OffsetDateTime.now())
+                .ifPresent(reason -> { throw conflict(reason); });
+        boolean wasFailed = task.getStatus() == TaskStatus.FAILED;
+        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "RETRY", "by", me.username(),
+                "message", "멈춘 자리부터 다시 시작합니다"));
+        if (wasFailed) {
+            TaskStatus restored = TaskStatus.restoredAfterFailure(task.getCurrentNode(), latestApprove(taskId).isPresent());
+            task.setErrorMessage(null);
+            tasks.save(task);
+            events.append(taskId, "STATUS", Map.<String, Object>of("status", restored.name()));
+            task.setStatus(restored);
+        }
+        return new RetryPlan(task, wasFailed);
+    }
+
+    /** Agent 가 "아직 실행 중"(423)이라 거절했다. 되돌렸던 상태를 FAILED 로 돌리고, 진행 중이던 작업은 그대로 둔다. */
+    @Transactional
+    public void retryStillRunning(UUID taskId, boolean wasFailed) {
+        if (wasFailed) retryFailed(taskId, "Agent 가 아직 실행 중입니다. 잠시 뒤 다시 시도하세요");
+    }
+
+    /** 가장 최근 확인이 APPROVE 면 그 기록. Agent 가 확인 대기 상태로 남아 있을 때 다시 보낼 승인이다. */
+    @Transactional(readOnly = true)
+    public Optional<Approval> latestApprove(UUID taskId) {
+        return latestReview(taskId).filter(a -> a.getDecision() == Approval.Decision.APPROVE);
+    }
+
+    /** 다시 시도가 FAILED 로 끝나면 사용자에게 보이게 기록한다. */
+    @Transactional
+    public void retryFailed(UUID taskId, String reason) {
+        events.append(taskId, "FAILED", Map.<String, Object>of("reason", reason));
     }
 
     // ===================== helpers =====================

@@ -9,6 +9,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -17,6 +21,7 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,6 +38,7 @@ import java.util.UUID;
  *   getProposals(id)                 → GET  /api/ai/tasks/{id}/proposals          (v2 상품별 변경 제안)
  *   getContractImpacts(id)           → GET  /api/ai/tasks/{id}/contract-impacts   (v2 경과조치 계약)
  *   reviewPatches(id, decision)      → POST /api/ai/tasks/{id}/review            (v2 제안 확인 · 옛 흐름 패치 검토)
+ *   retryTask(id)                    → POST /api/ai/tasks/{id}/retry             ("다시 시도": Agent 가 죽었거나 호출에 실패한 작업)
  *   getReport(id)                    → GET  /api/ai/tasks/{id}/report
  *   getEvaluation(id)                → GET  /api/ai/tasks/{id}/evaluation
  * 진행 상황
@@ -52,12 +58,15 @@ public class TaskController {
     private final TaskService service;
     private final TaskEventService events;
     private final AgentDispatcher dispatcher;
+    private final AgentClient agent;
     private final SseBroadcaster sse;
 
-    public TaskController(TaskService service, TaskEventService events, AgentDispatcher dispatcher, SseBroadcaster sse) {
+    public TaskController(TaskService service, TaskEventService events, AgentDispatcher dispatcher, AgentClient agent,
+                          SseBroadcaster sse) {
         this.service = service;
         this.events = events;
         this.dispatcher = dispatcher;
+        this.agent = agent;
         this.sse = sse;
     }
 
@@ -193,6 +202,67 @@ public class TaskController {
                 req.excludedProposalKeys());
         dispatcher.resume(id, a.getId());
         return service.approvalView(a);
+    }
+
+    /**
+     * "다시 시도". Agent 가 어디서 멈췄는지에 따라 세 가지 중 하나를 다시 보낸다. 백엔드가 Agent 상태를 묻지 않고,
+     * /continue 를 먼저 보내고 Agent 가 409 로 거절하면 백엔드가 가진 기록으로 다음을 고른다.
+     *   1. 반영(apply) 도중 죽음 → /continue (같은 멱등키라 큐 작업이 중복 생기지 않음)
+     *   2. 승인 직후 /resume 호출이 실패 → 저장된 최근 승인으로 /resume
+     *   3. 업로드 직후 /run 호출이 실패 → /run
+     * 동기 호출이라 Agent 의 409 와 연결 실패를 사용자에게 바로 돌려준다. 연결 실패면 작업은 다시 FAILED.
+     */
+    @PostMapping("/{id}/retry")
+    public ResponseEntity<Map<String, Object>> retryTask(@AuthenticationPrincipal AuthUser me, @PathVariable UUID id) {
+        TaskService.RetryPlan plan = service.prepareRetry(id, me);
+        AnalysisTask task = plan.task();
+        String how;
+        if (task.getStatus().isWaiting()) {
+            // 확인 대기에서 FAILED 가 됐던 작업. Agent 는 그대로 기다리고 있으니 부르지 않고 사람이 결정하게 둔다
+            how = "waiting";
+        } else {
+            try {
+                how = retryAgent(task);
+            } catch (HttpStatusCodeException e) {
+                if (e.getStatusCode().value() == 423) {
+                    // Agent 가 그 thread 를 아직 돌리고 있다. 겹쳐 보내지 않고 사용자에게 알린다
+                    service.retryStillRunning(id, plan.wasFailed());
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Agent 가 아직 실행 중입니다. 잠시 뒤 다시 시도하세요");
+                }
+                // Agent 쪽 작업이 이미 끝났거나(반영 실패로 report 까지 감) 기록과 어긋남. 되돌린 상태를 다시 FAILED 로
+                String reason = "Agent 가 다시 시작하지 못했습니다: " + agentMessage(e);
+                service.retryFailed(id, reason);
+                throw new ResponseStatusException(HttpStatus.CONFLICT, reason + " — 리포트의 실패 사유를 확인하세요");
+            } catch (ResourceAccessException e) {
+                service.retryFailed(id, "Agent 에 연결할 수 없습니다: " + e.getMessage());
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Agent 에 연결할 수 없습니다: " + e.getMessage());
+            }
+        }
+        return ResponseEntity.accepted().body(Map.<String, Object>of(
+                "taskId", id, "status", task.getStatus().name(), "accepted", true, "how", how));
+    }
+
+    private String retryAgent(AnalysisTask task) {
+        try {
+            agent.continueTask(task);
+            return "continue";
+        } catch (HttpClientErrorException.Conflict notContinuable) {
+            Optional<Approval> approve = service.latestApprove(task.getId());
+            if (approve.isPresent()) {
+                agent.resume(task, approve.get());
+                return "resume";
+            }
+            if (service.requirements(task.getId()).isEmpty()) {
+                agent.run(task, service.documents(task.getId()));
+                return "run";
+            }
+            throw notContinuable;
+        }
+    }
+
+    private static String agentMessage(HttpStatusCodeException e) {
+        String body = e.getResponseBodyAsString();
+        return body == null || body.isBlank() ? e.getStatusCode().toString() : body;
     }
 
     // ---------- 리포트 · 평가 ----------

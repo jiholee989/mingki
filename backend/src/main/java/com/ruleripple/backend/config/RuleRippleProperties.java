@@ -10,7 +10,8 @@ public record RuleRippleProperties(Jwt jwt, Internal internal, Agent agent, Queu
 
     public record Internal(String token, String callbackBaseUrl) {}
 
-    public record Agent(String baseUrl, int connectTimeoutMs, int readTimeoutMs) {}
+    /** retryQuietSeconds: 진행 중인 작업은 마지막 변화 뒤 이 시간이 지나야 "다시 시도"를 받는다 (실행 중인 Agent 를 겹쳐 부르지 않게). */
+    public record Agent(String baseUrl, int connectTimeoutMs, int readTimeoutMs, int retryQuietSeconds) {}
 
     public record Queue(String exchange, String mainQueue, String retryQueue, String deadLetterQueue,
                         int retryDelayMs, int maxAttempts, double failureRate) {}
