@@ -88,7 +88,10 @@ def make_product_impact_agent(tools, reasoner):
                             # 새로 생긴 조항은 기존 규칙이 따를 수 없다. 엉뚱한 기존 규칙을 빼면 변경 필요는 새 규칙으로 간다
                     if impact == "change_required" and not target_ids and req.change == "added":
                         applied = applied_new_rule(req, [r for r in catalog if r["productId"] == pid], catalog)
-                        if applied:  # 같은 의무가 이미 반영돼 있다 (다시 분석해도 새 규칙이 또 생기지 않는다)
+                        if product.get("status") == "SALE_ENDED":  # 기존 규칙 변경과 같은 기준 (change_problem)
+                            impact = "needs_review"
+                            reason += " / 판매가 끝난 상품이라 새 규칙 대신 확인 필요"
+                        elif applied:  # 같은 의무가 이미 반영돼 있다 (다시 분석해도 새 규칙이 또 생기지 않는다)
                             impact = "no_change"
                             evidence_ids = list(dict.fromkeys(evidence_ids + [applied["ruleId"]]))
                             reason += f" / 이미 {applied['ruleKey']} 규칙이 있음({applied['ruleId']}, {applied['effectiveFrom']}부터)"

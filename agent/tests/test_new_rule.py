@@ -66,6 +66,14 @@ def test_added_obligation_becomes_a_new_rule_proposal():
         (f"P001:{KEY}", None, "change_required", None, "true", "bool")
 
 
+def test_sale_ended_product_gets_no_new_rule():
+    """판매가 끝난 상품(P012)은 기존 규칙 변경과 같은 기준으로, 모델이 변경 필요라고 해도 새 규칙 대신 확인 필요."""
+    out = AgentRunner(build_graph(LocalTools(), ExplanationReasoner())).start("T1", "credit-loan-ops", article_ids=["15-2"])
+    p012 = next(i for i in out["product_impacts"] if i.product_id == "P012")
+    assert p012.impact == "needs_review" and "판매가 끝난" in p012.reason
+    assert not [p for p in out["proposals"] if p.product_id == "P012" and p.changes]
+
+
 def test_new_rule_goes_through_backend_review_and_apply():
     api, spring, tools = started(tools=QueueTools(), reasoner=ExplanationReasoner())
     rows = {r["proposalKey"]: r for r in spring.puts("proposals")[-1]["items"]}
