@@ -126,9 +126,9 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 |---|---|---|---|
 | 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 60개(백엔드) |
 | 팀원 5명이 같은 파일을 고쳐 충돌 | 영역별 폴더 담당(`agent/` A, `mcp/` B, `backend/` C, `frontend/` D, `data/` · `eval/` E, `docs/` PM). 남의 폴더는 그 사람 브랜치로 PR | SIMPLIFICATION 10절 | 어댑터 PR을 Agent 브랜치 위에 올려 A가 리뷰 (#30) |
-| 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 2개 · 프론트 테스트 (GitHub Actions) | `.github/workflows/ci.yml` (#38) | 작업 5개 통과 |
+| 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 2개 · 프론트 테스트 (GitHub Actions). 백엔드는 단위 테스트에 더해, 진짜 Postgres · RabbitMQ를 띄워 업로드 → 확인 → 큐 반영 → 완료를 도는 통합 테스트가 있다 (Agent만 가짜, 요청 본문은 계약 예시 그대로). 기존 규칙 변경, 새 규칙 추가, Agent가 확인을 거절한 경우 세 가지 | `.github/workflows/ci.yml` (#38), `FlowIntegrationTest` (Testcontainers) | 작업 5개 통과 |
 | 결정이 슬랙에 흩어짐 | 결정은 `SIMPLIFICATION.md` PR로 확정. 문서에 없는 결정은 미확정. 열린 질문은 11절 | SIMPLIFICATION 10 · 11절 | v1 → v2 → v2.1 변경 이력 |
-| 스키마 변경 이력이 없음 | Flyway V1 ~ V7. 공유 DB 뒤로는 V1을 고치지 않고 새 버전으로 | `backend/src/main/resources/db/migration/` | 기존 DB에 V3 ~ V5 적용 확인. V7은 옛 흐름 · 새 흐름 데이터를 섞은 DB 사본에서 적용 · 스키마 검증 통과 |
+| 스키마 변경 이력이 없음 | Flyway V1 ~ V7. 공유 DB 뒤로는 V1을 고치지 않고 새 버전으로 | `backend/src/main/resources/db/migration/` | 기존 DB에 V3 ~ V5 적용 확인. V7은 옛 흐름 · 새 흐름 데이터를 섞은 DB 사본에서 적용 · 스키마 검증 통과. 이제 통합 테스트가 빈 DB에 V1 ~ V7 전체 적용과 스키마 검증을 PR마다 확인한다 |
 | 규정이 바뀔 때마다 코드를 고침 | 규정 원문 · 상품 규칙 · 상품 문서를 데이터(`data/`)로 두고, 정책값은 시행일 버전 행으로 관리. 규정 파일 형식은 테스트로 고정 | `data/regulations/README.md`, `product_rules (effective_from, effective_to)`, regulation-mcp `test_data_format.py` | M1 · M2가 규정 파일만으로 동작 (#35) |
 | 안 쓰는 코드가 남아 혼란 | 옛 흐름 API · 테이블 · 큐 작업 · 역할을 10.7 목록으로 두고, 새 흐름이 끝까지 동작한 뒤 한 PR로 지웠다. MCP 쪽 code-mcp도 같이 지웠다 (#48) | `BACKEND_API.md` 10.7 | 엔티티 4개 · 테이블 5개 · 엔드포인트 8개 삭제 |
 
@@ -185,7 +185,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 영역 | 자동 테스트 | 실제 실행 기록 |
 |---|---|---|
-| 백엔드 | 60개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
+| 백엔드 | 63개 (`./gradlew test`, 단위 60 · 통합 3) | #25 · #28 · #29 · #35 · #39 PR 본문 |
 | Agent | 122개 (`uv run pytest`) | #27 · #30 · #34 · #35 |
 | MCP | regulation 78 · business 55 | #20 · #23 · #31 |
 | 채점기 · 정답지 | 25개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44 · #49. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
