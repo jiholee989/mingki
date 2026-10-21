@@ -3,18 +3,28 @@
 from collections import defaultdict
 from app.schemas import Event, ProductImpact, ProductAssessment
 from app.data import active_rules
+from app.tools.base import recorder_of, recording
 from app.validation import change_problem, exemption_needs_customer_data, ground_conditions, condition_errors
 
 
+def code_checks(model_reason, reason):
+    """코드 검사가 모델 이유 뒤에 " / "로 덧붙인 메모. 모델 판단이 없으면 최종 이유 전체."""
+    if model_reason is None:
+        return [reason]
+    return [note for note in reason[len(model_reason):].split(" / ") if note.strip()]
+
+
 def make_product_impact_agent(tools, reasoner):
-    def product_impact_agent(state):
-        products = tools.get_products()
-        rules = active_rules(tools.get_product_rules(as_of=state["snapshot_date"]), state["snapshot_date"])
+    def product_impact_agent(state, config=None):
+        recorder = recorder_of(config)
+        belt = recording(tools, recorder, "product_impact_agent")
+        products = belt.get_products()
+        rules = active_rules(belt.get_product_rules(as_of=state["snapshot_date"]), state["snapshot_date"])
         ids = [p["productId"] for p in products]
         if not ids or len(ids) != len(set(ids)):
             raise ValueError("조회된 상품이 없거나 상품 ID가 중복되었습니다")
         known = {p["productId"]: p for p in products}
-        document_result = tools.get_product_documents(ids)
+        document_result = belt.get_product_documents(ids)
         documents = document_result["documents"]
         data_gaps = [*state.get("data_gaps", []), *document_result["data_gaps"]]
         document_refs = defaultdict(set)
@@ -94,6 +104,11 @@ def make_product_impact_agent(tools, reasoner):
                     scope=scope, applicability=applicability, conditions=conditions,
                     document_refs=refs, reason=reason, current=current or "관련 상품 규칙이 특정되지 않음: 상품·업무 절차 확인 필요",
                 ))
+                if hasattr(recorder, "decided"):
+                    # 모델 판단(rows[0])과 코드 검사 뒤 최종 판단을 함께 남긴다
+                    model = rows[0] if len(rows) == 1 else None
+                    recorder.decided("product_impact_agent", req.id, pid, model, impact, target_ids,
+                                     code_checks(model.reason if model else None, reason))
         return {"products": products, "product_rules": rules, "product_impacts": impacts,
                 "product_documents": documents, "data_gaps": data_gaps,
                 "events": [Event(node="product_impact_agent", message=f"상품 {len(products)}개 × 변경 요건 {len(state['requirements'])}개 영향 분석 / 유효 규칙 {len(rules)}개 / 문서 {len(documents)}개")]}

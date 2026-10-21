@@ -1,14 +1,16 @@
 from datetime import date, timedelta
 from app.schemas import Event, Requirement
+from app.tools.base import recorder_of, recording
 
 
 def make_requirement_agent(tools, reasoner):
-    def requirement_agent(state):
-        diff = tools.diff_versions(
+    def requirement_agent(state, config=None):
+        belt = recording(tools, recorder_of(config), "requirement_agent")
+        diff = belt.diff_versions(
             state["regulation_id"], state["old_version"], state["new_version"]
         )
         # 바뀌지 않은 적용 범위·정의·부칙도 판단에 필요하다.
-        context = tools.get_regulation_context(state["regulation_id"], state["new_version"])
+        context = belt.get_regulation_context(state["regulation_id"], state["new_version"])
         articles = context["articles"]
         diff["regulation_context"] = articles
         primary = [a for a in articles if a["regulation_id"] == state["regulation_id"]]

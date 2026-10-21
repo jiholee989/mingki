@@ -127,11 +127,16 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
 | `STEP` | `{node, round?, message?}` | 단계 표시. `node=verify`면 `round`회차 |
 | `APPROVAL_REQUIRED` | `{step:"REQUIREMENTS"\|"REVIEW", summary?}` | 승인 화면으로 이동 버튼 |
 | `RESUMED` | `{step, decision, by, approvalId}` | |
-| `TOOL_START` / `TOOL_END` | `{tool, attempt?, ok?, retrying?, dead?, error?}` | 큐 재시도 표시 |
+| `TOOL_START` / `TOOL_END` (큐) | `{tool, attempt?, ok?, retrying?, dead?, error?}` | 큐 재시도 표시 |
+| `TOOL_START` (Agent) | `{node, tool, args}` — 단계 코드가 도구를 부르기 직전. ID 목록은 개수로 줄인다 | AI 작업 기록 |
+| `TOOL_END` (Agent) | `{node, tool, ok, ms, summary?, error?}` — `summary`는 결과 건수 요약("12건") | AI 작업 기록 |
+| `DECISION` | `{node, requirementId, productId, model:{impact, targetRuleIds, reason}\|null, final:{impact, targetRuleIds}, checks:[…]}` — 상품 영향 판단 직후 상품마다. `model`은 모델 판단, `final`은 코드 검사 뒤 판단, `checks`는 검사가 바꾼 이유 | AI 판단 기록 |
 | `TOKEN` | `{text}` | (선택) 스트리밍 |
 | `STATUS` | `{status}` | |
 | `DONE` | `{outcome:"DONE"\|"NO_CHANGE"\|"HELD"\|"REJECTED"}` | 종료 |
 | `FAILED` | `{reason}` | 오류 화면 |
+
+Agent가 보내는 `TOOL_*` · `DECISION`은 상태를 바꾸지 않는 기록이다. 큐의 `TOOL_*`와는 `node` 유무로 구분한다. 기록 전송이 실패해도 Agent는 작업을 계속한다.
 
 ## 6. Agent ↔ Spring
 

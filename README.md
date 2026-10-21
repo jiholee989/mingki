@@ -42,6 +42,7 @@ uv run --with pyyaml python eval/run_agent.py --runs 3
 | 하려는 일 | 명령 |
 |---|---|
 | Agent 로그 보기 | `docker compose logs -f agent` |
+| AI 작업 기록 보기 (도구 호출 · 상품별 판단 · 코드 검사) | `python3 scripts/trace.py` (가장 최근 작업, 작업 ID를 주면 그 작업) |
 | 다시 시연하기 전 초기화 | `scripts/smoke.sh --reset` 또는 `POST /api/demo/reset` |
 | 바뀐 조항 전부 분석 | `.env`의 `AGENT_ARTICLE_IDS`를 비우고 `docker compose up -d agent` |
 | 끄기 | `docker compose down` (DB까지 지우려면 `-v`) |

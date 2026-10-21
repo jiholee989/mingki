@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 # Agent 리포트 상태 → 백엔드 DONE outcome. 백엔드 승인은 apply 를 거쳐 DONE 으로 끝나야 하므로
 # 반영 없는 APPROVED · PARTIALLY_APPROVED 는 종료 상태가 아니다 (FAILED 로 보고한다).
 OUTCOMES = {"NO_CHANGE": "NO_CHANGE", "NO_ACTION": "NO_CHANGE", "REJECTED": "REJECTED", "DONE": "DONE"}
+# Agent 판정 → 백엔드 판정 이름 (docs/BACKEND_API.md 10.2)
+IMPACTS = {"change_required": "change_required", "no_change": "keep", "needs_review": "needs_check"}
 
 
 def review_decision(proposals, decision, payload, comment=None, approval_id=None):
@@ -76,6 +78,35 @@ class SpringBridge:
         message = _message(delta)
         if message and node != "review":
             self.spring.event("STEP", {"node": node, "message": message})
+
+    # ---------- 작업 기록 (도구 호출 · 판단). 상태를 바꾸지 않으므로 전송이 실패해도 작업은 계속한다 ----------
+
+    def tool_started(self, node, tool, args):
+        self._record("TOOL_START", {"node": node, "tool": tool, "args": args})
+
+    def tool_finished(self, node, tool, *, ok, ms, summary=None, error=None):
+        payload = {"node": node, "tool": tool, "ok": ok, "ms": ms}
+        if summary:
+            payload["summary"] = summary
+        if error:
+            payload["error"] = error
+        self._record("TOOL_END", payload)
+
+    def decided(self, node, requirement_id, product_id, model, impact, target_rule_ids, checks):
+        """model: 모델의 판단(ProductAssessment) 또는 None. impact · target_rule_ids: 코드 검사 뒤 최종 판단."""
+        self._record("DECISION", {
+            "node": node, "requirementId": requirement_id, "productId": product_id,
+            "model": {"impact": IMPACTS[model.impact], "targetRuleIds": list(model.target_rule_ids),
+                      "reason": model.reason} if model else None,
+            "final": {"impact": IMPACTS[impact], "targetRuleIds": list(target_rule_ids)},
+            "checks": checks,
+        })
+
+    def _record(self, type_, payload):
+        try:
+            self.spring.event(type_, payload)
+        except Exception:
+            log.warning("작업 기록 전송 실패: %s", type_, exc_info=True)
 
     # ---------- 멈춤 · 종료 ----------
 
