@@ -25,8 +25,7 @@ mcp = FastMCP(
         "어떤 규칙 키가 있는지는 list_rule_keys로 먼저 본다. "
         "상품 규칙이 그날 유효한지는 effectiveFrom ≤ 기준일 ≤ effectiveTo(없으면 무한)로 판단한다 "
         "(get_product_rules(as_of=기준일)). effectiveTo가 null이어도 시작 전일 수 있다. "
-        "apply_rule_version은 사용자 확인(승인) 뒤 apply 단계에서만 쓰고, 결과는 get_job으로 기다린다. "
-        "create_work_ticket은 옛 흐름용이다 (BACKEND_API 10.7 정리 예정)."
+        "apply_rule_version은 사용자 확인(승인) 뒤 apply 단계에서만 쓰고, 결과는 get_job으로 기다린다."
     ),
 )
 backend = Backend()
@@ -269,50 +268,6 @@ def get_job(job_id: str) -> dict:
         "result": job.get("result"),
         "lastError": job.get("lastError"),
     }
-
-
-@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
-def create_work_ticket(
-    task_id: str,
-    approval_id: int,
-    idempotency_key: str,
-    title: str,
-    description: str | None = None,
-    type: Literal["CODE", "CONFIG", "DB", "DOC", "TEST"] = "CODE",
-    target_ref: str | None = None,
-    spec_keys: list[str] | None = None,
-    assignee: str | None = None,
-) -> dict:
-    """작업 티켓 생성 요청 (승인 필요). 백엔드가 approval_id를 다시 검증하고 큐에 넣는다.
-
-    거절 조건 (403/409): 같은 작업의 최신 REVIEW/APPROVE 승인이 아님, 작업 상태가 PUBLISHING이 아님,
-    spec_keys에 승인 때 제외한 위치가 있음. 같은 idempotency_key로 다시 부르면 새로 만들지 않는다.
-
-    Args:
-        task_id: 분석 작업 ID (UUID)
-        approval_id: 검토 · 승인 기록 ID
-        idempotency_key: 예: "{task_id}:ticket:S1"
-        title: 티켓 제목
-        description: 본문
-        type: CODE | CONFIG | DB | DOC | TEST
-        target_ref: 대상 위치 (예: "src/loan/eligibility.py:21")
-        spec_keys: 대상 변경 명세 ID 목록
-        assignee: 담당자
-
-    Returns:
-        {jobId, status: "QUEUED", duplicate}. 완료는 GET /internal/jobs/{jobId}로 확인한다.
-    """
-    return _call(backend.post, "/internal/work-tickets", {
-        "taskId": task_id,
-        "approvalId": approval_id,
-        "idempotencyKey": idempotency_key,
-        "title": title,
-        "description": description,
-        "type": type,
-        "targetRef": target_ref,
-        "specKeys": spec_keys or [],
-        "assignee": assignee,
-    })
 
 
 if __name__ == "__main__":

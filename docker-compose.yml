@@ -92,18 +92,6 @@ services:
       - ./data/regulations:/data/regulations:ro
       - ./data/product-docs:/data/product-docs:ro
 
-  code-mcp:
-    build: ./mcp/code-mcp
-    environment:
-      SAMPLE_REPO_DIR: /sample_repo
-      PUBLISH_DIR: /publish
-      BACKEND_BASE_URL: http://backend:8080
-      INTERNAL_TOKEN: rr-internal-dev-token
-    volumes:
-      - ./mcp/sample_repo:/sample_repo:ro   # TODO: 실제 샘플 레포가 생기면 경로만 교체
-      - publish:/publish                    # Draft PR 브랜치 · 커밋
-    depends_on: [backend]
-
   business-mcp:
     build: ./mcp/business-mcp
     environment:
@@ -119,4 +107,3 @@ services:
 
 volumes:
   pgdata:
-  publish:

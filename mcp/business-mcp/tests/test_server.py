@@ -72,11 +72,6 @@ class FakeSpring:
             return httpx.Response(404, json={"error": "NOT_FOUND", "message": "product not found"})
         if path == "/internal/contracts/impact":
             return httpx.Response(200, json={"ageFrom": int(req.url.params["ageFrom"]), "params": dict(req.url.params)})
-        if path == "/internal/work-tickets":
-            body = json.loads(req.content)
-            if body["approvalId"] != 7:
-                return httpx.Response(403, json={"error": "FORBIDDEN", "message": f"존재하지 않는 approvalId: {body['approvalId']}"})
-            return httpx.Response(202, json={"jobId": "j-1", "status": "QUEUED", "duplicate": False})
         return httpx.Response(404, json={"error": "NOT_FOUND", "message": "not found"})
 
 
@@ -96,7 +91,7 @@ async def test_tools_are_registered():
     async with Client(server.mcp) as c:
         names = {t.name for t in await c.list_tools()}
     assert names == {"get_products", "get_product_rules", "list_rule_keys", "get_db_schema", "get_contract_impact",
-                     "create_work_ticket", "apply_rule_version", "get_job"}
+                     "apply_rule_version", "get_job"}
 
 
 async def test_sends_internal_token_and_caller(spring):
@@ -132,24 +127,6 @@ async def test_contract_impact_maps_params_and_omits_none(spring):
     params = spring.requests[0].url.params
     assert params["ageFrom"] == "60" and params["ageTo"] == "64"
     assert "appliedBefore" not in params
-
-
-async def test_work_ticket_body_matches_backend_contract(spring):
-    out = await call("create_work_ticket", {
-        "task_id": "t-1", "approval_id": 7, "idempotency_key": "t-1:ticket:S1",
-        "title": "고령자 기준 변경", "spec_keys": ["S1"],
-    })
-    assert out == {"jobId": "j-1", "status": "QUEUED", "duplicate": False}
-    body = json.loads(spring.requests[0].content)
-    assert body == {
-        "taskId": "t-1", "approvalId": 7, "idempotencyKey": "t-1:ticket:S1", "title": "고령자 기준 변경",
-        "description": None, "type": "CODE", "targetRef": None, "specKeys": ["S1"], "assignee": None,
-    }
-
-
-async def test_unapproved_ticket_is_rejected_with_backend_reason(spring):
-    with pytest.raises(ToolError, match="403 FORBIDDEN: 존재하지 않는 approvalId"):
-        await call("create_work_ticket", {"task_id": "t-1", "approval_id": 999, "idempotency_key": "k", "title": "x"})
 
 
 async def test_backend_down_is_tool_error(monkeypatch):

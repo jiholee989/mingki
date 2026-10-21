@@ -17,6 +17,7 @@ import java.util.UUID;
  *
  *   POST {agent}/run    {taskId, threadId, title, documents:[{side, versionLabel, filename, sha256}], callbackBaseUrl}
  *   POST {agent}/resume {taskId, threadId, step, decision, approvalId, payload, callbackBaseUrl}
+ *   POST {agent}/continue {taskId, threadId, callbackBaseUrl}   도중에 멈춘 작업 이어가기 (Agent 가 409 면 이어갈 게 없음)
  *
  * 규정 원문은 GET {callbackBaseUrl}/documents 로 가져간다.
  */
@@ -71,6 +72,16 @@ public class AgentClient {
         body.put("callbackBaseUrl", callbackBaseUrl(task.getId()));
         client.post().uri("/resume").body(body).retrieve().toBodilessEntity();
         log.info("agent resume requested task={} step={} decision={}", task.getId(), approval.getStep(), approval.getDecision());
+    }
+
+    /** 동기 호출. Agent 의 409(이어갈 게 없음) · 연결 실패를 호출한 쪽이 그대로 사용자에게 돌려준다. */
+    public void continueTask(AnalysisTask task) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("taskId", task.getId().toString());
+        body.put("threadId", task.getThreadId());
+        body.put("callbackBaseUrl", callbackBaseUrl(task.getId()));
+        client.post().uri("/continue").body(body).retrieve().toBodilessEntity();
+        log.info("agent continue requested task={} status={}", task.getId(), task.getStatus());
     }
 
     private String callbackBaseUrl(UUID taskId) {

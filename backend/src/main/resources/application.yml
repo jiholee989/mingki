@@ -52,6 +52,8 @@ ruleripple:
     base-url: ${AGENT_BASE_URL:http://agent:8000}
     connect-timeout-ms: 3000
     read-timeout-ms: 10000
+    # 진행 중인 작업의 "다시 시도"는 마지막 변화 뒤 이 시간이 지나야 받는다. Agent 가 아직 돌고 있을 때 겹쳐 부르면 멀쩡한 작업이 깨진다
+    retry-quiet-seconds: ${RETRY_QUIET_SECONDS:300}
   queue:
     exchange: rr.jobs
     main-queue: rr.jobs.q
