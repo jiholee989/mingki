@@ -10,7 +10,8 @@
 | `product_rules.json` | `product_rules` | 82 | 상품별 규칙값 (종료된 옛 버전 행 포함) |
 | `loan_contracts.json` | `loan_contracts` | 120 | 기존 계약 · 신청 · 거절 (만기 지난 계약 포함) |
 
-이 폴더는 Agent가 MCP로 보는 입력입니다. 판단 근거나 정답은 넣지 않고 `eval/`에 둡니다. 숫자로 표현되지 않는 상품 정보(심사 절차, 설명 항목, 화면 문구)는 `data/product-docs/`에 있습니다.
+이 폴더는 Agent가 MCP로 보는 입력입니다. 판단 근거나 정답은 넣지 않고 `eval/`에 둡니다.
+`product_rules.basis_articles`는 정답이 아니라 규칙의 사실 정보입니다. "이 규칙이 어느 규정 조항을 따르는가"(규정 ↔ 규칙 연결)이고, "이번 개정으로 바뀌어야 하는가"는 담지 않습니다. 상품 자체 기준(최대 금액 등)이거나 확인되지 않은 규칙은 비워 둡니다. 숫자로 표현되지 않는 상품 정보(심사 절차, 설명 항목, 화면 문구)는 `data/product-docs/`에 있습니다.
 
 ## 상품
 
@@ -59,7 +60,8 @@ CREATE TABLE product_rules (
   value          VARCHAR(50) NOT NULL,
   unit           VARCHAR(20) NOT NULL,  -- ratio | percent | percent_point | krw | months | years | days | count | age | score | bool
   effective_from DATE NOT NULL,
-  effective_to   DATE
+  effective_to   DATE,
+  basis_articles VARCHAR(50)[] NOT NULL DEFAULT '{}'  -- 이 규칙이 따르는 규정 조항 {regulation_id}/{article_id}
 );
 CREATE INDEX ON product_rules (product_id, rule_key, effective_from);
 

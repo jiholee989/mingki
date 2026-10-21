@@ -361,8 +361,8 @@ POST /internal/product-rules/versions
 - 행을 잠그고 4번을 다시 검사한다. 다르면 **재시도하지 않고 바로 `DEAD`** (`lastError` = "이미 바뀐 규칙"). 다시 해도 결과가 같기 때문이다.
 - 규칙 행 · 전달 기록 · 작업 완료(`DONE`, `result`)를 한 트랜잭션에 커밋한다. 커밋 뒤 워커가 죽어 메시지를 다시 받아도 작업이 `DONE`이라 반영을 반복하지 않는다.
 - 기존 행: `effective_to = effectiveDate - 1일`
-- 새 행: `rule_id` = 기존 최대 번호 다음(`R083`부터), `value = proposedValue`, `unit`, `effective_from = effectiveDate`, `effective_to = null`
-- 새 규칙은 닫는 행 없이 새 행만 추가한다.
+- 새 행: `rule_id` = 기존 최대 번호 다음(`R083`부터), `value = proposedValue`, `unit`, `effective_from = effectiveDate`, `effective_to = null`, `basis_articles` = 기존 행 그대로
+- 새 규칙은 닫는 행 없이 새 행만 추가한다. `basis_articles`는 제안 `basis`의 첫 조항(`reg://{규정}/{버전}/{조항}` → `{규정}/{조항}`)
 - 결과 `GET /internal/jobs/{jobId}` → `{status, result: {proposalKey, productId, closedRuleId, newRuleId, effectiveFrom}}` ([예시](./contracts/apply.job.json)). 새 규칙이면 `closedRuleId: null`.
 - 전달 기록(`deliveries`)에 `RULE_VERSION`으로 남긴다.
 - 일반 큐 API `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않는다 (400). 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
@@ -375,6 +375,7 @@ Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/
 |---|---|
 | `GET /internal/products` | `?status=ON_SALE\|SALE_ENDED` |
 | `GET /internal/product-rules` | `?productId=`, `?asOf=YYYY-MM-DD` — 그날 유효한 행만 (`effectiveFrom ≤ asOf`, `effectiveTo`가 null이거나 `≥ asOf`) |
+| 규칙 행 (신규 칸) | `basisArticles: ["{regulation_id}/{article_id}"]` — 이 규칙이 따르는 규정 조항 (예: `credit-loan-ops/15`, `senior-protection/5`). 버전 없이 조항만. 비어 있으면 상품 자체 기준이거나 미확인. Agent는 바뀐 조항을 따르지 않는 규칙을 변경 대상에서 뺀다 |
 | `GET /internal/product-rules/keys` (신규) | `?asOf=` (기본 오늘) → `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]`. #23 `list_rule_keys` 모양에 `upcomingRows`(아직 시작 전인 행, 반영 직후 생김)를 더했다. `productIds`는 `asOf`에 유효한 행이 있는 상품 ([예시](./contracts/rule-keys.get.json)) |
 | `GET /internal/contracts/impact` | `?dsrFrom=&dsrTo=` — `dsr_at_approval`이 (dsrFrom, dsrTo] 안. 나이 조건과 함께 주면 둘 다 만족. 계약마다 `dsrAtApproval` · `repaymentType` · `maturityDate` · `extensionCount` · `maturesAfterEffective`(만기 ≥ `appliedBefore`) 추가. 연장 사례(C0006)는 만기일시 · 연장 이력으로 Agent가 판단한다 ([예시](./contracts/contract-impact.get.json)) |
 
