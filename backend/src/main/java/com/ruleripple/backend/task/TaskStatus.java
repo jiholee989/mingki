@@ -2,22 +2,20 @@ package com.ruleripple.backend.task;
 
 import java.util.Set;
 
-/** docs/FRONTEND_PLAN.md "작업 상태" 와 1:1. */
+/** 작업 상태. docs/BACKEND_API.md 10.1 의 노드 → 상태 표와 같다. */
 public enum TaskStatus {
-    EXTRACTING,                    // 요건 추출 중
-    WAITING_REQUIREMENT_APPROVAL,  // interrupt ① 요건 확정 대기 (OFFICER)
-    LOCATING,                      // 영향 위치 탐색 · 테스트 생성 중
-    DESIGNING,                     // 수정안 생성 중
-    VERIFYING,                     // 검증 중 (verify_round 회차)
-    WAITING_REVIEW,                // interrupt ② 검토 · 승인 대기 (DEVELOPER)
-    PUBLISHING,                    // PR · 티켓 생성 중
-    DONE,                          // 완료
-    NO_CHANGE,                     // 실질 변경 없음
-    HELD,                          // 전부 보류로 종료
-    REJECTED,                      // 거절로 종료
-    FAILED;                        // 시스템 오류
+    EXTRACTING,      // 바뀐 조항에서 요건 추출 중
+    LOCATING,        // 상품별 영향 판단 중
+    DESIGNING,       // 상품별 변경 제안 작성 중
+    VERIFYING,       // 근거 검사 중 (verify_round 회차)
+    WAITING_REVIEW,  // 사람 확인 대기
+    PUBLISHING,      // 상품 규칙 반영 중
+    DONE,            // 반영 완료
+    NO_CHANGE,       // 바꿀 상품 없음
+    REJECTED,        // 거절로 종료
+    FAILED;          // 시스템 오류
 
-    private static final Set<TaskStatus> TERMINAL = Set.of(DONE, NO_CHANGE, HELD, REJECTED, FAILED);
+    private static final Set<TaskStatus> TERMINAL = Set.of(DONE, NO_CHANGE, REJECTED, FAILED);
 
     public boolean isTerminal() {
         return TERMINAL.contains(this);
@@ -32,24 +30,23 @@ public enum TaskStatus {
     }
 
     public boolean isWaiting() {
-        return this == WAITING_REQUIREMENT_APPROVAL || this == WAITING_REVIEW;
+        return this == WAITING_REVIEW;
     }
 
     /**
      * Agent 이벤트로 옮길 수 있는 다음 상태. 같은 상태는 언제나 허용한다.
-     * WAITING_* 에서 나가는 전이는 사람이 승인 API 로만 한다. FAILED 도 예외가 아니다. 확인 대기 중인 Agent 는
+     * WAITING_REVIEW 에서 나가는 전이는 사람이 확인 API 로만 한다. FAILED 도 예외가 아니다. 확인 대기 중인 Agent 는
      * 아무것도 실행하지 않으므로, 그때 오는 FAILED 는 엉뚱한 요청(예: 실행 중에 누른 "다시 시도")의 뒷처리다.
-     * EXTRACTING → LOCATING 은 요건 확정 없이 영향 찾기로 가는 단순화 흐름이다 (docs/SIMPLIFICATION.md).
      */
     public boolean agentCanMoveTo(TaskStatus next) {
         if (next == this) return true;
         if (isTerminal() || isWaiting()) return false;
         if (next == FAILED) return true;
         return switch (this) {
-            case EXTRACTING -> next == WAITING_REQUIREMENT_APPROVAL || next == LOCATING || next == NO_CHANGE;
-            case LOCATING -> next == DESIGNING || next == NO_CHANGE;   // 영향 찾기 결과 전 상품 유지
+            case EXTRACTING -> next == LOCATING || next == NO_CHANGE;   // 요건 0건이면 바로 변경 없음
+            case LOCATING -> next == DESIGNING || next == NO_CHANGE;     // 전 상품 유지
             case DESIGNING -> next == VERIFYING;
-            case VERIFYING -> next == DESIGNING || next == LOCATING || next == WAITING_REVIEW;
+            case VERIFYING -> next == DESIGNING || next == WAITING_REVIEW;
             case PUBLISHING -> next == DONE;
             default -> false;
         };
@@ -62,7 +59,6 @@ public enum TaskStatus {
     public static TaskStatus restoredAfterFailure(String currentNode, boolean approved) {
         if (approved) return PUBLISHING;
         if ("interrupt_review".equals(currentNode)) return WAITING_REVIEW;
-        if ("interrupt_requirements".equals(currentNode)) return WAITING_REQUIREMENT_APPROVAL;
         TaskStatus fromNode = fromNode(currentNode);
         return fromNode == null ? EXTRACTING : fromNode;
     }
@@ -72,10 +68,10 @@ public enum TaskStatus {
         if (node == null) return null;
         return switch (node) {
             case "requirement_agent" -> EXTRACTING;
-            case "impact_agent", "product_impact_agent", "test_agent", "locate_agent" -> LOCATING;
-            case "proposal_agent", "design_agent", "plan", "db_change", "worker", "merge" -> DESIGNING;
+            case "impact_agent", "product_impact_agent" -> LOCATING;
+            case "proposal_agent" -> DESIGNING;
             case "verify" -> VERIFYING;
-            case "apply", "publish" -> PUBLISHING;
+            case "apply" -> PUBLISHING;
             default -> null;
         };
     }

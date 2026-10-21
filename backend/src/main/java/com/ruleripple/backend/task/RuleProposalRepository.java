@@ -10,6 +10,4 @@ public interface RuleProposalRepository extends JpaRepository<RuleProposal, Long
     List<RuleProposal> findByTaskIdOrderByProposalKeyAscRoundAsc(UUID taskId);
 
     Optional<RuleProposal> findByTaskIdAndProposalKeyAndRound(UUID taskId, String proposalKey, int round);
-
-    boolean existsByTaskId(UUID taskId);
 }

@@ -12,8 +12,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Spring → FastAPI Agent. 두 엔드포인트 모두 즉시 응답(202)하고, 실행 결과는
- * {callbackBaseUrl}/events · /requirements · /change-specs · /test-cases · /patches · /report 로 밀어준다.
+ * Spring → FastAPI Agent. 세 엔드포인트 모두 즉시 응답(202)하고, 실행 결과는
+ * {callbackBaseUrl}/events · /requirements · /proposals · /report 로 밀어준다.
  *
  *   POST {agent}/run    {taskId, threadId, title, documents:[{side, versionLabel, filename, sha256}], callbackBaseUrl}
  *   POST {agent}/resume {taskId, threadId, step, decision, approvalId, payload, callbackBaseUrl}

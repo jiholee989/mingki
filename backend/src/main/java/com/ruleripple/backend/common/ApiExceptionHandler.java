@@ -16,7 +16,7 @@ import java.util.NoSuchElementException;
 
 /**
  * 에러 응답을 {error, message} 로 통일한다. 프론트 src/api/client.ts 는 이 형태 하나만 처리하면 된다.
- *   400 잘못된 입력 · 401 미인증 · 403 권한/승인 검증 실패 · 404 없음 · 409 상태 충돌(검증 실패 패치 승인 등) · 413 파일 크기
+ *   400 잘못된 입력 · 401 미인증 · 403 권한/승인 검증 실패 · 404 없음 · 409 상태 충돌(근거 검사 실패 제안 승인 등) · 413 파일 크기
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {

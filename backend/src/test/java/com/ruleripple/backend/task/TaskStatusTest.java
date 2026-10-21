@@ -11,30 +11,31 @@ class TaskStatusTest {
 
     @Test
     void agentFollowsHappyPath() {
-        assertThat(EXTRACTING.agentCanMoveTo(WAITING_REQUIREMENT_APPROVAL)).isTrue();
+        assertThat(EXTRACTING.agentCanMoveTo(LOCATING)).isTrue();
         assertThat(LOCATING.agentCanMoveTo(DESIGNING)).isTrue();
         assertThat(DESIGNING.agentCanMoveTo(VERIFYING)).isTrue();
-        assertThat(VERIFYING.agentCanMoveTo(DESIGNING)).isTrue();
-        assertThat(VERIFYING.agentCanMoveTo(LOCATING)).isTrue();
+        assertThat(VERIFYING.agentCanMoveTo(DESIGNING)).isTrue();   // 근거 검사 실패 → 다시 작성
         assertThat(VERIFYING.agentCanMoveTo(WAITING_REVIEW)).isTrue();
         assertThat(PUBLISHING.agentCanMoveTo(DONE)).isTrue();
-        assertThat(EXTRACTING.agentCanMoveTo(NO_CHANGE)).isTrue();
     }
 
     @Test
-    void simplifiedFlowSkipsRequirementApproval() {
-        assertThat(EXTRACTING.agentCanMoveTo(LOCATING)).isTrue();
+    void noChangeEndsEarly() {
+        assertThat(EXTRACTING.agentCanMoveTo(NO_CHANGE)).isTrue();   // 요건 0건
+        assertThat(LOCATING.agentCanMoveTo(NO_CHANGE)).isTrue();     // 요건은 있는데 전 상품 유지
         assertThat(EXTRACTING.agentCanMoveTo(DESIGNING)).isFalse();
-        assertThat(LOCATING.agentCanMoveTo(NO_CHANGE)).isTrue();   // 요건은 있는데 전 상품 유지
+        assertThat(VERIFYING.agentCanMoveTo(LOCATING)).isFalse();
     }
 
     @Test
-    void simplifiedNodesMapToStatuses() {
+    void nodesMapToStatuses() {
+        assertThat(TaskStatus.fromNode("requirement_agent")).isEqualTo(EXTRACTING);
         assertThat(TaskStatus.fromNode("impact_agent")).isEqualTo(LOCATING);
         assertThat(TaskStatus.fromNode("product_impact_agent")).isEqualTo(LOCATING);   // #27 노드 이름
         assertThat(TaskStatus.fromNode("proposal_agent")).isEqualTo(DESIGNING);
         assertThat(TaskStatus.fromNode("verify")).isEqualTo(VERIFYING);
         assertThat(TaskStatus.fromNode("apply")).isEqualTo(PUBLISHING);
+        assertThat(TaskStatus.fromNode("report")).isNull();
     }
 
     @Test
@@ -42,12 +43,11 @@ class TaskStatusTest {
         assertThat(VERIFYING.agentCanMoveTo(PUBLISHING)).isFalse();
     }
 
-    @ParameterizedTest
-    @EnumSource(value = TaskStatus.class, names = {"WAITING_REQUIREMENT_APPROVAL", "WAITING_REVIEW"})
-    void onlyHumansLeaveWaitingStates(TaskStatus waiting) {
+    @Test
+    void onlyHumansLeaveReview() {
         // FAILED 도 안 된다. 기다리는 Agent 는 실행하지 않으므로, 그때 온 FAILED 는 겹친 요청의 뒷처리다
         for (TaskStatus next : TaskStatus.values()) {
-            assertThat(waiting.agentCanMoveTo(next)).as(waiting + " → " + next).isEqualTo(next == waiting);
+            assertThat(WAITING_REVIEW.agentCanMoveTo(next)).as("WAITING_REVIEW → " + next).isEqualTo(next == WAITING_REVIEW);
         }
     }
 
@@ -56,7 +56,6 @@ class TaskStatusTest {
         assertThat(TaskStatus.restoredAfterFailure("apply", true)).isEqualTo(PUBLISHING);
         assertThat(TaskStatus.restoredAfterFailure("interrupt_review", true)).isEqualTo(PUBLISHING);   // 승인 직후 죽음
         assertThat(TaskStatus.restoredAfterFailure("interrupt_review", false)).isEqualTo(WAITING_REVIEW);
-        assertThat(TaskStatus.restoredAfterFailure("interrupt_requirements", false)).isEqualTo(WAITING_REQUIREMENT_APPROVAL);
         assertThat(TaskStatus.restoredAfterFailure("proposal_agent", false)).isEqualTo(DESIGNING);
         assertThat(TaskStatus.restoredAfterFailure(null, false)).isEqualTo(EXTRACTING);
         assertThat(TaskStatus.restoredAfterFailure("report", false)).isEqualTo(EXTRACTING);
@@ -65,13 +64,12 @@ class TaskStatusTest {
     @ParameterizedTest
     @EnumSource(TaskStatus.class)
     void inProgressAndFailedTasksCanRetry(TaskStatus s) {
-        boolean waiting = s == WAITING_REQUIREMENT_APPROVAL || s == WAITING_REVIEW;
-        boolean expected = s == FAILED || (!s.isTerminal() && !waiting);
+        boolean expected = s == FAILED || (!s.isTerminal() && s != WAITING_REVIEW);
         assertThat(s.canRetry()).as(s.name()).isEqualTo(expected);
     }
 
     @ParameterizedTest
-    @EnumSource(value = TaskStatus.class, names = {"DONE", "NO_CHANGE", "HELD", "REJECTED", "FAILED"})
+    @EnumSource(value = TaskStatus.class, names = {"DONE", "NO_CHANGE", "REJECTED", "FAILED"})
     void terminalStatesStayPut(TaskStatus terminal) {
         for (TaskStatus next : TaskStatus.values()) {
             assertThat(terminal.agentCanMoveTo(next)).as(terminal + " → " + next).isEqualTo(next == terminal);

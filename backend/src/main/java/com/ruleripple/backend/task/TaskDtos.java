@@ -28,19 +28,15 @@ public final class TaskDtos {
         }
     }
 
-    /** 지금 사람이 해야 할 일. 없으면 null. 역할 구분이 없어져서 role 은 항상 null (v2). */
-    public record PendingAction(String step, String role, String path) {
+    /** 지금 사람이 해야 할 일. 없으면 null. */
+    public record PendingAction(String step, String path) {
         public static PendingAction of(TaskStatus s, UUID id) {
-            return switch (s) {
-                case WAITING_REQUIREMENT_APPROVAL -> new PendingAction("REQUIREMENTS", null, "/tasks/" + id + "/requirements");
-                case WAITING_REVIEW -> new PendingAction("REVIEW", null, "/tasks/" + id + "/review");
-                default -> null;
-            };
+            return s == TaskStatus.WAITING_REVIEW ? new PendingAction("REVIEW", "/tasks/" + id + "/review") : null;
         }
     }
 
-    /** proposals: 현재 회차 제안 수 (v2). */
-    public record Counts(int requirements, int targets, int nonTargets, int patches, int testCases, int proposals) {}
+    /** proposals: 현재 회차 제안 수. */
+    public record Counts(int requirements, int proposals) {}
 
     public record TaskDetail(TaskSummary task, String errorMessage, int maxVerifyRounds,
                              List<DocumentMeta> documents, PendingAction pendingAction, Counts counts,
@@ -48,51 +44,16 @@ public final class TaskDtos {
 
     public record RequirementView(Long id, String reqKey, String summary, String target, LocalDate effectiveDate,
                                   String transitional, String articleRef, String oldText, String newText,
-                                  String status, Map<String, Object> detail) {
+                                  Map<String, Object> detail) {
         public static RequirementView of(Requirement r) {
             return new RequirementView(r.getId(), r.getReqKey(), r.getSummary(), r.getTarget(), r.getEffectiveDate(),
-                    r.getTransitional(), r.getArticleRef(), r.getOldText(), r.getNewText(), r.getStatus().name(), r.getDetail());
+                    r.getTransitional(), r.getArticleRef(), r.getOldText(), r.getNewText(), r.getDetail());
         }
     }
 
     public record RequirementsResponse(TaskSummary task, List<DocumentMeta> documents, List<RequirementView> requirements) {}
 
-    public record ChangeSpecView(Long id, String specKey, String reqKey, String locationKind, String filePath,
-                                 String symbol, Integer lineNo, String snippet, String changeType, boolean target,
-                                 String reason, String bundle, Map<String, Object> detail) {
-        public static ChangeSpecView of(ChangeSpec c) {
-            return new ChangeSpecView(c.getId(), c.getSpecKey(), c.getReqKey(), c.getLocationKind().name(),
-                    c.getFilePath(), c.getSymbol(), c.getLineNo(), c.getSnippet(),
-                    c.getChangeType() == null ? null : c.getChangeType().name(), c.isTarget(), c.getReason(),
-                    c.getBundle(), c.getDetail());
-        }
-    }
-
-    public record ChangeSpecsResponse(TaskSummary task, List<ChangeSpecView> targets, List<ChangeSpecView> nonTargets) {}
-
-    public record PatchView(Long id, String bundle, int round, List<String> specKeys, String filePath, String diff,
-                            String verifyStatus, String verifyLog, String failureKind, boolean latest,
-                            Map<String, Object> detail) {
-        public static PatchView of(CodePatch p, boolean latest) {
-            return new PatchView(p.getId(), p.getBundle(), p.getRound(), p.getSpecKeys(), p.getFilePath(), p.getDiff(),
-                    p.getVerifyStatus().name(), p.getVerifyLog(),
-                    p.getFailureKind() == null ? null : p.getFailureKind().name(), latest, p.getDetail());
-        }
-    }
-
-    public record TestCaseView(Long id, String testKey, String reqKey, String name, String kind, String code,
-                               Map<String, Object> detail) {
-        public static TestCaseView of(TestCase t) {
-            return new TestCaseView(t.getId(), t.getTestKey(), t.getReqKey(), t.getName(), t.getKind().name(),
-                    t.getCode(), t.getDetail());
-        }
-    }
-
-    /** canApprove=false 면 화면에서도 승인 버튼을 막는다 (서버도 409 로 막음). */
-    public record PatchesResponse(TaskSummary task, int maxVerifyRounds, int latestRound, int passed, int failed,
-                                  int pending, boolean canApprove, List<PatchView> patches, List<TestCaseView> testCases) {}
-
-    // ---------- v2 제안 (docs/BACKEND_API.md 10.2) ----------
+    // ---------- 제안 (docs/BACKEND_API.md 10.2) ----------
 
     public record ApplyResult(String jobId, String status, String closedRuleId, String newRuleId) {}
 
@@ -126,10 +87,10 @@ public final class TaskDtos {
         }
     }
 
-    /** 승인자. 화면이 이름 · 역할을 따로 조회하지 않아도 되게 같이 내려준다. */
-    public record Approver(Long userId, String username, String displayName, String role) {
+    /** 승인자. 화면이 이름을 따로 조회하지 않아도 되게 같이 내려준다. */
+    public record Approver(Long userId, String username, String displayName) {
         public static Approver of(User u) {
-            return new Approver(u.getId(), u.getUsername(), u.getDisplayName(), u.getRole().name());
+            return new Approver(u.getId(), u.getUsername(), u.getDisplayName());
         }
     }
 

@@ -19,12 +19,12 @@ import java.util.UUID;
  * 이벤트 type
  *   STEP              {node, round?, message?}  노드 진입. node → 상태 (TaskStatus.fromNode)
  *   STATUS            {status}                  상태를 직접 지정 (예외 상황용)
- *   APPROVAL_REQUIRED {step: REQUIREMENTS|REVIEW, summary?}
+ *   APPROVAL_REQUIRED {step: REVIEW, summary?}
  *   RESUMED           {step, decision, by}
  *   TOKEN             {text}
  *   TOOL_START        {tool, args?}
  *   TOOL_END          {tool, ok, result?|error?}
- *   DONE              {outcome: DONE|NO_CHANGE|HELD|REJECTED}
+ *   DONE              {outcome: DONE|NO_CHANGE|REJECTED}
  *   FAILED            {reason}
  */
 @Service
@@ -101,16 +101,18 @@ public class TaskEventService {
                 if (s != null) task.setStatus(parseStatus(s));
             }
             case "APPROVAL_REQUIRED" -> {
+                if (!"REVIEW".equals(str(p.get("step")))) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "APPROVAL_REQUIRED.step must be REVIEW");
+                }
                 if (task.getStatus().isTerminal()) return;
-                boolean review = "REVIEW".equals(str(p.get("step")));
-                task.setStatus(review ? TaskStatus.WAITING_REVIEW : TaskStatus.WAITING_REQUIREMENT_APPROVAL);
-                task.setCurrentNode(review ? "interrupt_review" : "interrupt_requirements");
+                task.setStatus(TaskStatus.WAITING_REVIEW);
+                task.setCurrentNode("interrupt_review");
             }
             case "DONE" -> {
                 String outcome = str(p.get("outcome"));
                 TaskStatus s = outcome == null ? TaskStatus.DONE : parseStatus(outcome);
                 if (!s.isTerminal() || s == TaskStatus.FAILED) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DONE.outcome must be DONE|NO_CHANGE|HELD|REJECTED");
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DONE.outcome must be DONE|NO_CHANGE|REJECTED");
                 }
                 task.setStatus(s);
                 task.setCurrentNode("report");

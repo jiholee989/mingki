@@ -38,7 +38,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
                                                     regulation-mcp ◀── Agent ──▶ business-mcp ──▶ Spring /internal
 ```
 
-- 공개 포트는 프론트 · 백엔드 · (개발용) MCP 3개뿐이다. DB · RabbitMQ는 docker network 안에만 있다. Agent는 지금 호스트에서 띄운다 (compose의 `agent:`는 주석, MCP 포트는 `docker-compose.agent-local.yml`로 127.0.0.1에만 연다).
+- 공개 포트는 프론트 · 백엔드 · (개발용) MCP 2개뿐이다. DB · RabbitMQ는 docker network 안에만 있다. Agent는 지금 호스트에서 띄운다 (compose의 `agent:`는 주석, MCP 포트는 `docker-compose.agent-local.yml`로 127.0.0.1에만 연다).
 - **업무 규칙은 Spring 한 곳에만 있다.** MCP는 Spring `/internal/**`을 감싸고, Agent는 MCP를 통해서만 업무 데이터를 본다. 그래서 "무엇이 허용되는가"를 고칠 때 한 곳만 고친다.
 - 정답지(`eval/`)는 어느 컨테이너에도 마운트되지 않는다. Agent가 읽을 수 있는 건 규정 원문 · 상품 문서 · Spring 응답뿐이다 (`docker-compose.yml`의 마운트 목록).
 
@@ -75,7 +75,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 영역 5개(백엔드 · Agent · MCP · 프론트 · 데이터)가 각자 인터페이스를 상상해 구현 | **계약 먼저.** 인터페이스는 `BACKEND_API.md` 10절에 PR로 올리고 쓰는 쪽이 승인한 뒤 구현. 요청 · 응답 예시는 `docs/contracts/*.json` 한 벌 | `docs/contracts/` 7개 | 백엔드 `BusinessQueriesTest` · `ProposalsTest`, MCP `test_server.py`, 채점기가 **같은 파일**을 읽는다. 어긋나면 어느 쪽 테스트든 실패 |
 | Agent와 백엔드의 제안 단위가 다름(상품 × 요건 vs 상품 × 규칙) | 어댑터가 펼친다. 유지 판정은 `keep` 행으로 보내 "모든 상품에 판정 1개" 규칙을 지킴 | `agent/app/backend.py` `rule_proposals_payload` | `test_server.py` |
 | 응답 키 표기(camelCase)와 데이터 파일(snake_case)이 다름 | DB 컬럼 · JSON 파일은 snake_case, API는 camelCase로 고정. 변환은 로더 한 곳 | `BusinessDataLoader` | 시드 로더 테스트 |
-| 옛 흐름(코드 패치)과 새 흐름(상품 규칙)이 한동안 공존 | 같은 상태 이름을 재사용하고 새 전이(`EXTRACTING → LOCATING`, `LOCATING → NO_CHANGE`)만 추가. 옛 API는 10.7 목록으로 정리 예정 | `TaskStatus.agentCanMoveTo` | `TaskStatusTest` |
+| 옛 흐름(코드 패치)과 새 흐름(상품 규칙)이 한동안 공존 | 같은 상태 이름을 재사용하고 새 전이(`EXTRACTING → LOCATING`, `LOCATING → NO_CHANGE`)만 추가해 두 흐름을 함께 돌렸다. 새 흐름이 끝까지 동작한 뒤 옛 흐름을 한 번에 지웠다 (V7, 10.7) | `TaskStatus.agentCanMoveTo`, `V7__drop_old_flow.sql` | `TaskStatusTest` |
 
 ### 2.4 상호작용 능력 (Interaction capability, 2011: 사용성)
 
@@ -111,7 +111,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | Agent · MCP가 공개 API를 거치지 않고 아무거나 바꿈 | `/internal/**`은 `X-Internal-Token`이 있어야 한다. backend 포트가 호스트에 열려 있어 네트워크로는 막지 않으므로 토큰이 유일한 경계다. 기본 토큰이면 Agent가 기동 때 경고 | `InternalTokenFilter`, `agent/app/server.py` | 토큰 없이 `/internal/**` → 401 |
 | LLM이 "승인됐다"고 주장하며 쓰기 도구를 부름 | 쓰기 도구는 **승인 기록 ID를 받아 서버가 다시 검증**: 같은 작업의 REVIEW/APPROVE인지, 가장 최근 결정인지, 작업이 PUBLISHING인지, 그 제안이 반영으로 골라졌는지 | `ApprovalGuard`, `RuleVersionService.enqueue` | `RuleVersionServiceTest`, 반영으로 고르지 않은 제안 → 403 (#29) |
 | LLM이 확인받은 값과 다른 값을 반영 | **Agent는 값을 보내지 않는다.** 서버가 저장된 제안 행에서 지금 값 · 제안 값 · 단위 · 시행일을 꺼낸다 | `RuleVersionService` | 계약 10.4 |
-| 일반 큐 API로 검사를 우회 | `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않음(400) | `JobController` | #29 |
+| 일반 큐 API로 검사를 우회 | 큐에 작업을 넣는 일반 API를 두지 않는다. 반영은 `/internal/product-rules/versions`로만 받고 `/internal/jobs`는 조회만 한다 | `JobController`, `InternalBusinessController` | #29, `POST /internal/jobs` → 405 |
 | 쓰기 도구가 분석 노드에 노출 | 노드마다 도구 부분집합만 줌. `apply_rule_version`은 `apply` 노드에만 | `agent/app/graph.py` `NODE_TOOLS`, `ToolBelt` | Agent 테스트 |
 | 정답 힌트가 Agent 입력에 섞임 | 정답 · 근거 조항 컬럼(`source`, `note`)을 DB에서 제거. `eval/`은 어느 컨테이너에도 마운트 안 함. 규정 `applies_to`는 큰 범위만 | #4 · #6 · #40, `docker-compose.yml` | 로더가 JSON의 `source` · `note`만 무시하고 다른 모르는 필드는 기동 오류 |
 | MCP가 받은 ID로 다른 경로에 닿음 | `task_id` · `job_id`는 UUID 형식만, `product_id`는 영숫자만 | business-mcp `_uuid`, regulation-mcp 범위 검사 | MCP 테스트 (#31, #23) |
@@ -121,19 +121,19 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 36개(백엔드) |
+| 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 53개(백엔드) |
 | 팀원 5명이 같은 파일을 고쳐 충돌 | 영역별 폴더 담당(`agent/` A, `mcp/` B, `backend/` C, `frontend/` D, `data/` · `eval/` E, `docs/` PM). 남의 폴더는 그 사람 브랜치로 PR | SIMPLIFICATION 10절 | 어댑터 PR을 Agent 브랜치 위에 올려 A가 리뷰 (#30) |
-| 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 3개 · 프론트 테스트 (GitHub Actions) | `.github/workflows/ci.yml` (#38) | 작업 5개 통과 |
+| 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 2개 · 프론트 테스트 (GitHub Actions) | `.github/workflows/ci.yml` (#38) | 작업 5개 통과 |
 | 결정이 슬랙에 흩어짐 | 결정은 `SIMPLIFICATION.md` PR로 확정. 문서에 없는 결정은 미확정. 열린 질문은 11절 | SIMPLIFICATION 10 · 11절 | v1 → v2 → v2.1 변경 이력 |
-| 스키마 변경 이력이 없음 | Flyway V1 ~ V5. 공유 DB 뒤로는 V1을 고치지 않고 새 버전으로 | `backend/src/main/resources/db/migration/` | 기존 DB에 V3 ~ V5 적용 확인 |
+| 스키마 변경 이력이 없음 | Flyway V1 ~ V7. 공유 DB 뒤로는 V1을 고치지 않고 새 버전으로 | `backend/src/main/resources/db/migration/` | 기존 DB에 V3 ~ V5 적용 확인. V7은 옛 흐름 · 새 흐름 데이터를 섞은 DB 사본에서 적용 · 스키마 검증 통과 |
 | 규정이 바뀔 때마다 코드를 고침 | 규정 원문 · 상품 규칙 · 상품 문서를 데이터(`data/`)로 두고, 정책값은 시행일 버전 행으로 관리. 규정 파일 형식은 테스트로 고정 | `data/regulations/README.md`, `product_rules (effective_from, effective_to)`, regulation-mcp `test_data_format.py` | M1 · M2가 규정 파일만으로 동작 (#35) |
-| 안 쓰는 코드가 남아 혼란 | 옛 흐름 API · 테이블 · 큐 작업을 10.7 목록으로 두고 새 흐름이 끝까지 동작한 뒤 한 PR로 정리 | `BACKEND_API.md` 10.7 | 예정 |
+| 안 쓰는 코드가 남아 혼란 | 옛 흐름 API · 테이블 · 큐 작업 · 역할을 10.7 목록으로 두고, 새 흐름이 끝까지 동작한 뒤 한 PR로 지웠다. MCP 쪽 code-mcp도 같이 지웠다 (#48) | `BACKEND_API.md` 10.7 | 엔티티 4개 · 테이블 5개 · 엔드포인트 8개 삭제 |
 
 ### 2.8 이식성 (Portability)
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| 개발자마다 환경이 달라 안 돌아감 | `docker compose up --build`로 postgres · rabbitmq · backend · MCP 3개. Agent는 호스트에서 띄우고 `docker-compose.agent-local.yml`로 MCP 포트를 열어 연결. 설정은 전부 환경 변수(`DB_HOST`, `AGENT_BASE_URL`, `JOB_FAILURE_RATE`, `AGENT_MODE` …) | `docker-compose.yml`, `backend/README.md` 환경 변수 표, `agent/README.md` | #25에서 backend 이미지 빌드 · 기동 · 시드 확인, #35에서 Docker 스택 전체 실행 |
+| 개발자마다 환경이 달라 안 돌아감 | `docker compose up --build`로 postgres · rabbitmq · backend · MCP 2개. Agent는 호스트에서 띄우고 `docker-compose.agent-local.yml`로 MCP 포트를 열어 연결. 설정은 전부 환경 변수(`DB_HOST`, `AGENT_BASE_URL`, `JOB_FAILURE_RATE`, `AGENT_MODE` …) | `docker-compose.yml`, `backend/README.md` 환경 변수 표, `agent/README.md` | #25에서 backend 이미지 빌드 · 기동 · 시드 확인, #35에서 Docker 스택 전체 실행 |
 | 데이터가 DB에만 있어 옮기기 어려움 | 업무 데이터의 원천은 `data/business/*.json` 하나. 기동 때 빈 테이블에 넣고, 리셋으로 되돌림 | `BusinessDataLoader` | |
 | 로컬 개발이 컨테이너 없이 안 됨 | 백엔드는 `./gradlew bootRun`, Agent는 `llm` 모드(로컬 자료) · `live` 모드(MCP)로 선택 | README | |
 | Agent 실행 환경 고정 | Python 3.12 · uv · `uv.lock`, JDK 21 · Gradle wrapper 8.10 | `pyproject.toml`, `gradle/wrapper` | CI가 같은 조합으로 실행 |
@@ -161,7 +161,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 유효 여부를 날짜(`asOf`)로 | `effectiveTo == null` | 반영 뒤 기존 행은 종료일이 있어도 오늘은 유효하고, 새 행은 종료일이 없어도 아직 아니다 |
 | 영구 실패는 재시도 없이 DEAD | 모두 3회 재시도 | "이미 바뀐 규칙"은 다시 해도 같다. 재시도는 시간만 쓰고 결과를 늦춘다 |
 | Vector DB를 regulation-mcp 프로세스 안에(Chroma, 메모리) | pgvector · 별도 서비스 | 조각이 수십 개라 별도 서버가 필요 없고, 컨테이너가 늘지 않는다. 키가 없으면 BM25로 대체 |
-| Draft PR · 티켓은 목(mock) | 실제 GitHub · Jira | 평가 대상이 아니고 외부 계정이 필요하다. 새 흐름에서는 쓰지 않는다 |
+| Draft PR · 티켓 기능 삭제 | 실제 GitHub · Jira 연동 | 평가 대상이 아니고 외부 계정이 필요하다. 새 흐름에서 쓰지 않아 코드에서 지웠다 (10.7) |
 
 ## 4. 알려진 한계
 
@@ -171,7 +171,6 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | Agent 한 프로세스가 thread 단위로 잠근다 | Agent를 여러 개 띄우면 같은 작업이 겹칠 수 있다 | 분산 잠금 없음 (#34) |
 | 체크포인터 DB 재연결은 코드로만 확인 | DB 재시작 실험을 안 했다 | |
 | `llm` 모드(MCP 없음)에서 승인하면 반영을 못 해 FAILED로 끝난다 | 개발 흐름에서 불편 | `live` 모드에서는 정상. A 판단 대기 |
-| 옛 흐름 API · 테이블이 아직 남아 있다 | 코드 양 · 혼란 | 10.7 정리 예정 |
 | Agent가 compose 밖(호스트)에 있다 | 한 명령으로 전체가 뜨지 않고, `/internal/**`을 네트워크로 격리하지 못한다 | `agent:` 서비스 주석 해제는 A 판단 대기 |
 | M3(고령자 · 설명 확인) 판단 품질 | 정답지 · 채점기는 있으나 Agent가 아직 통과 못 함 | SIMPLIFICATION 9절 Agent 과제 4개 |
 | P006(소액대출) 판정이 정답지(`keep`)와 Agent(`needs_check`)가 다름 | DSR 판정 12개 중 1개 불일치 | 소액 기준(DSR 관리기준 제2조 4호)이 상품이 아니라 차주의 잔액 합계 기준이라 Agent 판단에 근거가 있다. 정답지 조율 중 (A · E, SIMPLIFICATION 11절) |
@@ -182,9 +181,9 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 영역 | 자동 테스트 | 실제 실행 기록 |
 |---|---|---|
-| 백엔드 | 36개 (`./gradlew test`) + #39 추가분 | #25 · #28 · #29 · #35 · #39 PR 본문 |
+| 백엔드 | 53개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
 | Agent | 122개 (`uv run pytest`) | #27 · #30 · #34 · #35 |
-| MCP | regulation 78 · business 57 · code 32 | #20 · #23 · #31 |
+| MCP | regulation 78 · business 55 | #20 · #23 · #31 |
 | 채점기 · 정답지 | 18개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
 | 검색 | 질의 38개 (`eval/run_retrieval.py`) | #20. 규정 recall@3 키워드 82% · 의미 79% · 혼합 89% ([VECTOR_INDEX.md](./VECTOR_INDEX.md)) |
 | CI | PR마다 위 전부 (`.github/workflows/ci.yml`) | #38 |

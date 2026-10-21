@@ -31,13 +31,10 @@ import java.util.UUID;
  *   createTask(files)                → POST /api/ai/tasks  (multipart: oldFile, newFile, title?, oldVersion?, newVersion?) → 202
  *   listTasks()                      → GET  /api/ai/tasks?mine=false
  *   getTask(id)                      → GET  /api/ai/tasks/{id}
- *   getRequirements(id)              → GET  /api/ai/tasks/{id}/requirements
- *   approveRequirements(id, d)       → POST /api/ai/tasks/{id}/requirements/approval
- *   getChangeSpecs(id)               → GET  /api/ai/tasks/{id}/change-specs
- *   getPatches(id)                   → GET  /api/ai/tasks/{id}/patches
- *   getProposals(id)                 → GET  /api/ai/tasks/{id}/proposals          (v2 상품별 변경 제안)
- *   getContractImpacts(id)           → GET  /api/ai/tasks/{id}/contract-impacts   (v2 경과조치 계약)
- *   reviewPatches(id, decision)      → POST /api/ai/tasks/{id}/review            (v2 제안 확인 · 옛 흐름 패치 검토)
+ *   getRequirements(id)              → GET  /api/ai/tasks/{id}/requirements      (바뀐 조항 · 요건)
+ *   getProposals(id)                 → GET  /api/ai/tasks/{id}/proposals          (상품 × 규칙 변경 제안)
+ *   getContractImpacts(id)           → GET  /api/ai/tasks/{id}/contract-impacts   (경과조치 계약)
+ *   reviewProposals(id, decision)    → POST /api/ai/tasks/{id}/review            (사람 확인 1번)
  *   retryTask(id)                    → POST /api/ai/tasks/{id}/retry             ("다시 시도": Agent 가 죽었거나 호출에 실패한 작업)
  *   getReport(id)                    → GET  /api/ai/tasks/{id}/report
  *   getEvaluation(id)                → GET  /api/ai/tasks/{id}/evaluation
@@ -50,10 +47,7 @@ import java.util.UUID;
 public class TaskController {
 
     public record CreateResponse(UUID taskId, String status) {}
-    public record RequirementApprovalRequest(List<TaskService.RequirementDecision> decisions, String comment) {}
-    /** v2 는 excludedProposalKeys, 옛 흐름은 excludedSpecKeys. */
-    public record ReviewRequest(Approval.Decision decision, String comment, List<String> excludedSpecKeys,
-                                List<String> excludedProposalKeys) {}
+    public record ReviewRequest(Approval.Decision decision, String comment, List<String> excludedProposalKeys) {}
 
     private final TaskService service;
     private final TaskEventService events;
@@ -96,12 +90,7 @@ public class TaskController {
     @GetMapping("/{id}")
     public TaskDetail get(@PathVariable UUID id) {
         AnalysisTask t = service.get(id);
-        List<Requirement> reqs = service.requirements(id);
-        List<ChangeSpec> specs = service.changeSpecs(id);
-        int targets = (int) specs.stream().filter(ChangeSpec::isTarget).count();
-        Counts counts = new Counts(reqs.size(), targets, specs.size() - targets,
-                TaskService.latestPatches(service.patches(id)).size(), service.testCases(id).size(),
-                Proposals.latest(service.proposals(id)).size());
+        Counts counts = new Counts(service.requirements(id).size(), Proposals.latest(service.proposals(id)).size());
         return new TaskDetail(TaskSummary.of(t), t.getErrorMessage(), MAX_VERIFY_ROUNDS,
                 service.documents(id).stream().map(DocumentMeta::of).toList(),
                 PendingAction.of(t.getStatus(), t.getId()), counts,
@@ -109,7 +98,7 @@ public class TaskController {
                 service.deliveries(id).stream().map(DeliveryView::of).toList());
     }
 
-    // ---------- ① 요건 확정 ----------
+    // ---------- 요건 · 제안 · 계약 영향 ----------
 
     @GetMapping("/{id}/requirements")
     public RequirementsResponse requirements(@PathVariable UUID id) {
@@ -118,27 +107,6 @@ public class TaskController {
                 service.documents(id).stream().map(DocumentMeta::of).toList(),
                 service.requirements(id).stream().map(RequirementView::of).toList());
     }
-
-    @PostMapping("/{id}/requirements/approval")
-    public ApprovalView approveRequirements(@AuthenticationPrincipal AuthUser me, @PathVariable UUID id,
-                                            @RequestBody RequirementApprovalRequest req) {
-        Approval a = service.approveRequirements(id, me, req.decisions(), req.comment());
-        dispatcher.resume(id, a.getId());
-        return service.approvalView(a);
-    }
-
-    // ---------- 영향 위치 ----------
-
-    @GetMapping("/{id}/change-specs")
-    public ChangeSpecsResponse changeSpecs(@PathVariable UUID id) {
-        AnalysisTask t = service.get(id);
-        List<ChangeSpecView> all = service.changeSpecs(id).stream().map(ChangeSpecView::of).toList();
-        return new ChangeSpecsResponse(TaskSummary.of(t),
-                all.stream().filter(ChangeSpecView::target).toList(),
-                all.stream().filter(c -> !c.target()).toList());
-    }
-
-    // ---------- v2 제안 · 계약 영향 ----------
 
     @GetMapping("/{id}/proposals")
     public ProposalsResponse proposals(@PathVariable UUID id) {
@@ -178,28 +146,11 @@ public class TaskController {
         return v instanceof List<?> l ? (List<String>) l : List.of();
     }
 
-    // ---------- ② 검토 · 승인 ----------
-
-    @GetMapping("/{id}/patches")
-    public PatchesResponse patches(@PathVariable UUID id) {
-        AnalysisTask t = service.get(id);
-        List<CodePatch> all = service.patches(id);
-        List<CodePatch> latest = TaskService.latestPatches(all);
-        Set<Long> latestIds = latest.stream().map(CodePatch::getId).collect(java.util.stream.Collectors.toSet());
-        int passed = (int) latest.stream().filter(p -> p.getVerifyStatus() == CodePatch.VerifyStatus.PASSED).count();
-        int failed = (int) latest.stream().filter(p -> p.getVerifyStatus() == CodePatch.VerifyStatus.FAILED).count();
-        int pending = latest.size() - passed - failed;
-        int latestRound = all.stream().mapToInt(CodePatch::getRound).max().orElse(0);
-        boolean canApprove = t.getStatus() == TaskStatus.WAITING_REVIEW && !latest.isEmpty() && failed == 0 && pending == 0;
-        return new PatchesResponse(TaskSummary.of(t), MAX_VERIFY_ROUNDS, latestRound, passed, failed, pending, canApprove,
-                all.stream().map(p -> PatchView.of(p, latestIds.contains(p.getId()))).toList(),
-                service.testCases(id).stream().map(TestCaseView::of).toList());
-    }
+    // ---------- 확인 ----------
 
     @PostMapping("/{id}/review")
     public ApprovalView review(@AuthenticationPrincipal AuthUser me, @PathVariable UUID id, @RequestBody ReviewRequest req) {
-        Approval a = service.review(id, me, req.decision(), req.comment(), req.excludedSpecKeys(),
-                req.excludedProposalKeys());
+        Approval a = service.review(id, me, req.decision(), req.comment(), req.excludedProposalKeys());
         dispatcher.resume(id, a.getId());
         return service.approvalView(a);
     }

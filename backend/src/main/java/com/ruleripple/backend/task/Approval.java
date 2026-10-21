@@ -11,8 +11,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * interrupt 기록. 쓰기 도구(create_draft_pr, create_work_ticket)는 이 id 를 approval_id 로 받아
- * 서버가 다시 검증한다 — 그래프의 interrupt 만 믿지 않는다.
+ * 사람 확인 기록. 반영 요청(apply_rule_version)은 이 id 를 approvalId 로 받아 서버가 다시 검증한다.
+ * 그래프의 interrupt 만 믿지 않는다.
  */
 @Entity
 @Table(name = "approvals")
@@ -20,11 +20,10 @@ import java.util.UUID;
 @NoArgsConstructor
 public class Approval {
 
-    /** REQUIREMENTS: interrupt ① 요건 확정 (OFFICER). REVIEW: interrupt ② 검토·승인 (DEVELOPER). */
-    public enum Step { REQUIREMENTS, REVIEW }
+    /** 확인 단계. 사람 확인은 제안 검토 한 번뿐이다. Agent /resume 에 그대로 보낸다. */
+    public enum Step { REVIEW }
 
-    /** REQUIREMENTS → CONFIRMED | HELD (요건 결정과 같은 값).  REVIEW → APPROVE | REJECT | REQUEST_CHANGES. */
-    public enum Decision { CONFIRMED, HELD, APPROVE, REJECT, REQUEST_CHANGES }
+    public enum Decision { APPROVE, REJECT }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

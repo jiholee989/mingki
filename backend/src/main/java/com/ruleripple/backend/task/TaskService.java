@@ -26,7 +26,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 공개 API 의 업무 로직: 작업 생성, 화면별 조회, interrupt ①② 처리. */
+/** 공개 API 의 업무 로직: 작업 생성, 화면별 조회, 사람 확인, 다시 시도. */
 @Service
 public class TaskService {
 
@@ -36,9 +36,6 @@ public class TaskService {
     private final AnalysisTaskRepository tasks;
     private final RegulationDocumentRepository documents;
     private final RequirementRepository requirements;
-    private final ChangeSpecRepository changeSpecs;
-    private final CodePatchRepository patches;
-    private final TestCaseRepository testCases;
     private final ApprovalRepository approvals;
     private final DeliveryRepository deliveries;
     private final TaskEventService events;
@@ -50,8 +47,7 @@ public class TaskService {
     private final RuleRippleProperties props;
 
     public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
-                       RequirementRepository requirements, ChangeSpecRepository changeSpecs,
-                       CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
+                       RequirementRepository requirements, ApprovalRepository approvals,
                        DeliveryRepository deliveries, TaskEventService events,
                        UserRepository users, RuleProposalRepository proposals, JobRepository jobs,
                        ProductRepository products, LoanContractRepository contracts, RuleRippleProperties props) {
@@ -59,9 +55,6 @@ public class TaskService {
         this.tasks = tasks;
         this.documents = documents;
         this.requirements = requirements;
-        this.changeSpecs = changeSpecs;
-        this.patches = patches;
-        this.testCases = testCases;
         this.approvals = approvals;
         this.deliveries = deliveries;
         this.events = events;
@@ -118,24 +111,6 @@ public class TaskService {
     public List<Requirement> requirements(UUID taskId) {
         get(taskId);
         return requirements.findByTaskIdOrderByIdAsc(taskId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<ChangeSpec> changeSpecs(UUID taskId) {
-        get(taskId);
-        return changeSpecs.findByTaskIdOrderByIdAsc(taskId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<CodePatch> patches(UUID taskId) {
-        get(taskId);
-        return patches.findByTaskIdOrderByRoundAscIdAsc(taskId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<TestCase> testCases(UUID taskId) {
-        get(taskId);
-        return testCases.findByTaskIdOrderByIdAsc(taskId);
     }
 
     @Transactional(readOnly = true)
@@ -205,120 +180,16 @@ public class TaskService {
         return deliveries.findByTaskIdOrderByIdAsc(taskId);
     }
 
-    /** (bundle, file) 마다 가장 높은 회차의 패치 = 현재 패치. */
-    public static List<CodePatch> latestPatches(List<CodePatch> all) {
-        Map<String, CodePatch> latest = new LinkedHashMap<>();
-        for (CodePatch p : all) {
-            String key = p.getBundle() + "::" + p.getFilePath();
-            CodePatch cur = latest.get(key);
-            if (cur == null || p.getRound() >= cur.getRound()) latest.put(key, p);
-        }
-        return new ArrayList<>(latest.values());
-    }
-
-    // ===================== interrupt ① 요건 확정 (옛 흐름) =====================
-
-    public record RequirementDecision(Long requirementId, Requirement.Status decision) {}
-
-    @Transactional
-    public Approval approveRequirements(UUID taskId, AuthUser me, List<RequirementDecision> decisions, String comment) {
-        AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REQUIREMENT_APPROVAL);
-
-        List<Requirement> reqs = requirements.findByTaskIdOrderByIdAsc(taskId);
-        if (reqs.isEmpty()) throw conflict("확정할 요건이 없습니다");
-        Map<Long, Requirement.Status> byId = new HashMap<>();
-        for (RequirementDecision d : decisions == null ? List.<RequirementDecision>of() : decisions) {
-            if (d.decision() != Requirement.Status.CONFIRMED && d.decision() != Requirement.Status.HELD) {
-                throw bad("decision 은 CONFIRMED 또는 HELD 입니다");
-            }
-            byId.put(d.requirementId(), d.decision());
-        }
-        List<Map<String, Object>> recorded = new ArrayList<>();
-        List<String> confirmedKeys = new ArrayList<>();
-        for (Requirement r : reqs) {
-            Requirement.Status s = byId.remove(r.getId());
-            if (s == null) throw bad("요건 " + r.getReqKey() + "(id " + r.getId() + ")에 대한 결정이 없습니다");
-            r.setStatus(s);
-            requirements.save(r);
-            recorded.add(Map.<String, Object>of("requirementId", r.getId(), "reqKey", r.getReqKey(), "decision", s.name()));
-            if (s == Requirement.Status.CONFIRMED) confirmedKeys.add(r.getReqKey());
-        }
-        if (!byId.isEmpty()) throw bad("이 작업에 없는 요건 id: " + byId.keySet());
-
-        Approval.Decision overall = confirmedKeys.isEmpty() ? Approval.Decision.HELD : Approval.Decision.CONFIRMED;
-        Approval saved = approvals.save(new Approval(taskId, Approval.Step.REQUIREMENTS, overall, me.id(), comment,
-                Map.<String, Object>of("decisions", recorded, "confirmedReqKeys", confirmedKeys)));
-
-        // 전부 보류 → 바로 HELD (Agent 는 report 만 만들고 끝낸다). 일부라도 확정 → 영향 위치 탐색.
-        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "REQUIREMENTS", "decision", overall.name(),
-                "by", me.username(), "approvalId", saved.getId()));
-        if (overall == Approval.Decision.HELD) {
-            events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.HELD.name()));
-        } else {
-            events.append(taskId, "STEP", Map.<String, Object>of("node", "locate_agent"));
-        }
-        return saved;
-    }
-
-    // ===================== interrupt ② 확인 (v2 제안 확인 · 옛 흐름 패치 검토) =====================
-
-    @Transactional
-    public Approval review(UUID taskId, AuthUser me, Approval.Decision decision, String comment,
-                           List<String> excludedSpecKeys, List<String> excludedProposalKeys) {
-        if (proposals.existsByTaskId(taskId)) return reviewProposals(taskId, me, decision, comment, excludedProposalKeys);
-        if (decision != Approval.Decision.APPROVE && decision != Approval.Decision.REJECT
-                && decision != Approval.Decision.REQUEST_CHANGES) {
-            throw bad("decision 은 APPROVE | REJECT | REQUEST_CHANGES 입니다");
-        }
-        AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REVIEW);
-        List<String> excluded = excludedSpecKeys == null ? List.of() : List.copyOf(excludedSpecKeys);
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("excludedSpecKeys", excluded);
-
-        switch (decision) {
-            case APPROVE -> {
-                // 제외하지 않은 패치만 publish 대상. 그중 검증을 통과하지 못한 패치가 있으면 차단 (예외 없음).
-                List<CodePatch> targets = latestPatches(patches.findByTaskIdOrderByRoundAscIdAsc(taskId)).stream()
-                        .filter(p -> p.getSpecKeys().isEmpty() || !excluded.containsAll(p.getSpecKeys()))
-                        .toList();
-                if (targets.isEmpty()) throw conflict("승인할 패치가 없습니다. 전부 제외하려면 REJECT 를 쓰세요");
-                List<String> notPassed = targets.stream()
-                        .filter(p -> p.getVerifyStatus() != CodePatch.VerifyStatus.PASSED)
-                        .map(p -> p.getBundle() + ":" + p.getFilePath() + "(" + p.getVerifyStatus() + ")")
-                        .toList();
-                if (!notPassed.isEmpty()) {
-                    throw conflict("검증을 통과하지 못한 패치가 있어 승인할 수 없습니다: " + notPassed
-                            + " — 해당 위치를 제외하거나 수정 요청하세요");
-                }
-                payload.put("approvedPatchIds", targets.stream().map(CodePatch::getId).toList());
-            }
-            case REQUEST_CHANGES -> {
-                if (comment == null || comment.isBlank()) throw bad("수정 요청에는 comment 가 필요합니다");
-            }
-            default -> { /* REJECT */ }
-        }
-
-        Approval saved = approvals.save(new Approval(taskId, Approval.Step.REVIEW, decision, me.id(), comment, payload));
-        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "REVIEW", "decision", decision.name(),
-                "by", me.username(), "approvalId", saved.getId()));
-        switch (decision) {
-            case APPROVE -> events.append(taskId, "STEP", Map.<String, Object>of("node", "publish"));
-            case REJECT -> events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.REJECTED.name()));
-            // 사람이 고친 내용도 다시 검증한다: design 으로 돌아가 반영 → verify
-            default -> events.append(taskId, "STEP", Map.<String, Object>of("node", "design_agent", "message", "수정 요청 반영 후 재검증"));
-        }
-        return saved;
-    }
+    // ===================== 확인 (10.3) =====================
 
     /**
-     * v2 사용자 확인 (10.3). APPROVE 는 제외하지 않은 change_required 제안을 반영 대상으로 확정한다.
-     * 역할 검사는 없다. 로그인한 사용자 누구나.
+     * 사람 확인 1번. APPROVE 는 제외하지 않은 change_required 제안을 반영 대상으로 확정하고, REJECT 는 작업을 끝낸다.
+     * 로그인한 사용자 누구나 할 수 있다.
      */
-    private Approval reviewProposals(UUID taskId, AuthUser me, Approval.Decision decision, String comment,
-                                     List<String> excludedProposalKeys) {
-        if (decision != Approval.Decision.APPROVE && decision != Approval.Decision.REJECT) {
-            throw bad("decision 은 APPROVE | REJECT 입니다");
-        }
+    @Transactional
+    public Approval review(UUID taskId, AuthUser me, Approval.Decision decision, String comment,
+                           List<String> excludedProposalKeys) {
+        if (decision == null) throw bad("decision 은 APPROVE | REJECT 입니다");
         AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REVIEW);
         List<RuleProposal> latest = Proposals.latest(proposals.findByTaskIdOrderByProposalKeyAscRoundAsc(taskId));
         List<String> changeKeys = Proposals.changeKeys(latest);

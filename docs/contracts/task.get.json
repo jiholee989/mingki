@@ -27,15 +27,10 @@
   ],
   "pendingAction": {
     "step": "REVIEW",
-    "role": null,
     "path": "/tasks/7c7593e7-2a9c-47b3-8607-23f690f223d4/review"
   },
   "counts": {
     "requirements": 0,
-    "targets": 0,
-    "nonTargets": 0,
-    "patches": 0,
-    "testCases": 0,
     "proposals": 4
   },
   "approvals": [],

@@ -12,15 +12,13 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
 
-/** requirement_agent 결과. interrupt ① 에서 요건별로 CONFIRMED / HELD 가 된다. */
+/** requirement_agent 결과. 바뀐 조항에서 뽑은 요건 하나. */
 @Entity
 @Table(name = "requirements")
 @Getter
 @Setter
 @NoArgsConstructor
 public class Requirement {
-
-    public enum Status { PROPOSED, CONFIRMED, HELD }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -52,10 +50,6 @@ public class Requirement {
 
     @Column(name = "new_text", columnDefinition = "text")
     private String newText;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
-    private Status status = Status.PROPOSED;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")

@@ -66,7 +66,7 @@ public class RuleVersionService {
             return new JobPublisher.Enqueued(j.getId(), j.getStatus(), true);
         }
 
-        Approval approval = guard.check(r.taskId(), r.approvalId(), null);
+        Approval approval = guard.check(r.taskId(), r.approvalId());
         if (!keys(approval.getPayload(), "approvedProposalKeys").contains(r.proposalKey())) {
             throw forbidden("확인에서 반영으로 고른 제안이 아닙니다: " + r.proposalKey());
         }
