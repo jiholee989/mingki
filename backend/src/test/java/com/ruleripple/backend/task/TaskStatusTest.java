@@ -52,6 +52,14 @@ class TaskStatusTest {
     }
 
     @ParameterizedTest
+    @EnumSource(TaskStatus.class)
+    void inProgressAndFailedTasksCanRetry(TaskStatus s) {
+        boolean waiting = s == WAITING_REQUIREMENT_APPROVAL || s == WAITING_REVIEW;
+        boolean expected = s == FAILED || (!s.isTerminal() && !waiting);
+        assertThat(s.canRetry()).as(s.name()).isEqualTo(expected);
+    }
+
+    @ParameterizedTest
     @EnumSource(value = TaskStatus.class, names = {"DONE", "NO_CHANGE", "HELD", "REJECTED", "FAILED"})
     void terminalStatesStayPut(TaskStatus terminal) {
         for (TaskStatus next : TaskStatus.values()) {

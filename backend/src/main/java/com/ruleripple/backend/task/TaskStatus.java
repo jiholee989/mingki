@@ -24,6 +24,14 @@ public enum TaskStatus {
     }
 
     /**
+     * "다시 시도"할 수 있는 상태. 진행 중(Agent 가 도중에 죽음)과 FAILED(Agent 호출 실패)다.
+     * 승인 대기는 확인 API 로 풀고, 정상 종료는 다시 하지 않는다.
+     */
+    public boolean canRetry() {
+        return this == FAILED || (!isTerminal() && this != WAITING_REQUIREMENT_APPROVAL && this != WAITING_REVIEW);
+    }
+
+    /**
      * Agent 이벤트로 옮길 수 있는 다음 상태. 같은 상태는 언제나 허용한다.
      * WAITING_* 에서 나가는 전이는 사람이 승인 API 로만 한다.
      * EXTRACTING → LOCATING 은 요건 확정 없이 영향 찾기로 가는 단순화 흐름이다 (docs/SIMPLIFICATION.md).

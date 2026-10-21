@@ -82,6 +82,7 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
+| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. 승인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
 | `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, workTickets, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
 
 ### 승인 규칙 (서버가 검사)
@@ -146,6 +147,9 @@ POST {AGENT_BASE_URL}/run
 
 POST {AGENT_BASE_URL}/resume
 {"taskId","threadId","step":"REQUIREMENTS"|"REVIEW","decision","approvalId","comment","payload","callbackBaseUrl"}
+
+POST {AGENT_BASE_URL}/continue      ← 사용자 "다시 시도" (POST /api/ai/tasks/{id}/retry)가 먼저 보냄. Agent 가 409(이어갈 게 없음)면 저장된 승인으로 /resume, 그것도 없으면 /run 을 다시 보냄
+{"taskId","threadId","callbackBaseUrl"}
 ```
 
 `decision`: REQUIREMENTS면 `CONFIRMED` · `HELD`, REVIEW면 `APPROVE` · `REJECT` · `REQUEST_CHANGES`.
@@ -360,6 +364,8 @@ POST /internal/product-rules/versions
 - 결과 `GET /internal/jobs/{jobId}` → `{status, result: {proposalKey, productId, closedRuleId, newRuleId, effectiveFrom}}` ([예시](./contracts/apply.job.json)). 새 규칙이면 `closedRuleId: null`.
 - 전달 기록(`deliveries`)에 `RULE_VERSION`으로 남긴다.
 - 일반 큐 API `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않는다 (400). 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
+
+Agent가 `apply` 도중 죽어 `PUBLISHING`에 멈추면 사용자가 `POST /api/ai/tasks/{id}/retry`로 이어간다. Agent는 같은 멱등키로 다시 요청하므로 큐 작업이 중복 생기지 않는다.
 
 Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/jobs/{jobId}`가 `DONE` · `DEAD`가 될 때까지 기다린다. 모두 `DONE`이면 `DONE {outcome:"DONE"}`, 하나라도 `DEAD`면 `FAILED {reason}`.
 

@@ -322,6 +322,47 @@ public class TaskService {
         return saved;
     }
 
+    // ===================== 이어가기 (Agent 가 도중에 죽었을 때) =====================
+
+    /**
+     * "다시 시도" 준비. 진행 중이거나 FAILED 인 작업만. Agent 호출은 컨트롤러가 커밋 뒤에 동기로 한다.
+     * FAILED 였으면 상태를 멈추기 전 자리로 되돌린다 (승인 뒤면 PUBLISHING, 아니면 마지막 노드의 상태).
+     * Agent 이벤트는 FAILED 에서 나올 수 없어서 백엔드가 먼저 되돌려야 한다.
+     */
+    @Transactional
+    public AnalysisTask prepareRetry(UUID taskId, AuthUser me) {
+        AnalysisTask task = tasks.findForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "task not found"));
+        if (!task.getStatus().canRetry()) {
+            String hint = task.getStatus().isTerminal() ? "끝난 작업입니다. 새로 올려 주세요"
+                    : "승인을 기다리는 작업입니다. 확인 화면에서 결정해 주세요";
+            throw conflict("다시 시도할 수 없는 상태입니다 (" + task.getStatus() + "): " + hint);
+        }
+        events.append(taskId, "RESUMED", Map.<String, Object>of("step", "RETRY", "by", me.username(),
+                "message", "멈춘 자리부터 다시 시작합니다"));
+        if (task.getStatus() == TaskStatus.FAILED) {
+            TaskStatus restored = latestApprove(taskId).isPresent() ? TaskStatus.PUBLISHING
+                    : Optional.ofNullable(TaskStatus.fromNode(task.getCurrentNode())).orElse(TaskStatus.EXTRACTING);
+            task.setErrorMessage(null);
+            tasks.save(task);
+            events.append(taskId, "STATUS", Map.<String, Object>of("status", restored.name()));
+            task.setStatus(restored);
+        }
+        return task;
+    }
+
+    /** 가장 최근 확인이 APPROVE 면 그 기록. Agent 가 확인 대기 상태로 남아 있을 때 다시 보낼 승인이다. */
+    @Transactional(readOnly = true)
+    public Optional<Approval> latestApprove(UUID taskId) {
+        return latestReview(taskId).filter(a -> a.getDecision() == Approval.Decision.APPROVE);
+    }
+
+    /** 다시 시도가 FAILED 로 끝나면 사용자에게 보이게 기록한다. */
+    @Transactional
+    public void retryFailed(UUID taskId, String reason) {
+        events.append(taskId, "FAILED", Map.<String, Object>of("reason", reason));
+    }
+
     // ===================== helpers =====================
 
     private AnalysisTask lockAndExpect(UUID taskId, TaskStatus expected) {
