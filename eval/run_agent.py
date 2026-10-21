@@ -7,7 +7,7 @@
 
 실행 (레포 루트에서, docker compose up 뒤):
     uv run --with pyyaml python eval/run_agent.py --runs 3
-Agent를 다른 조항으로 띄웠으면 정답 파일도 맞춘다 (.env 의 AGENT_ARTICLE_IDS):
+기본(--expected all)은 결과를 요건별로 나눠 정답 파일마다 채점한다. 조항 하나만 띄웠으면 정답 파일을 지정해도 된다:
     15   → --expected eval/expected_proposals.senior-age.yaml
     15-2 → --expected eval/expected_proposals.senior-explanation.yaml
 
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from score_proposals import COUNT_METRICS, EXPECTED, load_proposals, score
+from score_proposals import COUNT_METRICS, load_proposals, score
 
 ROOT = Path(__file__).resolve().parents[1]
 REGULATION = ROOT / "data" / "regulations" / "credit-loan-ops"
@@ -89,14 +89,28 @@ def run_once(api, timeout):
     return run
 
 
-def summarize(runs, expected):
-    """회차별 채점 결과와 평균 · 상품별 정답 횟수."""
+def scenarios(expected_arg):
+    """[(정답, 요건 키)]. all 이면 정답 파일마다 그 요건(REQ-{조항})의 제안만 채점한다. 하나면 요건 키 없이 전부."""
+    if expected_arg != "all":
+        return [(yaml.safe_load(Path(expected_arg).read_text(encoding="utf-8")), None)]
+    out = []
+    for path in sorted(Path(__file__).parent.glob("expected_proposals*.yaml")):
+        exp = yaml.safe_load(path.read_text(encoding="utf-8"))
+        out.append((exp, "REQ-" + exp["requirement"]["article"].split("/", 1)[1]))
+    return out
+
+
+def summarize(runs, expected, req_key=None):
+    """회차별 채점 결과와 평균 · 상품별 정답 횟수. req_key가 있으면 그 요건의 제안만 채점한다."""
     rows, per_product, totals = [], {}, {}
     for i, run in enumerate(runs, 1):
         if "response" not in run:
             rows.append({"run": i, "status": run["status"], "seconds": run["seconds"], "error": run.get("error"), "result": None})
             continue
-        result = score(load_proposals(run["response"]), expected)
+        response = run["response"]
+        if req_key:
+            response = {"proposals": [p for p in response["proposals"] if p.get("reqKey") == req_key]}
+        result = score(load_proposals(response), expected)
         rows.append({"run": i, "status": run["status"], "seconds": run["seconds"], "result": result})
         for p in result["products"]:
             per_product.setdefault(p["product_id"], 0)
@@ -135,9 +149,10 @@ def main() -> int:
     ap.add_argument("--runs", type=int, default=1, help="실행 횟수 (기본 1)")
     ap.add_argument("--base", default=os.environ.get("BASE", "http://localhost:8080"), help="백엔드 주소")
     ap.add_argument("--timeout", type=int, default=300, help="회차마다 확인 대기까지 기다릴 초 (기본 300)")
-    ap.add_argument("--expected", default=str(EXPECTED), help="정답 YAML (기본 DSR 시나리오)")
+    ap.add_argument("--expected", default="all", help="all(기본, 요건마다 정답 파일) 또는 정답 YAML 하나")
     args = ap.parse_args()
-    expected = yaml.safe_load(Path(args.expected).read_text(encoding="utf-8"))
+    targets = scenarios(args.expected)
+    label = "all" if args.expected == "all" else targets[0][0]["scenario"]
 
     api = Api(args.base)
     api.login()
@@ -149,13 +164,16 @@ def main() -> int:
         run = run_once(api, args.timeout)
         runs.append(run)
         if "response" in run:
-            path = RESULTS / f"{stamp}-{expected['scenario']}-{i}.json"
+            path = RESULTS / f"{stamp}-{label}-{i}.json"
             path.write_text(json.dumps({**run["response"], "run": {k: v for k, v in run.items() if k != "response"}},
                                        ensure_ascii=False, indent=2), encoding="utf-8")
-    summary = summarize(runs, expected)
-    print_summary(summary, expected["scenario"])
+    passed = True
+    for expected, req_key in targets:
+        summary = summarize(runs, expected, req_key)
+        print_summary(summary, expected["scenario"] + (f" ({req_key})" if req_key else ""))
+        passed = passed and summary["passed"] == len(runs)
     print(f"\n회차별 결과: {RESULTS.relative_to(ROOT)}/{stamp}-*.json")
-    return 0 if summary["passed"] == len(runs) else 1
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":
