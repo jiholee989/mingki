@@ -27,6 +27,8 @@ import yaml
 EXPECTED = Path(__file__).parent / "expected_proposals.yaml"
 _REG_URI = re.compile(r"reg://([a-z0-9-]+)/v\d+/([0-9a-z-]+)")
 _FOLLOW_UP_HINTS = ("문구", "화면", "설명서", "번역", "안내")
+_TRANSITION_HINTS = ("종전", "부칙 제2조")  # 경과조치는 종전 기준 유지를 말해야 한다. 시행일 문장만으로는 부족
+COUNT_METRICS = ("함정 오판", "정답에 없는 변경")  # 건수 지표, 목표 0
 
 
 def load_proposals(data) -> list[dict]:
@@ -95,11 +97,12 @@ def score(proposals: list[dict], expected: dict) -> dict:
                 metrics["값 · 단위 정확도"][0] += ok_value
                 if not ok_value:
                     issues.append(f"값 · 단위: 정답 {want['value']} {want['unit']}, 결과 {target.get('proposedValue')} {target.get('unit')}")
-                ok_date = target.get("effectiveDate") == eff and bool((target.get("transition") or "").strip())
+                transition = (target.get("transition") or "").strip()
+                ok_date = target.get("effectiveDate") == eff and any(h in transition for h in _TRANSITION_HINTS)
                 metrics["날짜 · 경과조치"][1] += 1
                 metrics["날짜 · 경과조치"][0] += ok_date
                 if not ok_date:
-                    issues.append(f"날짜 · 경과조치: effectiveDate={target.get('effectiveDate')}, transition={'있음' if target.get('transition') else '없음'}")
+                    issues.append(f"날짜 · 경과조치: effectiveDate={target.get('effectiveDate')}, transition={transition[:40] or '없음'}")
         elif e.get("basis_required"):
             ok_basis = bool(_bases(rows) & set(e["basis_any"]))
             metrics["keep · needs_check 근거"][1] += 1
@@ -113,6 +116,14 @@ def score(proposals: list[dict], expected: dict) -> dict:
          "trap": bool(must_not[p.get("ruleId")].get("trap"))}
         for p in proposals if p.get("impact") == "change_required" and p.get("ruleId") in must_not
     ]
+    # 함정 목록에 없더라도 정답에 없는 규칙 변경은 반영되면 엉뚱한 값이 DB에 들어간다
+    expected_changes = {(e["product_id"], e["rule_id"]) for e in expected["products"] if e["impact"] == "change_required"}
+    extra = [
+        {"rule_id": p.get("ruleId"), "product_id": p.get("productId"), "rule_key": p.get("ruleKey"),
+         "change": f"{p.get('currentValue')} → {p.get('proposedValue')} {p.get('unit')}"}
+        for p in proposals if p.get("impact") == "change_required"
+        and (p.get("productId"), p.get("ruleId")) not in expected_changes and p.get("ruleId") not in must_not
+    ]
     unknown = sorted({p.get("productId") for p in proposals} - {e["product_id"] for e in expected["products"]})
 
     bonus = []
@@ -123,16 +134,17 @@ def score(proposals: list[dict], expected: dict) -> dict:
 
     core = {name: {"ok": ok, "total": total} for name, (ok, total) in metrics.items()}
     core["함정 오판"] = {"ok": len(traps), "total": 0}
-    passed = all(v["ok"] == v["total"] for k, v in core.items() if k != "함정 오판") and not traps and not unknown
+    core["정답에 없는 변경"] = {"ok": len(extra), "total": 0}
+    passed = all(v["ok"] == v["total"] for k, v in core.items() if k not in COUNT_METRICS) and not traps and not extra and not unknown
     return {"scenario": expected["scenario"], "passed": passed, "core": core, "products": products,
-            "traps": traps, "unknown_products": unknown, "bonus_follow_up": bonus}
+            "traps": traps, "extra_changes": extra, "unknown_products": unknown, "bonus_follow_up": bonus}
 
 
 def print_report(result: dict) -> None:
     print(f"시나리오: {result['scenario']}  →  {'통과' if result['passed'] else '미통과'}\n")
     print("[핵심 지표]")
     for name, v in result["core"].items():
-        if name == "함정 오판":
+        if name in COUNT_METRICS:
             print(f"  {name:20} {v['ok']}건 (목표 0)")
         else:
             print(f"  {name:20} {v['ok']}/{v['total']}")
@@ -144,6 +156,10 @@ def print_report(result: dict) -> None:
         print("\n[함정 · 대상 아님에 낸 변경 제안]")
         for t in result["traps"]:
             print(f"  ✗ {t['rule_id']} ({t['product_id']}) {'[함정] ' if t['trap'] else ''}{t['reason']}")
+    if result["extra_changes"]:
+        print("\n[정답에 없는 변경 제안] 반영하면 바뀌면 안 되는 규칙이 바뀐다")
+        for x in result["extra_changes"]:
+            print(f"  ✗ {x['rule_id']} ({x['product_id']}) {x['rule_key']} {x['change']}")
     if result["unknown_products"]:
         print(f"\n[정답지에 없는 상품] {', '.join(result['unknown_products'])}")
     hits = sum(b["hit"] for b in result["bonus_follow_up"])

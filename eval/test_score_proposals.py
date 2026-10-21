@@ -100,3 +100,32 @@ def test_unknown_product_fails():
 def test_rejects_unknown_shape():
     with pytest.raises(ValueError):
         load_proposals({"data": []})
+
+
+def test_transition_must_mention_old_rule():
+    rows = items()
+    by_pid(rows, "P001")["transition"] = "시행일: 이 기준은 2026년 12월 1일부터 시행한다"  # 시행일만, 종전 기준 언급 없음
+    r = score(rows, E)
+    assert r["core"]["날짜 · 경과조치"] == {"ok": 5, "total": 6}
+    assert not r["passed"]
+
+
+def test_unexpected_rule_change_is_counted():
+    rows = items()
+    by_pid(rows, "P010").update(impact="change_required", ruleId="R073", ruleKey="ESTIMATED_INCOME_RATIO",
+                                currentValue="0.85", proposedValue="0.35", unit="ratio", effectiveDate="2026-12-01")
+    r = score(rows, E)
+    assert [x["rule_id"] for x in r["extra_changes"]] == ["R073"]
+    assert r["core"]["정답에 없는 변경"] == {"ok": 1, "total": 0}
+    assert not r["traps"] and not r["passed"]
+
+
+def test_real_run_2026_10_21():
+    """실제 실행(docker compose, gpt-4.1-mini, 제8조) 화면 응답. P010이 정답에 없는 규칙(R073)을 바꾸자고 했다."""
+    data = json.loads((Path(__file__).parent / "fixtures" / "proposals.run-2026-10-21.json").read_text(encoding="utf-8"))
+    r = score(load_proposals(data), E)
+    assert r["core"]["판정 정확도"] == {"ok": 8, "total": 12}
+    assert r["core"]["변경 대상 recall"] == {"ok": 5, "total": 6}
+    assert r["core"]["날짜 · 경과조치"] == {"ok": 5, "total": 5}  # 부칙 경과조치 원문을 함께 적었다
+    assert [x["rule_id"] for x in r["extra_changes"]] == ["R073"]
+    assert not r["passed"]
