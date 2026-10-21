@@ -99,6 +99,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 일시 장애 vs 다시 해도 같은 실패 | 일시 실패는 3초 뒤 최대 3회 재시도 → DLQ. "이미 바뀐 규칙"처럼 영구 실패는 `PermanentJobFailure`로 재시도 없이 DEAD | `JobWorker`, `PermanentJobFailure` | `JobWorkerTest` 4개. 실패 주입 50%에서 2 · 3회차 성공 (#29). 주입은 마지막 시도에서 하지 않아, 주입한 실패만으로 반영이 DEAD가 되지 않는다 |
 | Agent 프로세스가 승인 대기 중 죽음 | LangGraph 체크포인터를 Postgres에. 재시작 뒤 같은 `threadId`로 재개 | `agent/app/checkpoint.py` | #30: 검토 대기 중 재시작 → 수정 요청 → 거절까지 이어짐 |
 | Agent가 업로드 직후 · 승인 직후 · 반영 도중 죽음 | "다시 시도" `POST /api/ai/tasks/{id}/retry`. Agent `/continue`를 먼저 보내고 409면 저장된 승인으로 `/resume`, 그것도 없으면 `/run`. FAILED였던 작업은 멈춘 자리로 되돌림 | `TaskController.retryTask`, `AgentClient.continueTask` | #39: 세 경우 모두 `kill -9` 후 복구. 반영 도중 죽은 경우 큐 작업이 같은 멱등키로 재사용돼 건수 그대로 |
+| Agent가 확인 결정을 받지 않음 (승인 · 제외 키가 어긋남, 승인할 수 없는 제안) | `/resume`이 400이면 FAILED 대신 확인 대기로 되돌리고 사유를 남긴다. Agent는 그래프를 돌리기 전에 거절해 여전히 확인을 기다리므로, 사용자가 문제 제안을 빼거나 반려해 다시 결정할 수 있다 | `AgentDispatcher.resume`, `TaskService.reviewNotAccepted` | 백엔드에만 가짜 변경 제안을 넣고 승인 → Agent 400 → 확인 대기 + 사유 → 반려 → `REJECTED` |
 | 반영 일부만 실패 | 한 건이 접수에서 거절돼도 나머지는 계속하고, 어느 건이 왜 실패했는지 결과에 남김. 최종은 FAILED | `agent/app/nodes/apply.py` (#34) | `test_apply.py` |
 | 시드가 반쯤 들어감 | 로더 트랜잭션이 파싱 오류(checked 예외)에도 롤백 | `BusinessDataLoader` `rollbackFor = Exception.class` | 오타 필드 JSON으로 확인 (#6) |
 | 실행할 때마다 결과가 달라야 함(반영 뒤 두 번째 실행은 "변경 없음") | 시연 리셋 `POST /api/demo/reset`: 작업 기록 삭제 + 업무 데이터를 JSON 시드로 복원 | `DemoResetService` | #25, #35에서 82행 복원 확인 |
@@ -123,7 +124,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 53개(백엔드) |
+| 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 60개(백엔드) |
 | 팀원 5명이 같은 파일을 고쳐 충돌 | 영역별 폴더 담당(`agent/` A, `mcp/` B, `backend/` C, `frontend/` D, `data/` · `eval/` E, `docs/` PM). 남의 폴더는 그 사람 브랜치로 PR | SIMPLIFICATION 10절 | 어댑터 PR을 Agent 브랜치 위에 올려 A가 리뷰 (#30) |
 | 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 2개 · 프론트 테스트 (GitHub Actions) | `.github/workflows/ci.yml` (#38) | 작업 5개 통과 |
 | 결정이 슬랙에 흩어짐 | 결정은 `SIMPLIFICATION.md` PR로 확정. 문서에 없는 결정은 미확정. 열린 질문은 11절 | SIMPLIFICATION 10 · 11절 | v1 → v2 → v2.1 변경 이력 |
@@ -184,7 +185,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 영역 | 자동 테스트 | 실제 실행 기록 |
 |---|---|---|
-| 백엔드 | 53개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
+| 백엔드 | 60개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
 | Agent | 122개 (`uv run pytest`) | #27 · #30 · #34 · #35 |
 | MCP | regulation 78 · business 55 | #20 · #23 · #31 |
 | 채점기 · 정답지 | 25개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44 · #49. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |

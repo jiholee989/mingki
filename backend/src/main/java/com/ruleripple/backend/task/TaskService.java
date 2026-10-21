@@ -192,6 +192,7 @@ public class TaskService {
         if (decision == null) throw bad("decision 은 APPROVE | REJECT 입니다");
         if (Proposals.missingRejectReason(decision, comment)) throw bad("반려 사유(comment)가 필요합니다");
         AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REVIEW);
+        task.setErrorMessage(null);   // 앞선 결정을 Agent 가 받지 않았던 사유는 새 결정으로 지운다
         List<RuleProposal> latest = Proposals.latest(proposals.findByTaskIdOrderByProposalKeyAscRoundAsc(taskId));
         List<String> changeKeys = Proposals.changeKeys(latest);
         List<String> excluded = excludedProposalKeys == null ? List.of() : List.copyOf(new LinkedHashSet<>(excludedProposalKeys));
@@ -251,6 +252,16 @@ public class TaskService {
             task.setStatus(restored);
         }
         return new RetryPlan(task, wasFailed, firstError);
+    }
+
+    /**
+     * Agent 가 확인 결정을 그래프에 넣기 전에 거절했다 (/resume 400). Agent 는 그대로 확인을 기다리므로
+     * 작업을 확인 대기로 되돌리고 사유를 남긴다. 사용자는 문제 제안을 빼거나 반려해 다시 결정한다.
+     */
+    @Transactional
+    public void reviewNotAccepted(UUID taskId, String detail) {
+        events.append(taskId, "STATUS", Map.<String, Object>of("status", TaskStatus.WAITING_REVIEW.name(),
+                "reason", "Agent 가 확인 결정을 받지 않았습니다: " + detail + " — 문제 제안을 제외하거나 반려하세요"));
     }
 
     /** Agent 가 "아직 실행 중"(423)이라 거절했다. 되돌렸던 상태를 FAILED 로 돌리고, 진행 중이던 작업은 그대로 둔다. */

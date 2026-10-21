@@ -1,9 +1,12 @@
 package com.ruleripple.backend.task;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruleripple.backend.config.RuleRippleProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
@@ -24,6 +27,8 @@ import java.util.UUID;
 @Slf4j
 @Component
 public class AgentClient {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final RestClient client;
     private final String callbackBase;
@@ -82,6 +87,22 @@ public class AgentClient {
         body.put("callbackBaseUrl", callbackBaseUrl(task.getId()));
         client.post().uri("/continue").body(body).retrieve().toBodilessEntity();
         log.info("agent continue requested task={} status={}", task.getId(), task.getStatus());
+    }
+
+    /** Agent 오류 응답에서 사람이 읽을 사유를 꺼낸다. FastAPI 는 {"detail": "..."} 로 돌려준다. */
+    public static String detail(HttpStatusCodeException e) {
+        return detail(e.getResponseBodyAsString(), e.getStatusCode().toString());
+    }
+
+    static String detail(String body, String fallback) {
+        if (body == null || body.isBlank()) return fallback;
+        try {
+            JsonNode d = JSON.readTree(body).get("detail");
+            if (d != null && d.isTextual()) return d.asText();
+        } catch (Exception ignored) {
+            // JSON 이 아니면 본문 그대로
+        }
+        return body;
     }
 
     private String callbackBaseUrl(UUID taskId) {

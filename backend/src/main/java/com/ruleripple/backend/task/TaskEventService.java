@@ -18,7 +18,7 @@ import java.util.UUID;
  *
  * 이벤트 type
  *   STEP              {node, round?, message?}  노드 진입. node → 상태 (TaskStatus.fromNode)
- *   STATUS            {status}                  상태를 직접 지정 (예외 상황용)
+ *   STATUS            {status, reason?}         상태를 직접 지정 (예외 상황용). reason 은 errorMessage 로 남는다
  *   APPROVAL_REQUIRED {step: REVIEW, summary?}
  *   RESUMED           {step, decision, by}
  *   TOKEN             {text}
@@ -99,6 +99,9 @@ public class TaskEventService {
             case "STATUS" -> {
                 String s = str(p.get("status"));
                 if (s != null) task.setStatus(parseStatus(s));
+                if (task.getStatus() == TaskStatus.WAITING_REVIEW) task.setCurrentNode("interrupt_review");
+                String reason = str(p.get("reason"));
+                if (reason != null) task.setErrorMessage(reason);
             }
             case "APPROVAL_REQUIRED" -> {
                 if (!"REVIEW".equals(str(p.get("step")))) {
