@@ -1,6 +1,7 @@
 # Rule Ripple — 전체 스택
 # 공개 포트는 frontend(:80) / backend(:8080) 뿐. 나머지는 docker network 안에서만 통신한다.
-# agent / mcp / frontend 서비스는 각 담당자가 Dockerfile 을 올리면 주석을 풀면 된다.
+# frontend 서비스는 Dockerfile 을 올리면 주석을 풀면 된다.
+# OpenAI 키 · 모델은 루트 .env 에서 읽는다 (.env.example 참고).
 
 services:
   postgres:
@@ -51,16 +52,34 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  # agent:
-  #   build: ./agent
-  #   environment:
-  #     BACKEND_BASE_URL: http://backend:8080
-  #     INTERNAL_TOKEN: rr-internal-dev-token
-  #     REGULATION_MCP_URL: http://regulation-mcp:8001/mcp
-  #     CODE_MCP_URL: http://code-mcp:8002/mcp
-  #     BUSINESS_MCP_URL: http://business-mcp:8003/mcp
-  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
-  #   depends_on: [backend]
+  agent:
+    build: ./agent
+    environment:
+      AGENT_MODE: live                        # 규정 · 상품 조회와 반영을 MCP로 한다
+      REGULATION_MCP_URL: http://regulation-mcp:8001/mcp
+      BUSINESS_MCP_URL: http://business-mcp:8003/mcp
+      INTERNAL_TOKEN: rr-internal-dev-token
+      AGENT_CHECKPOINT_DB: postgresql://ruleripple:ruleripple@postgres:5432/ruleripple   # 승인 대기 중 재시작해도 재개
+      AGENT_ARTICLE_IDS: ${AGENT_ARTICLE_IDS-8}   # 분석할 조항. 비우면 바뀐 조항 전부 (SIMPLIFICATION 8절)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}         # 없으면 Agent가 시작하지 않고 이유를 로그에 남긴다
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      RIPPLE_DATA_DIR: /data
+    volumes:
+      - ./data/regulations:/data/regulations:ro   # 업로드한 원문이 등록된 원문과 같은지 확인용
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      regulation-mcp:
+        condition: service_started
+      business-mcp:
+        condition: service_started
 
   # MCP 서버는 각자 볼 수 있는 폴더만 읽기 전용으로 마운트한다 (eval/ · docs/ 는 컨테이너에 없음).
   regulation-mcp:
