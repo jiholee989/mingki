@@ -33,3 +33,22 @@ def test_summary_counts_passed_runs_and_products():
 def test_summary_without_scored_runs():
     s = summarize([{"status": "TIMEOUT", "seconds": 300}], E)
     assert s["scored"] == 0 and s["passed"] == 0 and s["average"] == {}
+
+
+def test_one_run_of_all_articles_is_scored_per_requirement():
+    """조항 전부를 한 번에 분석한 결과를 요건별로 나눠 정답 파일마다 채점한다."""
+    from run_agent import scenarios
+    from test_score_proposals import load_expected, perfect_from
+    dsr = load("proposals.run-2026-10-21.json")                       # REQ-8 실제 결과 (8/12)
+    senior = perfect_from(load_expected("expected_proposals.senior-age.yaml"))
+    for row in senior:
+        row.update(reqKey="REQ-15", latest=True)
+    run = {"status": "WAITING_REVIEW", "seconds": 60, "response": {"proposals": dsr["proposals"] + senior}}
+    targets = {exp["scenario"]: (exp, key) for exp, key in scenarios("all")}
+    assert {k for _, k in targets.values()} == {"REQ-8", "REQ-15", "REQ-15-2"}
+    exp, key = targets["dsr-limit"]
+    assert summarize([run], exp, key)["average"]["판정 정확도"] == (8.0, 12.0)
+    exp, key = targets["senior-age"]
+    assert summarize([run], exp, key)["passed"] == 1
+    exp, key = targets["senior-explanation"]
+    assert summarize([run], exp, key)["average"]["판정 정확도"][0] == 0   # 이 요건의 제안이 없다

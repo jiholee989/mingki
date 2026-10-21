@@ -100,3 +100,20 @@ def test_cannot_apply_is_visible_and_preserves_original_validation(capsys):
     assert "기존 본문 검증: 통과" in text
     assert "아래 변경 내용을 확인" not in text
     assert "  + " not in text
+
+
+def test_new_rule_change_is_named_instead_of_none(capsys):
+    """새 규칙(rule_id · current_value 없음)은 None 대신 '새 규칙' · '없음'으로 보인다 (show_details와 같은 표시)."""
+    from types import SimpleNamespace
+
+    change = {"rule_id": None, "rule_key": "SENIOR_DISCLOSURE_CHECK", "current_value": None, "proposed_value": "true", "unit": "bool"}
+    old = {"id": "REQ-15-2:P002", "version": 1, "recommendation": "설명 확인 절차 추가", "actions": ["절차 추가"],
+           "optional_actions": [], "precautions": [], "changes": []}
+    new = {**old, "version": 2, "product_id": "P002", "product_name": "리플 시니어 든든대출", "review_comment": "규칙으로 추가",
+           "revision_outcome": "revised", "verification": "passed", "generation_error": None, "revision_response": "",
+           "scope": "고령자 신규 계약", "changes": [change]}
+    show_review_changes([old], [SimpleNamespace(model_dump=lambda mode=None: new)],
+                        [{"proposal_id": old["id"], "action": "request_changes"}])
+    text = capsys.readouterr().out
+    assert "+ 새 규칙 SENIOR_DISCLOSURE_CHECK: 없음 → true (bool)" in text
+    assert "None" not in text

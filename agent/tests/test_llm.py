@@ -216,6 +216,15 @@ def test_impact_schema_separates_rule_ids_from_source_uris():
     assert props["document_refs"]["items"]["enum"] == ["product-doc://P001"]
 
 
+def test_lookup_schema_limits_regulations_to_related_ones():
+    from app.reasoning import LookupsOutput
+    payload = {"related_regulations": [{"regulation_id": "dsr-management", "version": "v2", "title": ""}]}
+    lookup = output_schema(LookupsOutput, payload)["$defs"]["Lookup"]
+    assert lookup["properties"]["regulation_id"]["anyOf"][0]["enum"] == ["dsr-management"]
+    assert lookup["properties"]["tool"]["enum"] == ["get_article", "search_regulation"]
+    assert set(lookup["required"]) == {"tool", "regulation_id", "article_id", "query", "reason"}
+
+
 def test_model_text_cannot_override_source_owned_mandatory_values():
     model = Model({"recommendation": "제안", "actions": ["필수 변경"], "precautions": [],
                    "changes": [{"rule_id": "fake", "proposed_value": "999"}]})

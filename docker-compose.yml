@@ -60,7 +60,7 @@ services:
       BUSINESS_MCP_URL: http://business-mcp:8003/mcp
       INTERNAL_TOKEN: rr-internal-dev-token
       AGENT_CHECKPOINT_DB: postgresql://ruleripple:ruleripple@postgres:5432/ruleripple   # 승인 대기 중 재시작해도 재개
-      AGENT_ARTICLE_IDS: ${AGENT_ARTICLE_IDS-8}   # 분석할 조항. 비우면 바뀐 조항 전부 (SIMPLIFICATION 8절)
+      AGENT_ARTICLE_IDS: ${AGENT_ARTICLE_IDS-}    # 분석할 조항 (예: 8). 비우면 바뀐 조항 전부
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}         # 없으면 Agent가 시작하지 않고 이유를 로그에 남긴다
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
       RIPPLE_DATA_DIR: /data

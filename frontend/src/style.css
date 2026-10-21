@@ -1,9 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
 
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
+
+/* shadcn-vue(reka-vega) 부품은 data-open: 같은 축약 조건을 쓰지만 reka-ui는 data-state만 붙인다 */
+@custom-variant data-open (&[data-state='open']);
+@custom-variant data-closed (&[data-state='closed']);
+@custom-variant data-checked (&[data-state='checked']);
 
 @theme inline {
   --font-sans: 'Noto Sans KR', ui-sans-serif, system-ui, sans-serif;

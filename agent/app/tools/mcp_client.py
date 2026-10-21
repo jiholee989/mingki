@@ -26,6 +26,7 @@ DEFAULT_URLS = {
 # 도구 → 서버 (mcp/README.md)
 TOOL_SERVER = {
     "list_regulations": "regulation",
+    "search_regulation": "regulation",
     "get_product_doc": "regulation",
     "diff_versions": "regulation",
     "list_articles": "regulation",
@@ -135,8 +136,7 @@ class McpTools:
             raise ValueError("조회한 규정 목록에서 분석 버전과 시행일을 확인할 수 없습니다")
         # 분석 대상의 시행일 이후에 개정된 관련 규정은 근거로 사용하지 않는다.
         horizon = date.fromisoformat(selected["effective_from"])
-        targets = [(regulation_id, version)]
-        gaps = []
+        related, gaps = [], []
         for row in catalog:
             if row["regulation_id"] == regulation_id:
                 continue
@@ -144,15 +144,17 @@ class McpTools:
                           and date.fromisoformat(v["effective_from"]) <= horizon]
             if candidates:
                 chosen = max(candidates, key=lambda v: (v["effective_from"], int(v["version"].removeprefix("v"))))
-                targets.append((row["regulation_id"], chosen["version"]))
+                # 조항 목차(번호 · 제목)까지 준다. 모델이 번호를 추측하지 않고 목차에서 고른다
+                toc = [{"article_id": a["article_id"], "title": a["title"]}
+                       for a in self.list_articles(row["regulation_id"], chosen["version"])]
+                related.append({"regulation_id": row["regulation_id"], "version": chosen["version"],
+                                "title": row.get("title", ""), "articles": toc})
             elif any(not v.get("effective_from") for v in row["versions"]):
                 gaps.append(f"{row['regulation_id']}: 시행일이 없어 관련 규정 버전을 선택할 수 없음")
-        articles = []
-        for rid, selected_version in targets:
-            articles.extend({**self.get_article(rid, selected_version, row["article_id"]),
-                             "regulation_id": rid, "version": selected_version}
-                            for row in self.list_articles(rid, selected_version))
-        return {"articles": articles, "data_gaps": gaps}
+        # 바뀐 규정의 조항만 준다. 다른 규정은 목록(related)만 주고, Agent가 필요할 때 골라 본다 (app/lookups.py)
+        articles = [{**self.get_article(regulation_id, version, row["article_id"]), "regulation_id": regulation_id, "version": version}
+                    for row in self.list_articles(regulation_id, version)]
+        return {"articles": articles, "related": related, "data_gaps": gaps}
 
     def get_product_documents(self, product_ids: list[str]) -> dict:
         documents, gaps = [], []
@@ -183,6 +185,7 @@ class McpTools:
 # 노드의 위치 인자를 MCP 요청의 키워드 인자로 바꾼다
 _PARAMS = {
     "list_regulations": (),
+    "search_regulation": ("query", "regulation_id", "version"),
     "get_product_doc": ("product_id",),
     "diff_versions": ("regulation_id", "old_version", "new_version"),
     "list_articles": ("regulation_id", "version"),
