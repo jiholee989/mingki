@@ -111,6 +111,33 @@ class ProposalsTest {
         });
     }
 
+    @Test
+    void rejectNeedsReason() {
+        assertThat(Proposals.missingRejectReason(Approval.Decision.REJECT, null)).isTrue();
+        assertThat(Proposals.missingRejectReason(Approval.Decision.REJECT, "  ")).isTrue();
+        assertThat(Proposals.missingRejectReason(Approval.Decision.REJECT, "P010 판정을 미룰 수 없다")).isFalse();
+        assertThat(Proposals.missingRejectReason(Approval.Decision.APPROVE, null)).isFalse();   // 제외에는 사유를 요구하지 않는다
+    }
+
+    @Test
+    void rejectExampleCarriesReason() throws IOException {
+        var req = JSON.readValue(CONTRACTS.resolve("review.post.reject.json").toFile(), TaskController.ReviewRequest.class);
+        assertThat(req.decision()).isEqualTo(Approval.Decision.REJECT);
+        assertThat(Proposals.missingRejectReason(req.decision(), req.comment())).isFalse();
+    }
+
+    @Test
+    void reportExamplesMatchResponse() throws IOException {
+        var done = JSON.readValue(CONTRACTS.resolve("report.get.json").toFile(), TaskDtos.ReportResponse.class);
+        assertThat(done.review().decision()).isEqualTo("APPROVE");
+        assertThat(done.review().approver().username()).isEqualTo("officer1");
+
+        var rejected = JSON.readValue(CONTRACTS.resolve("report.get.rejected.json").toFile(), TaskDtos.ReportResponse.class);
+        assertThat(rejected.review().decision()).isEqualTo("REJECT");
+        assertThat(rejected.review().comment()).isNotBlank();
+        assertThat(rejected.deliveries()).isEmpty();
+    }
+
     private static RuleProposal row(String key, int round, String impact, RuleProposal.VerifyStatus status) {
         RuleProposal p = new RuleProposal();
         p.setProposalKey(key);

@@ -62,12 +62,12 @@ GET  /api/auth/me
 | `getRequirements(id)` | `GET /api/ai/tasks/{id}/requirements` | | `{task, documents, requirements[]}` — 요건마다 `oldText` · `newText` (신·구 원문) |
 | `getProposals(id)` | `GET /api/ai/tasks/{id}/proposals` | | 10.2 |
 | `getContractImpacts(id)` | `GET /api/ai/tasks/{id}/contract-impacts` | | 10.6 |
-| `reviewProposals(id, d)` | `POST /api/ai/tasks/{id}/review` | `{decision:"APPROVE"\|"REJECT", comment?, excludedProposalKeys?}` | `Approval` — 10.3 |
-| `getReport(id)` | `GET /api/ai/tasks/{id}/report` | | `{task, report, deliveries[]}` |
+| `reviewProposals(id, d)` | `POST /api/ai/tasks/{id}/review` | `{decision:"APPROVE"\|"REJECT", comment?, excludedProposalKeys?}` — 반려는 `comment` 필수 | `Approval` — 10.3 |
+| `getReport(id)` | `GET /api/ai/tasks/{id}/report` | | `{task, report, review, deliveries[]}` — `review`는 가장 최근 확인 기록 (결정 · 사유 · 확인한 사람), 확인 전이면 null ([예시](./contracts/report.get.json), [반려](./contracts/report.get.rejected.json)) |
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
-| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기에서 FAILED가 된 작업. Agent는 부르지 않고 확인 대기로 되돌림). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 확인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
+| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기로 되돌림. 확인 대기에서 FAILED가 된 작업이거나, 저장된 승인을 Agent가 400으로 받지 않은 경우). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 확인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED). 다시 시도가 실패하면 사유 뒤에 `(처음 실패: …)`로 맨 처음 원인을 붙여 `errorMessage`와 응답에 남긴다 |
 | `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
 
 ### 주요 객체
@@ -100,7 +100,7 @@ GET  /api/auth/me
 | `TOOL_PLAN` | `{node, requirementId, lookups:[{tool, regulationId, articleId, query, reason, regulationTitle, articleTitle}]}` — 영향 판단 전에 모델이 고른 조회와 이유 (요건마다). `regulationTitle` · `articleTitle`은 화면 표시용 이름 (모르면 null). 실행은 이어지는 `TOOL_START` · `TOOL_END` | AI 도구 선택 기록 |
 | `DECISION` | `{node, requirementId, productId, model:{impact, targetRuleIds, reason}\|null, final:{impact, targetRuleIds}, checks:[…]}` — 상품 영향 판단 직후 상품마다. `model`은 모델 판단, `final`은 코드 검사 뒤 판단, `checks`는 검사가 바꾼 이유 | AI 판단 기록 |
 | `TOKEN` | `{text}` | (선택) 스트리밍 |
-| `STATUS` | `{status}` | |
+| `STATUS` | `{status, reason?}` | `reason`이 있으면 `errorMessage`로 남는다 |
 | `DONE` | `{outcome:"DONE"\|"NO_CHANGE"\|"REJECTED"}` | 종료 |
 | `FAILED` | `{reason}` | 오류 화면 |
 
@@ -169,7 +169,7 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 ```
 
 - 처리 중 `TOOL_START` / `TOOL_END {ok, attempt, retrying, dead}` 이벤트가 화면으로 간다.
-- 시연용으로 `JOB_FAILURE_RATE`(기본 0.3) 확률로 일부러 실패한다. `0`이면 항상 성공.
+- 재시도를 확인하려고 `JOB_FAILURE_RATE`(기본 0.3) 확률로 일부러 실패시킨다. 마지막 시도에서는 주입하지 않아서, 주입한 실패만으로 작업이 `DEAD`가 되지는 않는다. `DEAD`는 진짜 오류와 다시 해도 같은 실패("이미 바뀐 규칙")에서만 나온다. `0`이면 주입하지 않는다.
 - RabbitMQ 콘솔 http://localhost:15672 (guest/guest)에서 retry · DLQ 큐를 보여줄 수 있다.
 
 ## 9. business-mcp 읽기 도구
@@ -269,7 +269,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 
 ### 10.3 사용자 확인
 
-`POST /api/ai/tasks/{id}/review` ([예시](./contracts/review.post.json))
+`POST /api/ai/tasks/{id}/review` ([승인 예시](./contracts/review.post.json), [반려 예시](./contracts/review.post.reject.json))
 
 ```json
 {"decision": "APPROVE", "excludedProposalKeys": ["P005:DSR_LIMIT"], "comment": "P005는 화면 문구 정비 후 반영"}
@@ -278,11 +278,17 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | 결정 | 검사 | 결과 |
 |---|---|---|
 | `APPROVE` | `canApprove`(아니면 409). 제외 키는 현재 `change_required` 제안이어야 함(400). 제외하고 남는 게 없으면 400 (REJECT로 보낸다) | `PUBLISHING`. 기록 payload `{approvedProposalKeys, excludedProposalKeys}` |
-| `REJECT` | | `REJECTED` |
+| `REJECT` | `comment`(반려 사유) 필수, 비면 400 | `REJECTED` |
 
 - 수정 요청(`REQUEST_CHANGES`)은 없다.
+- **반려는 작업을 끝낸다.** "다시 시도" 대상이 아니다. 같은 규정 · 같은 데이터로 다시 올리면 같은 판정이 나온다 (의도한 재현성). 결과를 바꾸는 길은 셋이다.
+  - 일부만 빼려면 반려 대신 `APPROVE` + `excludedProposalKeys`
+  - 데이터 · 상품 문서가 틀렸으면 고친 뒤 새로 올린다
+  - 판정이 틀렸으면 Agent를 고친다 (M3)
+- 반려 사유는 리포트 응답의 `review.comment`에 나온다. 모인 사유가 Agent 판정 오류 목록이 된다.
 - 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction`은 `{step:"REVIEW", path}`이고, `counts.proposals`는 현재 회차 제안 수다.
-- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다. Agent는 그래프를 돌리기 전에 거부할 수 있다: 검토 대기 중인 thread가 아니면(없거나 이미 끝남) 409, `approvedProposalKeys ∪ excludedProposalKeys`가 Agent가 보낸 현재 `change_required` 키와 다르거나 APPROVE에 `approvalId`가 없으면 400. 202 뒤에는 `apply` → `report` → `DONE` 또는 `FAILED`가 콜백으로 온다.
+- Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다. Agent는 그래프를 돌리기 전에 거부할 수 있다: 검토 대기 중인 thread가 아니면(없거나 이미 끝남) 409, `approvedProposalKeys ∪ excludedProposalKeys`가 Agent가 보낸 현재 `change_required` 키와 다르거나 APPROVE에 `approvalId`가 없거나 승인할 수 없는 제안이 있으면 400. 202 뒤에는 `apply` → `report` → `DONE` 또는 `FAILED`가 콜백으로 온다.
+- Agent가 400으로 결정을 받지 않으면 백엔드는 작업을 FAILED로 만들지 않고 확인 대기로 되돌린다. Agent는 그대로 확인을 기다리고 있기 때문이다. 사유는 `errorMessage`와 `STATUS {status:"WAITING_REVIEW", reason}` 이벤트에 남고, 사용자는 문제 제안을 빼거나 반려해 다시 결정한다. 새 결정이 들어오면 `errorMessage`는 지운다. 409 · 연결 실패는 지금처럼 FAILED이고 "다시 시도" 대상이다.
 
 ### 10.4 반영 (쓰기 도구 · 승인 필요)
 

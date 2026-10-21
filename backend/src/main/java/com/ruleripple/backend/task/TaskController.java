@@ -177,20 +177,20 @@ public class TaskController {
             } catch (HttpStatusCodeException e) {
                 if (e.getStatusCode().value() == 423) {
                     // Agent 가 그 thread 를 아직 돌리고 있다. 겹쳐 보내지 않고 사용자에게 알린다
-                    service.retryStillRunning(id, plan.wasFailed());
+                    service.retryStillRunning(id, plan);
                     throw new ResponseStatusException(HttpStatus.CONFLICT, "Agent 가 아직 실행 중입니다. 잠시 뒤 다시 시도하세요");
                 }
                 // Agent 쪽 작업이 이미 끝났거나(반영 실패로 report 까지 감) 기록과 어긋남. 되돌린 상태를 다시 FAILED 로
-                String reason = "Agent 가 다시 시작하지 못했습니다: " + agentMessage(e);
-                service.retryFailed(id, reason);
-                throw new ResponseStatusException(HttpStatus.CONFLICT, reason + " — 리포트의 실패 사유를 확인하세요");
+                String reason = service.retryFailed(id, "Agent 가 다시 시작하지 못했습니다: " + agentMessage(e), plan.firstError());
+                throw new ResponseStatusException(HttpStatus.CONFLICT, reason);
             } catch (ResourceAccessException e) {
-                service.retryFailed(id, "Agent 에 연결할 수 없습니다: " + e.getMessage());
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Agent 에 연결할 수 없습니다: " + e.getMessage());
+                String reason = service.retryFailed(id, "Agent 에 연결할 수 없습니다: " + e.getMessage(), plan.firstError());
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, reason);
             }
         }
+        String status = "waiting".equals(how) ? TaskStatus.WAITING_REVIEW.name() : task.getStatus().name();
         return ResponseEntity.accepted().body(Map.<String, Object>of(
-                "taskId", id, "status", task.getStatus().name(), "accepted", true, "how", how));
+                "taskId", id, "status", status, "accepted", true, "how", how));
     }
 
     private String retryAgent(AnalysisTask task) {
@@ -200,8 +200,14 @@ public class TaskController {
         } catch (HttpClientErrorException.Conflict notContinuable) {
             Optional<Approval> approve = service.latestApprove(task.getId());
             if (approve.isPresent()) {
-                agent.resume(task, approve.get());
-                return "resume";
+                try {
+                    agent.resume(task, approve.get());
+                    return "resume";
+                } catch (HttpClientErrorException.BadRequest notAccepted) {
+                    // Agent 가 저장된 승인을 받지 않았다. Agent 는 확인을 기다리므로 사람이 다시 결정하게 둔다
+                    service.reviewNotAccepted(task.getId(), agentMessage(notAccepted));
+                    return "waiting";
+                }
             }
             if (service.requirements(task.getId()).isEmpty()) {
                 agent.run(task, service.documents(task.getId()));
@@ -212,8 +218,7 @@ public class TaskController {
     }
 
     private static String agentMessage(HttpStatusCodeException e) {
-        String body = e.getResponseBodyAsString();
-        return body == null || body.isBlank() ? e.getStatusCode().toString() : body;
+        return AgentClient.detail(e);
     }
 
     // ---------- 리포트 · 평가 ----------
@@ -222,6 +227,7 @@ public class TaskController {
     public ReportResponse report(@PathVariable UUID id) {
         AnalysisTask t = service.get(id);
         return new ReportResponse(TaskSummary.of(t), t.getReport() == null ? Map.<String, Object>of() : t.getReport(),
+                service.latestReview(id).map(service::approvalView).orElse(null),
                 service.deliveries(id).stream().map(DeliveryView::of).toList());
     }
 

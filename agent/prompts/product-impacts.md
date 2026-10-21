@@ -6,7 +6,7 @@
 - evidence_rule_ids: 판단 근거로 참고한 ruleId만. 상품의 전체 규칙을 복사하지 않는다.
 - document_refs: 해당 상품에 제공된 문서 uri만.
 - basis_refs: 판단의 근거가 된 regulation_context 조항 uri. 핵심 조항만 3개 이하. 변경이면 변경 조항, 유지·적용 제외면 그 이유가 되는 조항(적용 대상·적용 예외·판매 중단 상품 관리 등)을 넣는다.
-- scope: 적용 고객·거래 조건을 한 문장으로 명확히 쓴다.
+- scope: 적용 고객·거래 조건, 시행일 기준 신청/계약 시점, 경과조치·예외를 한 문장으로 명확히 쓴다. 예외가 있는데 "차주 전원"으로 뭉뚱그리지 않는다.
 - applicability: all(해당 범위 전체 적용), conditional(거래·차주 조건에 따라 적용/예외), excluded(상품 전체 적용 제외), unknown(자료 부족).
 - conditions: conditional이면 예외 조건 text, 실제 source_ref URI, 그 원문의 정확한 quote를 작성한다.
 - impact: change_required(필수 변경), no_change(이미 충족 또는 전체 적용 제외), needs_review(자료 부족·조건 확인 필요).
@@ -23,4 +23,6 @@
 8. data_gaps의 자료는 조회되지 않았다. 자료 없는 현재 절차를 단정하지 않는다.
 9. 조건부 예외는 바뀔 규칙이 있는 상품을 no_change로 면제하는 근거가 되지 않는다. 단순한 주의 문구에 숨기지 말고 applicability/conditions/scope에 표현한다.
 10. rules의 basisArticles는 그 규칙이 따르는 규정 조항이다. 변경 조항을 따르지 않는 규칙은 같은 숫자 · 같은 단어여도 target_rule_ids에 넣지 않는다. 비어 있으면 원문과 문서로 판단한다.
-11. 새로 생긴 조항(change=added)의 의무를 상품에 적용해야 하면 change_required로 내고 target_rule_ids는 비운다. 새 규칙은 코드가 만든다. 상품 문서에 같은 의무가 이미 운영 중이면 no_change, 적용 대상인지 확정할 수 없으면 needs_review.
+11. 경과조치의 신청일·계약일·연장을 구분한다. 시행 전 신청과 기존 계약 연장이 종전 기준을 따르는 원문이면 scope에 그 제외 범위도 명시하고 conditional 및 실제 원문 인용 conditions로 표현한다. 상품 전체를 제외하지 않는다.
+12. "종전 기준"을 모든 거래에 동일한 과거 수치로 치환하지 않는다. 상품의 현재 유효 규칙은 과거 각 계약에 적용된 기준을 증명하지 않는다.
+13. 새로 생긴 조항(change=added)의 의무를 상품에 적용해야 하면 change_required로 내고 target_rule_ids는 비운다. 새 규칙은 코드가 만든다. 상품 문서에 같은 의무가 이미 운영 중이면 no_change, 적용 대상인지 확정할 수 없으면 needs_review.

@@ -10,6 +10,7 @@ apply 노드가 쓸 승인(apply_approval)으로 바꾸고 finish 로 검토를 
 import logging
 
 from app.backend import proposal_items, proposal_keys, requirements_payload
+from app.validation import approval_problem
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,11 @@ def review_decision(proposals, decision, payload, comment=None, approval_id=None
         if set(approved) | set(excluded) != set(change_keys):
             raise ValueError("승인 · 제외 키가 현재 변경 제안과 다릅니다: "
                              f"요청 {sorted(set(approved) | set(excluded))}, 현재 {sorted(change_keys)}")
+        blocked = [f"{', '.join(k for k in proposal_keys(p) if k in approved)}: {problem}"
+                   for p in pending if any(k in approved for k in proposal_keys(p))
+                   and (problem := approval_problem(p))]
+        if blocked:
+            raise ValueError("승인 불가 제안: " + " / ".join(blocked))
         apply_approval = {"approval_id": approval_id, "proposal_keys": approved}
     decisions = [{"proposal_id": p.id, "version": p.version, "comment": comment or "",
                   "action": "approve" if any(k in approved for k in proposal_keys(p)) else "reject"}

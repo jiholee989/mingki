@@ -70,6 +70,11 @@ public final class Proposals {
                 && change.stream().allMatch(p -> p.getVerifyStatus() == RuleProposal.VerifyStatus.PASSED);
     }
 
+    /** 반려는 작업을 끝내므로 사유가 필수다. 사유는 리포트 응답의 review 에 나온다 (10.3). */
+    public static boolean missingRejectReason(Approval.Decision decision, String comment) {
+        return decision == Approval.Decision.REJECT && blank(comment);
+    }
+
     private static boolean blank(String s) {
         return s == null || s.isBlank();
     }

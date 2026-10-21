@@ -117,9 +117,9 @@ def make_product_impact_agent(tools, reasoner):
                     reason += " / 적용 조건의 인용 근거가 확인되지 않아 수치 변경을 확정하지 않음"
                 if impact == "no_change":
                     target_ids = []
-                    if applicability in ("conditional", "unknown") and changeable:
+                    if applicability == "unknown" or (applicability == "conditional" and changeable):
                         impact = "needs_review"
-                        reason += " / 조건부 예외·적용 범위를 확인해야 하므로 무조건 유지로 확정하지 않음"
+                        reason += " / 자료 부족·적용 범위를 확인해야 하므로 무조건 유지로 확정하지 않음"
                 relevant = [by_product[pid][rid] for rid in target_ids]
                 current = "; ".join(f"{r['ruleId']} {r['ruleKey']}={r['value']} ({r['unit']})" for r in relevant)
                 impacts.append(ProductImpact(

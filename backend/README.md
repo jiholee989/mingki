@@ -78,7 +78,7 @@ Agent가 도중에 죽었으면 `POST /api/ai/tasks/{id}/retry`로 멈춘 자리
 | `CALLBACK_BASE_URL` | http://backend:8080 | Agent가 콜백할 Spring 주소 |
 | `INTERNAL_TOKEN` | rr-internal-dev-token | `/internal/**` 헤더 `X-Internal-Token`. 유일한 내부 경계이므로 공유 환경에서는 바꾼다 |
 | `JWT_SECRET` | (개발용) | 32바이트 이상. 토큰 만료 480분 |
-| `JOB_FAILURE_RATE` | 0.3 | 큐 워커 실패 주입 확률. 재시도 · DLQ 동작 확인용, 0이면 끔 |
+| `JOB_FAILURE_RATE` | 0.3 | 큐 워커 실패 주입 확률. 재시도 확인용이고 마지막 시도에서는 주입하지 않는다. 0이면 끔 |
 | `RETRY_QUIET_SECONDS` | 300 | 진행 중인 작업은 마지막 변화 뒤 이 시간이 지나야 "다시 시도"를 받는다. 돌고 있는 Agent를 겹쳐 부르지 않게. 0이면 끔 |
 | `DEMO_RESET_ENABLED` | true | `POST /api/demo/reset` 허용. 운영에서는 false(404) |
 | `BUSINESS_DATA_DIR` | ../data/business | 업무 시드 JSON 폴더. docker에서는 `/data/business`로 마운트 |

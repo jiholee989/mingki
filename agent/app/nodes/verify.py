@@ -15,6 +15,15 @@ def make_verify(reasoner):
                 continue
             proposal = item.model_copy(deep=True)
             baseline = baselines.get(item.id)
+            if baseline and item.revision_outcome in ("cannot_apply", "needs_clarification"):
+                # 새 요청의 미반영과 기존 본문의 유효 여부는 별개다. 원본의 검증 결과를 유지한다.
+                proposal.verification = baseline.verification
+                proposal.generation_error = baseline.generation_error
+                proposal.changed_fields = []
+                proposals.append(proposal)
+                checked += 1
+                failed += proposal.verification != "passed"
+                continue
             errors = [item.generation_error] if item.generation_error else validate_proposal(state, item, baseline)
             if baseline and not errors:
                 if not changed_fields(baseline, item):
@@ -23,11 +32,14 @@ def make_verify(reasoner):
                     req = next(r for r in state["requirements"] if r.id == item.requirement_id)
                     try:
                         result = reasoner.check_revision({"requirement": req.model_dump(mode="json"),
+                            "regulation_context": state.get("regulation_context", []),
+                            "documents": [d for d in state.get("product_documents", []) if d["productId"] == item.product_id],
+                            "data_gaps": state.get("data_gaps", []),
                             "previous_proposal": baseline.model_dump(mode="json"),
                             "comment": baseline.review_comment, "candidate": item.model_dump(mode="json")})
                         if not result.feedback_addressed or not result.mandatory_preserved:
                             errors.append("수정 요청·필수 변경 검토 실패: " + result.reason)
-                    except ValueError as exc:
+                    except (ValueError, TimeoutError, ConnectionError) as exc:
                         errors.append(str(exc))
             proposal.verification = "failed" if errors else "passed"
             proposal.generation_error = "; ".join(errors) if errors else None
@@ -36,6 +48,8 @@ def make_verify(reasoner):
                 # 실패한 새 본문을 기존 승인 가능한 제안처럼 보여주지 않는다.
                 for name in CONTENT_FIELDS:
                     setattr(proposal, name, getattr(baseline.model_copy(deep=True), name))
+                proposal.revision_response = "재작성 검증 실패로 이전 본문을 유지했습니다. 반영하지 못한 이유: " + "; ".join(errors)
+                proposal.revision_outcome = "failed"
             proposals.append(proposal)
             checked += 1
             failed += bool(errors)
@@ -46,4 +60,5 @@ def make_verify(reasoner):
 
 def route_after_verify(state):
     return "proposal_agent" if any(p.verification == "failed" and p.attempt < 2 and p.status == "pending"
+                                   and p.revision_outcome not in ("cannot_apply", "needs_clarification")
                                    for p in state["proposals"]) else "review"

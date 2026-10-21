@@ -50,10 +50,11 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| LLM이 그럴듯하지만 틀린 제안을 냄 | 정답지와 자동 비교. 판정 12/12, 변경 대상 recall, 값 · 단위, 날짜 · 경과조치, 함정 오판 0건을 핵심 지표로 두고 하나라도 미달이면 실패 | `eval/score_proposals.py`, `eval/expected_proposals*.yaml` (DSR · 고령자 · 설명 확인 3개 시나리오) | 실제 LLM 실행에서 12개 상품 중 11개 일치 (#35, 다른 1건은 4절 P006). 채점기 테스트 18개 |
+| LLM이 그럴듯하지만 틀린 제안을 냄 | 정답지와 자동 비교. 판정 12/12, 변경 대상 recall, 값 · 단위, 날짜 · 경과조치, 함정 오판 0건을 핵심 지표로 두고 하나라도 미달이면 실패 | `eval/score_proposals.py`, `eval/expected_proposals*.yaml` (DSR · 고령자 · 설명 확인 3개 시나리오) | 실제 LLM 실행에서 12개 상품 중 11개 일치 (#35, P006만 달랐고 정답 `keep`으로 결정), #49 측정 3회 모두 12/12. 채점기 테스트 25개 |
 | 같은 숫자 · 다른 의미(LTV 0.40, 정년 65), 단위가 다른 규칙(percent 35), 종료된 옛 행 | 함정을 데이터에 심고 정답지 `must_not`으로 채점. 유효 여부는 `effectiveTo == null`이 아니라 날짜(`asOf`)로 판단 | `data/business/product_rules.json`, `ProductRule.isValidOn`, business-mcp `as_of` | `BusinessQueriesTest.validityFollowsDatesNotMissingEndDate`, #23 리뷰에서 발견해 양쪽 수정 |
 | 제안이 근거 없이 나옴 | Agent 근거 검사: 인용 조항이 실제 diff에 있는지, 지금 값이 조회 결과와 같은지, 단위 변환(35% → ratio 0.35 / percent 35) | `agent/app/validation.py` | Agent 테스트 122개. 정답지는 검사에 쓰지 않는다 (SIMPLIFICATION 4절) |
 | 판단을 못 하는 경우를 "맞음"으로 포장 | 세 번째 판정 `needs_check`. 자료가 없으면 지어내지 않고 추가 확인으로 낸다 | `Proposals.IMPACTS`, `product_impact_agent` | 정답지에 `needs_check` 정답 포함 (DSR P010, 설명 확인 P009) |
+| 같은 입력에 다른 결과가 나와 믿을 수 없음 | 같은 규정 · 같은 데이터면 같은 판정이 나오게 한다. 대상 규칙은 영향 판단 단계가, 제안 값은 개정 원문 숫자로 코드가 정한다. 그래서 반려 뒤 다시 올려도 결과가 같고, 결과를 바꾸려면 데이터나 Agent를 고친다 | `agent/app/validation.py` `expected_value`, 계약 10.3 | 같은 조건 3회 측정에서 DSR 판정 12/12 (#49) |
 | 정답지가 데이터와 어긋나 채점이 틀림 (데이터를 늘리거나 고칠 때) | 정답지의 상품 · 규칙 ID · 지금 값 · 단위 · 근거 조항 · 계약 ID를 실제 데이터와 대조하는 테스트. 모든 상품에 판정이 있는지도 검사 | `eval/test_score_proposals.py` `test_expected_matches_data` | 시나리오 3개 모두 통과 (#44). 정답지 YAML의 쉼표로 이유가 잘리던 버그도 #42에서 고침 |
 | 새 규칙(제15조의2)처럼 규칙 이름을 Agent가 알 수 없음 | 새 규칙은 `rule_key` 이름을 채점하지 않고 값 · 단위 · 시행일로 채점 | `score_proposals.py` (`ruleId: null` 매칭) | `test_new_rule_is_scored_without_rule_id_or_key_name` (#44) |
 | 한 시나리오(v3 → v4 DSR)에만 맞춘 판단 | 시나리오마다 정답지를 따로 두고(`--expected`), Agent는 `AGENT_ARTICLE_IDS`로 조항 하나씩 실행. 상품 12개 · 규칙 82개 · 규정 4개로 데이터를 늘려 같은 숫자 · 다른 이름 · 다른 단위가 섞이게 함 | `eval/answer_key.md` 시나리오 표, `data/` (#19) | DSR 11/12 (#35). 고령자 · 설명 확인은 M3 |
@@ -82,9 +83,10 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
 | 사람이 할 일을 화면이 추측해야 함 | 서버가 `pendingAction {step, path}`와 `canApprove`를 계산해서 준다. 화면은 상태와 이 값만 본다 | `TaskDtos.PendingAction`, `Proposals.canApprove` | `GET /api/ai/tasks/{id}` 응답 예시 |
-| 확인이 여러 단계면 사용자가 지침 | 사람 확인은 **1번**. 제안마다 반영 / 제외만 고른다 (팀 결정, SIMPLIFICATION 결정 사항) | `TaskService.reviewProposals` | #28 |
+| 확인이 여러 단계면 사용자가 지침 | 사람 확인은 **1번**. 제안마다 반영 / 제외만 고른다 (팀 결정, SIMPLIFICATION 결정 사항) | `TaskService.review` | #28 |
 | 왜 이런 판단인지 모름 | 제안마다 근거 조항(`basis`), 이유(`reason`), 경과조치(`transition`), 후속 작업(`followUp`)을 함께 저장 | `rule_proposals` V4 | 계약 10.2 |
 | 진행 상황을 모름 | 노드마다 `STEP {node, message}` 이벤트, 회차(`round`) 포함 | `TaskEventService` | 계약 10.1 이벤트 표 (#43) |
+| 반려한 이유가 사라짐 | 반려에는 사유를 필수로 받고(없으면 400), 리포트 응답 `review`에 결정 · 사유 · 확인한 사람을 붙인다 | `Proposals.missingRejectReason`, `TaskDtos.ReportResponse` | `ProposalsTest` (반려 예시 · 리포트 예시를 응답 모양으로 읽음), 실제 반려 흐름에서 400 · `REJECTED` · `review.comment` 확인 |
 
 ### 2.5 신뢰성 (Reliability)
 
@@ -94,9 +96,10 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 |---|---|---|---|
 | 큐 메시지 중복 전달로 같은 반영이 두 번 | 멱등키 `{taskId}:apply:{proposalKey}`. 같은 키면 새로 만들지 않고 기존 작업을 돌려줌(`duplicate: true`). 키가 같은데 내용이 다르면 409 | `JobPublisher.publish`, `RuleVersionService.enqueue` | `RuleVersionServiceTest` (#33) |
 | 워커가 반영 뒤 · 작업 완료 기록 전에 죽음 | 규칙 행 · 전달 기록 · 작업 `DONE`을 **한 트랜잭션**에 커밋 | `RuleVersionService.apply` | #33 |
-| 일시 장애 vs 다시 해도 같은 실패 | 일시 실패는 3초 뒤 최대 3회 재시도 → DLQ. "이미 바뀐 규칙"처럼 영구 실패는 `PermanentJobFailure`로 재시도 없이 DEAD | `JobWorker`, `PermanentJobFailure` | `JobWorkerTest` 3개. 실패 주입 50%에서 2 · 3회차 성공 (#29) |
+| 일시 장애 vs 다시 해도 같은 실패 | 일시 실패는 3초 뒤 최대 3회 재시도 → DLQ. "이미 바뀐 규칙"처럼 영구 실패는 `PermanentJobFailure`로 재시도 없이 DEAD | `JobWorker`, `PermanentJobFailure` | `JobWorkerTest` 4개. 실패 주입 50%에서 2 · 3회차 성공 (#29). 주입은 마지막 시도에서 하지 않아, 주입한 실패만으로 반영이 DEAD가 되지 않는다 |
 | Agent 프로세스가 승인 대기 중 죽음 | LangGraph 체크포인터를 Postgres에. 재시작 뒤 같은 `threadId`로 재개 | `agent/app/checkpoint.py` | #30: 검토 대기 중 재시작 → 수정 요청 → 거절까지 이어짐 |
 | Agent가 업로드 직후 · 승인 직후 · 반영 도중 죽음 | "다시 시도" `POST /api/ai/tasks/{id}/retry`. Agent `/continue`를 먼저 보내고 409면 저장된 승인으로 `/resume`, 그것도 없으면 `/run`. FAILED였던 작업은 멈춘 자리로 되돌림 | `TaskController.retryTask`, `AgentClient.continueTask` | #39: 세 경우 모두 `kill -9` 후 복구. 반영 도중 죽은 경우 큐 작업이 같은 멱등키로 재사용돼 건수 그대로 |
+| Agent가 확인 결정을 받지 않음 (승인 · 제외 키가 어긋남, 승인할 수 없는 제안) | `/resume`이 400이면 FAILED 대신 확인 대기로 되돌리고 사유를 남긴다. Agent는 그래프를 돌리기 전에 거절해 여전히 확인을 기다리므로, 사용자가 문제 제안을 빼거나 반려해 다시 결정할 수 있다 | `AgentDispatcher.resume`, `TaskService.reviewNotAccepted` | 백엔드에만 가짜 변경 제안을 넣고 승인 → Agent 400 → 확인 대기 + 사유 → 반려 → `REJECTED` |
 | 반영 일부만 실패 | 한 건이 접수에서 거절돼도 나머지는 계속하고, 어느 건이 왜 실패했는지 결과에 남김. 최종은 FAILED | `agent/app/nodes/apply.py` (#34) | `test_apply.py` |
 | 시드가 반쯤 들어감 | 로더 트랜잭션이 파싱 오류(checked 예외)에도 롤백 | `BusinessDataLoader` `rollbackFor = Exception.class` | 오타 필드 JSON으로 확인 (#6) |
 | 실행할 때마다 결과가 달라야 함(반영 뒤 두 번째 실행은 "변경 없음") | 시연 리셋 `POST /api/demo/reset`: 작업 기록 삭제 + 업무 데이터를 JSON 시드로 복원 | `DemoResetService` | #25, #35에서 82행 복원 확인 |
@@ -113,7 +116,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | LLM이 확인받은 값과 다른 값을 반영 | **Agent는 값을 보내지 않는다.** 서버가 저장된 제안 행에서 지금 값 · 제안 값 · 단위 · 시행일을 꺼낸다 | `RuleVersionService` | 계약 10.4 |
 | 일반 큐 API로 검사를 우회 | 큐에 작업을 넣는 일반 API를 두지 않는다. 반영은 `/internal/product-rules/versions`로만 받고 `/internal/jobs`는 조회만 한다 | `JobController`, `InternalBusinessController` | #29, `POST /internal/jobs` → 405 |
 | 쓰기 도구가 분석 노드에 노출 | 노드마다 도구 부분집합만 줌. `apply_rule_version`은 `apply` 노드에만 | `agent/app/graph.py` `NODE_TOOLS`, `ToolBelt` | Agent 테스트 |
-| 정답 힌트가 Agent 입력에 섞임 | 정답 · 근거 조항 컬럼(`source`, `note`)을 DB에서 제거. `eval/`은 어느 컨테이너에도 마운트 안 함. 규정 `applies_to`는 큰 범위만 | #4 · #6 · #40, `docker-compose.yml` | 로더가 JSON의 `source` · `note`만 무시하고 다른 모르는 필드는 기동 오류 |
+| 정답 힌트가 Agent 입력에 섞임 | 정답 · 판단 메모(`source`, `note`)는 DB에 넣지 않음. 규칙이 따르는 조항(`basis_articles`)은 실제 규칙표에도 있는 사실 정보라 넣었고(#49), "이번 개정으로 바뀌는가"는 담지 않음. `eval/`은 어느 컨테이너에도 마운트 안 함. 규정 `applies_to`는 큰 범위만 | #4 · #6 · #40 · #49, `docker-compose.yml`, `data/business/README.md` | 로더가 JSON의 `source` · `note`만 무시하고 다른 모르는 필드는 기동 오류. 근거 조항이 실제 규정에 있는지 테스트 (`test_rule_basis_articles_exist_in_regulations`) |
 | MCP가 받은 ID로 다른 경로에 닿음 | `task_id` · `job_id`는 UUID 형식만, `product_id`는 영숫자만 | business-mcp `_uuid`, regulation-mcp 범위 검사 | MCP 테스트 (#31, #23) |
 | 업로드 파일로 서버를 망가뜨림 | `.md` · `.txt`만, 1MB 이하, UTF-8 | `TaskService.readText` | |
 
@@ -121,7 +124,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 53개(백엔드) |
+| 판단 로직이 컨트롤러 · DB에 섞여 테스트하기 어려움 | 계산 · 규칙을 DB 없이 테스트하는 순수 클래스로 분리 | `BusinessQueries`(조회 계산), `Proposals`(제안 규칙), `RuleVersions`(반영 판단) | 단위 테스트 60개(백엔드) |
 | 팀원 5명이 같은 파일을 고쳐 충돌 | 영역별 폴더 담당(`agent/` A, `mcp/` B, `backend/` C, `frontend/` D, `data/` · `eval/` E, `docs/` PM). 남의 폴더는 그 사람 브랜치로 PR | SIMPLIFICATION 10절 | 어댑터 PR을 Agent 브랜치 위에 올려 A가 리뷰 (#30) |
 | 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 2개 · 프론트 테스트 (GitHub Actions) | `.github/workflows/ci.yml` (#38) | 작업 5개 통과 |
 | 결정이 슬랙에 흩어짐 | 결정은 `SIMPLIFICATION.md` PR로 확정. 문서에 없는 결정은 미확정. 열린 질문은 11절 | SIMPLIFICATION 10 · 11절 | v1 → v2 → v2.1 변경 이력 |
@@ -170,10 +173,11 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 업로드한 규정 원문을 실제로 분석하지 않고, 등록된 `credit-loan-ops` 원문을 분석한다. 업로드 파일의 sha256이 다르면 FAILED | 임의 규정을 올려 분석할 수 없다 | 업로드 원문을 MCP에 작업별로 등록하는 기능이 없다 |
 | Agent 한 프로세스가 thread 단위로 잠근다 | Agent를 여러 개 띄우면 같은 작업이 겹칠 수 있다 | 분산 잠금 없음 (#34) |
 | 체크포인터 DB 재연결은 코드로만 확인 | DB 재시작 실험을 안 했다 | |
+| 진짜 오류로 DEAD가 된 반영은 다시 시도로 살아나지 않는다 | 작업이 FAILED로 남고, 새로 올려야 한다. Agent 그래프는 이미 끝났고 같은 멱등키는 DEAD 작업을 돌려주기 때문이다 | 시연용 실패 주입으로는 생기지 않는다 (#53). 다시 시도가 실패해도 처음 실패 사유는 `errorMessage`에 남는다 |
 | `llm` 모드(MCP 없음)에서 승인하면 반영을 못 해 FAILED로 끝난다 | 개발 흐름에서 불편 | `live` 모드에서는 정상. A 판단 대기 |
 | `/internal/**`을 네트워크로 격리하지 않는다 | backend 포트가 열려 있어 내부 토큰이 유일한 경계다 | 운영이라면 `/internal`을 별도 포트나 네트워크로 나눈다 |
 | M3(고령자 · 설명 확인) 판단 품질 | 정답지 · 채점기는 있으나 Agent가 아직 통과 못 함 | SIMPLIFICATION 9절 Agent 과제 4개 |
-| P006(소액대출) 판정이 정답지(`keep`)와 Agent(`needs_check`)가 다름 | DSR 판정 12개 중 1개 불일치 | 소액 기준(DSR 관리기준 제2조 4호)이 상품이 아니라 차주의 잔액 합계 기준이라 Agent 판단에 근거가 있다. 정답지 조율 중 (A · E, SIMPLIFICATION 11절) |
+| 규칙 근거 조항이 거의 다 채워져 있음 | 82개 중 81개에 정확한 조항이 있어 "같은 숫자 · 다른 뜻" 함정(R007 · R008 · R026)을 조항 번호만으로 가를 수 있다. #49의 DSR 12/12에 이 효과가 섞여 있을 수 있다 (따로 재지 않음) | 함정 규칙 일부의 근거 칸을 비우고, 근거 있음 · 없음 점수를 나눠 적기 (#49 리뷰). P006은 `keep`으로 결정했고 #49 측정에서 Agent도 `keep` |
 | 개정 조항과 무관한 규칙을 바꾸는 함정 오판 | 조항 3개를 한 번에 돌린 실행에서 P010 `ESTIMATED_INCOME_RATIO` 0.85를 0.35로 제안 | #35. 채점기 `must_not`으로 잡히는 유형. 근거 검사에서 "개정 조항의 대상 규칙인가" 확인 검토 (A) |
 | 채점기 테스트가 CI에 없음 | 정답지를 고쳐도 자동 검사가 안 돎 | `pytest eval` 한 줄 추가 요청 (#42 리뷰) |
 
@@ -181,9 +185,9 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 영역 | 자동 테스트 | 실제 실행 기록 |
 |---|---|---|
-| 백엔드 | 53개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
+| 백엔드 | 60개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
 | Agent | 122개 (`uv run pytest`) | #27 · #30 · #34 · #35 |
 | MCP | regulation 78 · business 55 | #20 · #23 · #31 |
-| 채점기 · 정답지 | 18개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
+| 채점기 · 정답지 | 25개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44 · #49. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
 | 검색 | 질의 38개 (`eval/run_retrieval.py`) | #20. 규정 recall@3 키워드 82% · 의미 79% · 혼합 89% ([VECTOR_INDEX.md](./VECTOR_INDEX.md)) |
 | CI | PR마다 위 전부 (`.github/workflows/ci.yml`) | #38 |
