@@ -80,30 +80,42 @@ def changeable_rules(requirement, rules, product):
     return [rule for rule in rules if change_problem(requirement, rule, product) is None]
 
 
-def new_rule_key(requirement):
-    """새 규칙 이름: 요건의 정책 키(target)를 규칙 키 형식(대문자 · 밑줄, 50자 이내)으로."""
+def new_rule_key(requirement, catalog=()):
+    """새 규칙 이름. 같은 조항을 따르는 예/아니오 규칙이 이미 있으면(반영 예정 포함) 그 이름을 다시 쓴다.
+    없을 때만 요건의 정책 키(target)를 규칙 키 형식(대문자 · 밑줄, 50자 이내)으로. 모델이 매번 다른 이름을 지어도
+    같은 의무가 다른 이름의 규칙으로 또 생기지 않는다."""
+    article = article_key(requirement.article_ref)
+    reused = sorted({r["ruleKey"] for r in catalog if r.get("unit") == "bool" and article in (r.get("basisArticles") or [])})
+    if article and reused:
+        return reused[0]
     key = re.sub(r"[^A-Z0-9]+", "_", (requirement.target or "").upper()).strip("_")[:50].strip("_")
     return key or "REQ_" + re.sub(r"[^A-Z0-9]+", "_", requirement.article_id.upper())
 
 
-def new_rule_change(requirement):
-    """새로 생긴 조항의 의무를 상품에 더하는 새 규칙. 모양은 코드가 정한다: 이름은 정책 키, 값 true, 단위 bool."""
-    return {"rule_id": None, "rule_key": new_rule_key(requirement), "current_value": None,
+def new_rule_change(requirement, catalog=()):
+    """새로 생긴 조항의 의무를 상품에 더하는 새 규칙. 모양은 코드가 정한다: 이름(new_rule_key), 값 true, 단위 bool."""
+    return {"rule_id": None, "rule_key": new_rule_key(requirement, catalog), "current_value": None,
             "proposed_value": "true", "unit": "bool"}
 
 
-def new_rule_errors(requirement, change, rules):
-    """새 규칙 변경 검사. rules: 그 상품의 유효 규칙."""
+def new_rule_errors(requirement, change, rules, catalog=()):
+    """새 규칙 변경 검사. rules: 그 상품의 끝나지 않은 규칙(반영 예정 포함), catalog: 전체 상품의 끝나지 않은 규칙."""
     errors = []
     if requirement.change != "added":
         errors.append("새 규칙은 새로 생긴 조항의 의무에만 만듭니다")
-    expected = new_rule_change(requirement)
+    expected = new_rule_change(requirement, catalog)
     if (change.rule_key, change.proposed_value, change.unit) != (expected["rule_key"], expected["proposed_value"], expected["unit"]):
         errors.append(f"새 규칙은 {expected['rule_key']} = true (bool)이어야 합니다")
     same = [r["ruleId"] for r in rules if r["ruleKey"] == change.rule_key]
     if same:
-        errors.append(f"{change.rule_key}: 이미 유효한 규칙 {', '.join(same)}가 있어 새 규칙이 아닙니다")
+        errors.append(f"{change.rule_key}: 이미 규칙 {', '.join(same)}가 있어(반영 예정 포함) 새 규칙이 아닙니다")
     return errors
+
+
+def applied_new_rule(requirement, rules, catalog=()):
+    """상품에 이미 있는(반영 예정 포함) 그 조항의 새 규칙 행. 없으면 None. rules: 그 상품의 끝나지 않은 규칙."""
+    key = new_rule_key(requirement, catalog)
+    return next((r for r in rules if r["ruleKey"] == key), None)
 
 
 def source_texts(state, product_id):
@@ -162,8 +174,9 @@ def validate_proposal(state, proposal, baseline=None):
         errors.append("구조화된 값 변경은 변경 대상 규칙과 정확히 일치해야 합니다")
     if len(added) > 1:
         errors.append("새 규칙은 요건 하나에 하나만 만듭니다")
+    catalog = state.get("rule_catalog") or state["product_rules"]
     for change in added:
-        errors.extend(new_rule_errors(req, change, rules.values()))
+        errors.extend(new_rule_errors(req, change, [r for r in catalog if r["productId"] == proposal.product_id], catalog))
     for change in existing:
         row = rules.get(change.rule_id)
         if not row:

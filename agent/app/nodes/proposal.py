@@ -39,7 +39,7 @@ def make_proposal_agent(reasoner):
                          "proposed_value": expected_value(req, r["unit"]), "unit": r["unit"]}
                         for r in rules if r["ruleId"] in impact.target_rule_ids]
             if impact.impact == "change_required" and not impact.target_rule_ids and req.change == "added":
-                contract = [new_rule_change(req)]  # 새로 생긴 의무: 바꿀 기존 규칙이 없으니 새 규칙을 더한다
+                contract = [new_rule_change(req, state.get("rule_catalog", []))]  # 새로 생긴 의무: 새 규칙을 더한다
             context = {"requirement": req.model_dump(mode="json"), "regulation_context": state["regulation_context"],
                        "product": products[impact.product_id], "rules": rules,
                        "documents": [d for d in state.get("product_documents", []) if d["productId"] == impact.product_id],

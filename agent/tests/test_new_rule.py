@@ -4,6 +4,7 @@
 """
 
 from app.backend import proposal_rows
+from app.data import active_rules
 from app.graph import build_graph
 from app.runner import AgentRunner
 from app.schemas import ProductAssessment, Requirement, RuleChange
@@ -91,3 +92,28 @@ def test_existing_rules_picked_for_an_added_obligation_become_a_new_rule():
     assert impact.impact == "change_required" and impact.target_rule_ids == []
     p010 = next(p for p in out["proposals"] if p.product_id == "P010")
     assert [c.rule_key for c in p010.changes] == [KEY] and p010.verification == "passed"
+
+
+# ---------- 새 규칙 이름 재사용 ----------
+
+APPLIED = {"ruleId": "R900", "productId": "P001", "ruleKey": "SENIOR_DISCLOSURE", "value": "true", "unit": "bool",
+           "effectiveFrom": "2026-12-01", "effectiveTo": None, "basisArticles": ["credit-loan-ops/15-2"]}
+
+
+def test_new_rule_reuses_the_name_of_a_rule_following_the_same_article():
+    assert new_rule_key(requirement(), [APPLIED]) == "SENIOR_DISCLOSURE"   # 모델 정책 키보다 기존 이름이 먼저
+    other = {**APPLIED, "basisArticles": ["consumer-explanation/6"]}
+    assert new_rule_key(requirement(), [other]) == KEY                      # 다른 조항을 따르는 규칙은 재사용하지 않는다
+
+
+def test_reanalysis_after_apply_reuses_the_name_and_keeps_applied_products():
+    """반영 뒤 같은 개정을 다시 분석: 모델이 다른 이름을 지어도 기존 이름을 쓰고, 이미 반영한 상품(P001)은 유지."""
+    class Applied(LocalTools):
+        def get_product_rules(self, rule_key=None, product_id=None, as_of=None):
+            rows = super().get_product_rules(rule_key, product_id) + [APPLIED]   # 12월 1일부터 시작하는 반영 예정 행
+            return active_rules(rows, as_of) if as_of else rows
+    out = AgentRunner(build_graph(Applied(), ExplanationReasoner())).start("T1", "credit-loan-ops", article_ids=["15-2"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P001"].impact == "no_change" and "이미 SENIOR_DISCLOSURE" in impacts["P001"].reason
+    p002 = next(p for p in out["proposals"] if p.product_id == "P002")
+    assert [c.rule_key for c in p002.changes] == ["SENIOR_DISCLOSURE"] and p002.verification == "passed"

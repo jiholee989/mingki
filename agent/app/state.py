@@ -18,6 +18,7 @@ class RippleState(TypedDict, total=False):
     requirements: list[Requirement]
     products: list[dict]
     product_rules: list[dict]
+    rule_catalog: list[dict]  # 끝나지 않은 규칙 전체 (반영 예정 포함). 새 규칙 이름 재사용 · 중복 방지
     product_impacts: list[ProductImpact]
     proposals: list[ProductProposal]
     revision_baselines: dict[str, ProductProposal]

@@ -61,3 +61,10 @@ def active_rules(rows: list[dict], as_of: str) -> list[dict]:
     return [row for row in rows
             if date.fromisoformat(row["effectiveFrom"]) <= point
             and (not row.get("effectiveTo") or point <= date.fromisoformat(row["effectiveTo"]))]
+
+
+def unended_rules(rows: list[dict], as_of: str) -> list[dict]:
+    """as_of에 끝나지 않은 행: 지금 유효한 행과 반영 예정(시작 전) 행. 이미 반영한 새 규칙을 알아볼 때 쓴다."""
+    from datetime import date
+    point = date.fromisoformat(as_of)
+    return [row for row in rows if not row.get("effectiveTo") or point <= date.fromisoformat(row["effectiveTo"])]
