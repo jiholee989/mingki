@@ -3,6 +3,10 @@ package com.ruleripple.backend.task;
 import com.ruleripple.backend.auth.AuthUser;
 import com.ruleripple.backend.auth.User;
 import com.ruleripple.backend.auth.UserRepository;
+import com.ruleripple.backend.internal.LoanContract;
+import com.ruleripple.backend.internal.LoanContractRepository;
+import com.ruleripple.backend.internal.Product;
+import com.ruleripple.backend.internal.ProductRepository;
 import com.ruleripple.backend.queue.Job;
 import com.ruleripple.backend.queue.JobRepository;
 import com.ruleripple.backend.task.TaskDtos.ApprovalView;
@@ -39,12 +43,15 @@ public class TaskService {
     private final UserRepository users;
     private final RuleProposalRepository proposals;
     private final JobRepository jobs;
+    private final ProductRepository products;
+    private final LoanContractRepository contracts;
 
     public TaskService(AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
                        RequirementRepository requirements, ChangeSpecRepository changeSpecs,
                        CodePatchRepository patches, TestCaseRepository testCases, ApprovalRepository approvals,
                        DeliveryRepository deliveries, TaskEventService events,
-                       UserRepository users, RuleProposalRepository proposals, JobRepository jobs) {
+                       UserRepository users, RuleProposalRepository proposals, JobRepository jobs,
+                       ProductRepository products, LoanContractRepository contracts) {
         this.tasks = tasks;
         this.documents = documents;
         this.requirements = requirements;
@@ -57,6 +64,8 @@ public class TaskService {
         this.users = users;
         this.proposals = proposals;
         this.jobs = jobs;
+        this.products = products;
+        this.contracts = contracts;
     }
 
     // ===================== 생성 =====================
@@ -145,10 +154,23 @@ public class TaskService {
         return proposals.findByTaskIdOrderByProposalKeyAscRoundAsc(taskId);
     }
 
+    /** 상품 ID → 이름. 화면이 제안 · 계약에 이름을 같이 보이게 한다. */
+    @Transactional(readOnly = true)
+    public Map<String, String> productNames() {
+        Map<String, String> names = new HashMap<>();
+        for (Product p : products.findAll()) names.put(p.getProductId(), p.getName());
+        return names;
+    }
+
+    /** Agent 가 저장한 계약 영향에 loan_contracts 의 상품 · 신청일 · DSR · 만기 · 연장 횟수를 붙인다. */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> contractImpacts(UUID taskId) {
         List<Map<String, Object>> items = get(taskId).getContractImpacts();
-        return items == null ? List.of() : items;
+        if (items == null || items.isEmpty()) return List.of();
+        List<String> ids = items.stream().map(i -> i.get("contractId")).filter(Objects::nonNull).map(Object::toString).toList();
+        Map<String, LoanContract> byId = new HashMap<>();
+        for (LoanContract c : contracts.findAllById(ids)) byId.put(c.getContractId(), c);
+        return ContractImpacts.enrich(items, byId, productNames());
     }
 
     /** 제안 키마다 가장 최근 반영 작업의 결과 (v2 10.4). */
