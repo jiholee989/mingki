@@ -76,6 +76,7 @@ def test_only_review_after_proposals_without_code_or_write_tools():
     assert len(out["proposals"]) == 2 and len(reasoner.contexts) == 2
     assert {p.id for p in out["proposals"]} == {"REQ-8:P001", "REQ-8:P002"}
     assert all(p.article_ref == "reg://credit-loan-ops/v4/8" for p in out["proposals"])
+    assert out["requirements"][0].title == "DSR 한도"   # 화면 표시용 조항 제목은 원문 비교 결과에서
     assert "R001 DSR_LIMIT=0.40" in out["proposals"][0].current
     assert tools.called("get_products") and tools.called("get_product_rules")
     for tool in ("get_file", "search_code", "check_patch", "create_draft_pr", "create_work_ticket"):

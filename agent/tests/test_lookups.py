@@ -81,6 +81,7 @@ def test_choice_and_reason_are_recorded_before_the_tool_call():
     events = [(name, body) for kind, name, body in spring.calls if kind == "event"]
     plan = next(i for i, (name, _) in enumerate(events) if name == "TOOL_PLAN")
     assert events[plan][1]["lookups"][0] == {"tool": "get_article", "regulationId": "dsr-management", "articleId": "10",
-                                             "query": None, "reason": "소액대출 DSR 적용 예외 확인"}
+                                             "query": None, "reason": "소액대출 DSR 적용 예외 확인",
+                                             "regulationTitle": "가계대출 DSR 관리기준", "articleTitle": "적용 예외"}   # 화면 표시용 이름
     call = next(i for i, (name, body) in enumerate(events) if name == "TOOL_START" and body.get("tool") == "get_article")
     assert plan < call and events[call][1]["node"] == "product_impact_agent"

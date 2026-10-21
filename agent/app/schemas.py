@@ -10,6 +10,7 @@ class Requirement(BaseModel):
     article_id: str
     article: str
     article_ref: str
+    title: str | None = Field(default=None, description="조항 제목 (예: DSR 한도). 원문 비교 결과에서 가져온다")
     change: Literal["modified", "added", "removed"]
     summary: str
     target: str

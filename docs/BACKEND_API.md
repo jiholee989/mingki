@@ -97,7 +97,7 @@ GET  /api/auth/me
 | `TOOL_START` / `TOOL_END` (큐) | `{tool, attempt?, ok?, retrying?, dead?, error?}` | 큐 재시도 표시 |
 | `TOOL_START` (Agent) | `{node, tool, args}` — 단계 코드가 도구를 부르기 직전. ID 목록은 개수로 줄인다 | AI 작업 기록 |
 | `TOOL_END` (Agent) | `{node, tool, ok, ms, summary?, error?}` — `summary`는 결과 건수 요약("12건") | AI 작업 기록 |
-| `TOOL_PLAN` | `{node, requirementId, lookups:[{tool, regulationId, articleId, query, reason}]}` — 영향 판단 전에 모델이 고른 조회와 이유 (요건마다). 실행은 이어지는 `TOOL_START` · `TOOL_END` | AI 도구 선택 기록 |
+| `TOOL_PLAN` | `{node, requirementId, lookups:[{tool, regulationId, articleId, query, reason, regulationTitle, articleTitle}]}` — 영향 판단 전에 모델이 고른 조회와 이유 (요건마다). `regulationTitle` · `articleTitle`은 화면 표시용 이름 (모르면 null). 실행은 이어지는 `TOOL_START` · `TOOL_END` | AI 도구 선택 기록 |
 | `DECISION` | `{node, requirementId, productId, model:{impact, targetRuleIds, reason}\|null, final:{impact, targetRuleIds}, checks:[…]}` — 상품 영향 판단 직후 상품마다. `model`은 모델 판단, `final`은 코드 검사 뒤 판단, `checks`는 검사가 바꾼 이유 | AI 판단 기록 |
 | `TOKEN` | `{text}` | (선택) 스트리밍 |
 | `STATUS` | `{status}` | |

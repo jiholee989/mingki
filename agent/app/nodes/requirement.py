@@ -35,6 +35,7 @@ def make_requirement_agent(tools, reasoner):
             data = item.model_dump()
             data.update(
                 article_ref=source.get("new_uri") or source.get("old_uri"),
+                title=source.get("title"),
                 old_text=source["old_text"],
                 new_text=source["new_text"],
                 change=source["change"],

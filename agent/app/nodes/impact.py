@@ -47,7 +47,7 @@ def make_product_impact_agent(tools, reasoner):
             for req in state["requirements"]:
                 lookups = reasoner.choose_lookups(req, products, rules, context, related)[:MAX_LOOKUPS]
                 if lookups and hasattr(recorder, "planned"):
-                    recorder.planned("product_impact_agent", req.id, lookups)
+                    recorder.planned("product_impact_agent", req.id, lookups, related)
                 found, missing = run_lookups(belt, lookups, related, {a["uri"] for a in context})
                 context, data_gaps = context + found, data_gaps + missing
         articles = {a["uri"] for a in context}
