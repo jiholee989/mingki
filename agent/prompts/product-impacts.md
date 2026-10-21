@@ -23,3 +23,4 @@
 8. data_gaps의 자료는 조회되지 않았다. 자료 없는 현재 절차를 단정하지 않는다.
 9. 조건부 예외는 바뀔 규칙이 있는 상품을 no_change로 면제하는 근거가 되지 않는다. 단순한 주의 문구에 숨기지 말고 applicability/conditions/scope에 표현한다.
 10. rules의 basisArticles는 그 규칙이 따르는 규정 조항이다. 변경 조항을 따르지 않는 규칙은 같은 숫자 · 같은 단어여도 target_rule_ids에 넣지 않는다. 비어 있으면 원문과 문서로 판단한다.
+11. 새로 생긴 조항(change=added)의 의무를 상품에 적용해야 하면 change_required로 내고 target_rule_ids는 비운다. 새 규칙은 코드가 만든다. 상품 문서에 같은 의무가 이미 운영 중이면 no_change, 적용 대상인지 확정할 수 없으면 needs_review.

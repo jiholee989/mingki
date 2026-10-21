@@ -71,7 +71,7 @@ def show_review(value):
         if p["status"] == "approved":
             continue
         targets = ",".join(c["rule_key"] for c in p.get("changes", [])) or "절차·자료 확인"
-        values = ", ".join(f"{c['current_value']}→{c['proposed_value']} {c['unit']}" for c in p.get("changes", [])) or "상세 확인"
+        values = ", ".join(f"{c['current_value'] or '새 규칙'}→{c['proposed_value']} {c['unit']}" for c in p.get("changes", [])) or "상세 확인"
         status = "검증 실패" if p.get("generation_error") else "제외" if p["status"] == "rejected" else "확인 필요" if p["impact"] == "needs_review" else "대기"
         print(f"{number} | {p['product_id']} {brief(p['product_name'], 14)} | {brief(targets, 22)} | {brief(values, 27)} | {brief(p.get('scope', ''), 24)} | {status} v{p['version']}")
     if all(p["status"] in ("approved", "rejected") for p in proposals):
@@ -86,7 +86,7 @@ def show_details(proposal):
     print("판단: " + p["reason"])
     print(f"현재: {p['current']}\n제안: {p['recommendation']}\n범위: {p['scope']}")
     for c in p.get("changes", []):
-        print(f"  {c['rule_id']} {c['rule_key']}: {c['current_value']} → {c['proposed_value']} ({c['unit']})")
+        print(f"  {c['rule_id'] or '새 규칙'} {c['rule_key']}: {c['current_value'] or '없음'} → {c['proposed_value']} ({c['unit']})")
     for condition in p.get("conditions", []):
         print(f"조건: {condition['text']} ({condition['source_ref']})")
     for field, label in (("actions", "필수 조치"), ("optional_actions", "추가 제안(선택)"), ("precautions", "주의")):

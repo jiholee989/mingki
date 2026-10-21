@@ -54,9 +54,10 @@ class ProductImpact(ProductAssessment):
 
 
 class RuleChange(BaseModel):
-    rule_id: str
+    """규칙 값 변경. 새 규칙(새로 생긴 조항의 의무)은 rule_id · current_value가 없다."""
+    rule_id: str | None = None
     rule_key: str
-    current_value: str
+    current_value: str | None = None
     proposed_value: str
     unit: str
 

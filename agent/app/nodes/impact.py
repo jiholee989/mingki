@@ -70,8 +70,9 @@ def make_product_impact_agent(tools, reasoner):
                             target_ids = [rid for rid in target_ids if rid not in problems]
                             evidence_ids = list(dict.fromkeys(evidence_ids + list(problems)))
                             reason += " / " + "; ".join(note for _, note in problems.values())
-                            if not target_ids:
+                            if not target_ids and req.change != "added":
                                 impact = "no_change" if all(v == "no_change" for v, _ in problems.values()) else "needs_review"
+                            # 새로 생긴 조항은 기존 규칙이 따를 수 없다. 엉뚱한 기존 규칙을 빼면 변경 필요는 새 규칙으로 간다
                     if impact == "no_change" and not evidence_ids and not refs and not basis:
                         impact = "needs_review"
                         reason += " / 유지·적용 제외를 뒷받침할 규칙·문서 근거 없음: 추가 확인"

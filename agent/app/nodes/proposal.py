@@ -1,7 +1,7 @@
 """신규 제안 또는 선택한 항목만 작성한다. 검증 실패 재시도는 같은 버전에서 수행한다."""
 
 from app.schemas import Event, ProductProposal, RuleChange
-from app.validation import expected_value, normalize
+from app.validation import expected_value, new_rule_change, normalize
 
 CONTENT_FIELDS = ("recommendation", "actions", "optional_actions", "precautions", "changes")
 
@@ -38,6 +38,8 @@ def make_proposal_agent(reasoner):
             contract = [{"rule_id": r["ruleId"], "rule_key": r["ruleKey"], "current_value": r["value"],
                          "proposed_value": expected_value(req, r["unit"]), "unit": r["unit"]}
                         for r in rules if r["ruleId"] in impact.target_rule_ids]
+            if impact.impact == "change_required" and not impact.target_rule_ids and req.change == "added":
+                contract = [new_rule_change(req)]  # 새로 생긴 의무: 바꿀 기존 규칙이 없으니 새 규칙을 더한다
             context = {"requirement": req.model_dump(mode="json"), "regulation_context": state["regulation_context"],
                        "product": products[impact.product_id], "rules": rules,
                        "documents": [d for d in state.get("product_documents", []) if d["productId"] == impact.product_id],

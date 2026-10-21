@@ -80,6 +80,32 @@ def changeable_rules(requirement, rules, product):
     return [rule for rule in rules if change_problem(requirement, rule, product) is None]
 
 
+def new_rule_key(requirement):
+    """새 규칙 이름: 요건의 정책 키(target)를 규칙 키 형식(대문자 · 밑줄, 50자 이내)으로."""
+    key = re.sub(r"[^A-Z0-9]+", "_", (requirement.target or "").upper()).strip("_")[:50].strip("_")
+    return key or "REQ_" + re.sub(r"[^A-Z0-9]+", "_", requirement.article_id.upper())
+
+
+def new_rule_change(requirement):
+    """새로 생긴 조항의 의무를 상품에 더하는 새 규칙. 모양은 코드가 정한다: 이름은 정책 키, 값 true, 단위 bool."""
+    return {"rule_id": None, "rule_key": new_rule_key(requirement), "current_value": None,
+            "proposed_value": "true", "unit": "bool"}
+
+
+def new_rule_errors(requirement, change, rules):
+    """새 규칙 변경 검사. rules: 그 상품의 유효 규칙."""
+    errors = []
+    if requirement.change != "added":
+        errors.append("새 규칙은 새로 생긴 조항의 의무에만 만듭니다")
+    expected = new_rule_change(requirement)
+    if (change.rule_key, change.proposed_value, change.unit) != (expected["rule_key"], expected["proposed_value"], expected["unit"]):
+        errors.append(f"새 규칙은 {expected['rule_key']} = true (bool)이어야 합니다")
+    same = [r["ruleId"] for r in rules if r["ruleKey"] == change.rule_key]
+    if same:
+        errors.append(f"{change.rule_key}: 이미 유효한 규칙 {', '.join(same)}가 있어 새 규칙이 아닙니다")
+    return errors
+
+
 def source_texts(state, product_id):
     refs = {a["uri"]: a["text"] for a in state["regulation_context"]}
     refs.update({d["uri"]: d["content"] for d in state.get("product_documents", []) if d["productId"] == product_id})
@@ -127,12 +153,18 @@ def validate_proposal(state, proposal, baseline=None):
             errors.append(f"{name}: {limit}개 이하, 항목당 {width}자 이내로 작성하세요")
     if not proposal.actions:
         errors.append("필수 수행 항목이 없습니다")
-    ids = [change.rule_id for change in proposal.changes]
+    existing = [change for change in proposal.changes if change.rule_id is not None]
+    added = [change for change in proposal.changes if change.rule_id is None]  # 새 규칙
+    ids = [change.rule_id for change in existing]
     if len(ids) != len(set(ids)):
         errors.append("같은 규칙의 변경이 중복되었습니다")
     if set(ids) != set(proposal.target_rule_ids):
         errors.append("구조화된 값 변경은 변경 대상 규칙과 정확히 일치해야 합니다")
-    for change in proposal.changes:
+    if len(added) > 1:
+        errors.append("새 규칙은 요건 하나에 하나만 만듭니다")
+    for change in added:
+        errors.extend(new_rule_errors(req, change, rules.values()))
+    for change in existing:
         row = rules.get(change.rule_id)
         if not row:
             errors.append(f"{change.rule_id}: 이 상품의 유효 규칙이 아닙니다")

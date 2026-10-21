@@ -143,7 +143,7 @@ def report_payload(result):
         mark = {"approved": "반영", "rejected": "제외"}.get(p.status, p.status)
         lines += ["", f"## {p.product_name} ({p.product_id}) — {mark}", "",
                   f"- 근거: {p.article_ref}", f"- 현재: {p.current}", f"- 제안: {p.recommendation}"]
-        lines += [f"- {c.rule_id} {c.rule_key}: {c.current_value} → {c.proposed_value} ({c.unit})" for c in p.changes]
+        lines += [f"- {c.rule_id or '새 규칙'} {c.rule_key}: {c.current_value or '없음'} → {c.proposed_value} ({c.unit})" for c in p.changes]
         lines += [f"- 조치: {a}" for a in p.actions]
     if result.unchanged:
         lines += ["", "## 유지", ""]
