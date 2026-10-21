@@ -50,7 +50,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| LLM이 그럴듯하지만 틀린 제안을 냄 | 정답지와 자동 비교. 판정 12/12, 변경 대상 recall, 값 · 단위, 날짜 · 경과조치, 함정 오판 0건을 핵심 지표로 두고 하나라도 미달이면 실패 | `eval/score_proposals.py`, `eval/expected_proposals*.yaml` (DSR · 고령자 · 설명 확인 3개 시나리오) | 실제 LLM 실행에서 12개 상품 중 11개 일치 (#35, 다른 1건은 4절 P006). 채점기 테스트 18개 |
+| LLM이 그럴듯하지만 틀린 제안을 냄 | 정답지와 자동 비교. 판정 12/12, 변경 대상 recall, 값 · 단위, 날짜 · 경과조치, 함정 오판 0건을 핵심 지표로 두고 하나라도 미달이면 실패 | `eval/score_proposals.py`, `eval/expected_proposals*.yaml` (DSR · 고령자 · 설명 확인 3개 시나리오) | 실제 LLM 실행에서 12개 상품 중 11개 일치 (#35, P006만 달랐고 정답 `keep`으로 결정), #49 측정 3회 모두 12/12. 채점기 테스트 25개 |
 | 같은 숫자 · 다른 의미(LTV 0.40, 정년 65), 단위가 다른 규칙(percent 35), 종료된 옛 행 | 함정을 데이터에 심고 정답지 `must_not`으로 채점. 유효 여부는 `effectiveTo == null`이 아니라 날짜(`asOf`)로 판단 | `data/business/product_rules.json`, `ProductRule.isValidOn`, business-mcp `as_of` | `BusinessQueriesTest.validityFollowsDatesNotMissingEndDate`, #23 리뷰에서 발견해 양쪽 수정 |
 | 제안이 근거 없이 나옴 | Agent 근거 검사: 인용 조항이 실제 diff에 있는지, 지금 값이 조회 결과와 같은지, 단위 변환(35% → ratio 0.35 / percent 35) | `agent/app/validation.py` | Agent 테스트 122개. 정답지는 검사에 쓰지 않는다 (SIMPLIFICATION 4절) |
 | 판단을 못 하는 경우를 "맞음"으로 포장 | 세 번째 판정 `needs_check`. 자료가 없으면 지어내지 않고 추가 확인으로 낸다 | `Proposals.IMPACTS`, `product_impact_agent` | 정답지에 `needs_check` 정답 포함 (DSR P010, 설명 확인 P009) |
@@ -113,7 +113,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | LLM이 확인받은 값과 다른 값을 반영 | **Agent는 값을 보내지 않는다.** 서버가 저장된 제안 행에서 지금 값 · 제안 값 · 단위 · 시행일을 꺼낸다 | `RuleVersionService` | 계약 10.4 |
 | 일반 큐 API로 검사를 우회 | 큐에 작업을 넣는 일반 API를 두지 않는다. 반영은 `/internal/product-rules/versions`로만 받고 `/internal/jobs`는 조회만 한다 | `JobController`, `InternalBusinessController` | #29, `POST /internal/jobs` → 405 |
 | 쓰기 도구가 분석 노드에 노출 | 노드마다 도구 부분집합만 줌. `apply_rule_version`은 `apply` 노드에만 | `agent/app/graph.py` `NODE_TOOLS`, `ToolBelt` | Agent 테스트 |
-| 정답 힌트가 Agent 입력에 섞임 | 정답 · 근거 조항 컬럼(`source`, `note`)을 DB에서 제거. `eval/`은 어느 컨테이너에도 마운트 안 함. 규정 `applies_to`는 큰 범위만 | #4 · #6 · #40, `docker-compose.yml` | 로더가 JSON의 `source` · `note`만 무시하고 다른 모르는 필드는 기동 오류 |
+| 정답 힌트가 Agent 입력에 섞임 | 정답 · 판단 메모(`source`, `note`)는 DB에 넣지 않음. 규칙이 따르는 조항(`basis_articles`)은 실제 규칙표에도 있는 사실 정보라 넣었고(#49), "이번 개정으로 바뀌는가"는 담지 않음. `eval/`은 어느 컨테이너에도 마운트 안 함. 규정 `applies_to`는 큰 범위만 | #4 · #6 · #40 · #49, `docker-compose.yml`, `data/business/README.md` | 로더가 JSON의 `source` · `note`만 무시하고 다른 모르는 필드는 기동 오류. 근거 조항이 실제 규정에 있는지 테스트 (`test_rule_basis_articles_exist_in_regulations`) |
 | MCP가 받은 ID로 다른 경로에 닿음 | `task_id` · `job_id`는 UUID 형식만, `product_id`는 영숫자만 | business-mcp `_uuid`, regulation-mcp 범위 검사 | MCP 테스트 (#31, #23) |
 | 업로드 파일로 서버를 망가뜨림 | `.md` · `.txt`만, 1MB 이하, UTF-8 | `TaskService.readText` | |
 
@@ -173,7 +173,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | `llm` 모드(MCP 없음)에서 승인하면 반영을 못 해 FAILED로 끝난다 | 개발 흐름에서 불편 | `live` 모드에서는 정상. A 판단 대기 |
 | `/internal/**`을 네트워크로 격리하지 않는다 | backend 포트가 열려 있어 내부 토큰이 유일한 경계다 | 운영이라면 `/internal`을 별도 포트나 네트워크로 나눈다 |
 | M3(고령자 · 설명 확인) 판단 품질 | 정답지 · 채점기는 있으나 Agent가 아직 통과 못 함 | SIMPLIFICATION 9절 Agent 과제 4개 |
-| P006(소액대출) 판정이 정답지(`keep`)와 Agent(`needs_check`)가 다름 | DSR 판정 12개 중 1개 불일치 | 소액 기준(DSR 관리기준 제2조 4호)이 상품이 아니라 차주의 잔액 합계 기준이라 Agent 판단에 근거가 있다. 정답지 조율 중 (A · E, SIMPLIFICATION 11절) |
+| 규칙 근거 조항이 거의 다 채워져 있음 | 82개 중 81개에 정확한 조항이 있어 "같은 숫자 · 다른 뜻" 함정(R007 · R008 · R026)을 조항 번호만으로 가를 수 있다. #49의 DSR 12/12에 이 효과가 섞여 있을 수 있다 (따로 재지 않음) | 함정 규칙 일부의 근거 칸을 비우고, 근거 있음 · 없음 점수를 나눠 적기 (#49 리뷰). P006은 `keep`으로 결정했고 #49 측정에서 Agent도 `keep` |
 | 개정 조항과 무관한 규칙을 바꾸는 함정 오판 | 조항 3개를 한 번에 돌린 실행에서 P010 `ESTIMATED_INCOME_RATIO` 0.85를 0.35로 제안 | #35. 채점기 `must_not`으로 잡히는 유형. 근거 검사에서 "개정 조항의 대상 규칙인가" 확인 검토 (A) |
 | 채점기 테스트가 CI에 없음 | 정답지를 고쳐도 자동 검사가 안 돎 | `pytest eval` 한 줄 추가 요청 (#42 리뷰) |
 
@@ -184,6 +184,6 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 백엔드 | 53개 (`./gradlew test`) | #25 · #28 · #29 · #35 · #39 PR 본문 |
 | Agent | 122개 (`uv run pytest`) | #27 · #30 · #34 · #35 |
 | MCP | regulation 78 · business 55 | #20 · #23 · #31 |
-| 채점기 · 정답지 | 18개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
+| 채점기 · 정답지 | 25개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44 · #49. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
 | 검색 | 질의 38개 (`eval/run_retrieval.py`) | #20. 규정 recall@3 키워드 82% · 의미 79% · 혼합 89% ([VECTOR_INDEX.md](./VECTOR_INDEX.md)) |
 | CI | PR마다 위 전부 (`.github/workflows/ci.yml`) | #38 |
