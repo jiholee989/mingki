@@ -20,7 +20,8 @@ docker compose up --build
 docker compose up -d postgres rabbitmq
 cd backend && ./gradlew bootRun
 
-# 테스트 (DB 불필요)
+# 테스트. 단위 테스트는 DB 없이 돌고, 통합 테스트(FlowIntegrationTest)는 Docker 로 Postgres · RabbitMQ 를 띄운다.
+# Docker 가 없으면 통합 테스트만 건너뛴다
 cd backend && ./gradlew test
 ```
 
