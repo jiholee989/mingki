@@ -83,11 +83,12 @@ def score(proposals: list[dict], expected: dict) -> dict:
             issues.append(f"판정: 정답 {e['impact']}, 결과 {got}")
 
         if e["impact"] == "change_required":
+            # 기존 규칙은 rule_id로, 새 규칙(rule_id 없음)은 rule_id가 비어 있는 변경 제안으로 찾는다 (rule_key 이름은 보지 않음)
             target = next((r for r in rows if r.get("ruleId") == e["rule_id"] and r.get("impact") == "change_required"), None)
             metrics["변경 대상 recall"][1] += 1
             metrics["변경 대상 recall"][0] += target is not None
             if target is None:
-                issues.append(f"{e['rule_id']} 변경 제안 없음")
+                issues.append(f"{e['rule_id'] or '새 규칙'} 변경 제안 없음")
             else:
                 want = e["proposed"]
                 ok_value = _same_value(target.get("proposedValue"), want["value"]) and target.get("unit") == want["unit"]
@@ -116,15 +117,17 @@ def score(proposals: list[dict], expected: dict) -> dict:
     unknown = sorted({p.get("productId") for p in proposals} - {e["product_id"] for e in expected["products"]})
 
     bonus = []
-    for b in expected["bonus"]["follow_up"]:
+    for b in expected.get("bonus", {}).get("follow_up", []):
         items = [f for r in by_product.get(b["product_id"], []) for f in (r.get("followUp") or [])]
-        hit = any(any(h in f for h in _FOLLOW_UP_HINTS) for f in items)
+        hints = b.get("keywords") or _FOLLOW_UP_HINTS
+        hit = any(any(h in f for h in hints) for f in items)
         bonus.append({"product_id": b["product_id"], "item": b["item"], "hit": hit})
 
     core = {name: {"ok": ok, "total": total} for name, (ok, total) in metrics.items()}
     core["함정 오판"] = {"ok": len(traps), "total": 0}
     passed = all(v["ok"] == v["total"] for k, v in core.items() if k != "함정 오판") and not traps and not unknown
-    return {"scenario": expected["scenario"], "passed": passed, "core": core, "products": products,
+    extra = [b["item"] for b in expected.get("bonus", {}).get("extra", [])]
+    return {"scenario": expected["scenario"], "passed": passed, "not_scored": extra, "core": core, "products": products,
             "traps": traps, "unknown_products": unknown, "bonus_follow_up": bonus}
 
 
@@ -150,7 +153,9 @@ def print_report(result: dict) -> None:
     print(f"\n[가산: 후속 작업] {hits}/{len(result['bonus_follow_up'])}  (문구 · 화면 · 설명서 언급 여부만 봄. 내용은 사람이 확인)")
     for b in result["bonus_follow_up"]:
         print(f"  {'✓' if b['hit'] else '·'} {b['product_id']}  {b['item']}")
-    print("\n채점하지 않음: 계약 영향(별도 응답), 추가 가산(P007 갱신 · P008 무증액 예외)은 사람이 확인")
+    print("\n채점하지 않음 (사람이 확인): 계약 영향(별도 응답)")
+    for item in result["not_scored"]:
+        print(f"  · {item}")
 
 
 def main() -> int:

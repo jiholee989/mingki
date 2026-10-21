@@ -100,3 +100,87 @@ def test_unknown_product_fails():
 def test_rejects_unknown_shape():
     with pytest.raises(ValueError):
         load_proposals({"data": []})
+
+
+# ---------- 2단계 시나리오 · 정답지와 데이터 일치 ----------
+
+SCENARIOS = {p.name: p for p in sorted(Path(__file__).parent.glob("expected_proposals*.yaml"))}
+
+
+def load_expected(name):
+    return yaml.safe_load(SCENARIOS[name].read_text(encoding="utf-8"))
+
+
+def perfect_from(expected):
+    """정답지에서 만점 답안을 만든다 (근거는 basis_any 첫 항목)."""
+    rows = []
+    for e in expected["products"]:
+        rid, aid = e["basis_any"][0].split("/", 1)
+        row = {"productId": e["product_id"], "ruleId": e["rule_id"], "impact": e["impact"],
+               "basis": f"reg://{rid}/v9/{aid}", "reason": e.get("reason", "기준 충족"), "followUp": []}
+        if e["impact"] == "change_required":
+            row.update(proposedValue=e["proposed"]["value"], unit=e["proposed"]["unit"],
+                       effectiveDate=expected["effective_date"], transition=expected["transition"])
+        rows.append(row)
+    return rows
+
+
+@pytest.mark.parametrize("name", ["expected_proposals.senior-age.yaml", "expected_proposals.senior-explanation.yaml"])
+def test_stage2_perfect_answer_passes(name):
+    assert score(perfect_from(load_expected(name)), load_expected(name))["passed"]
+
+
+def test_senior_age_traps():
+    exp = load_expected("expected_proposals.senior-age.yaml")
+    rows = perfect_from(exp) + [
+        {"productId": "P001", "ruleId": "R008", "impact": "change_required", "proposedValue": "60", "unit": "age"},
+        {"productId": "P002", "ruleId": "R029", "impact": "change_required", "proposedValue": "60", "unit": "age"},
+    ]
+    r = score(rows, exp)
+    assert sorted(t["rule_id"] for t in r["traps"]) == ["R008", "R029"] and not r["passed"]
+
+
+def test_new_rule_is_scored_without_rule_id_or_key_name():
+    exp = load_expected("expected_proposals.senior-explanation.yaml")
+    rows = perfect_from(exp)
+    by_pid(rows, "P001")["ruleKey"] = "ELDERLY_EXPLAIN_CHECK"  # 이름은 달라도 정답
+    assert score(rows, exp)["passed"]
+    by_pid(rows, "P003").update(proposedValue="false")  # 값이 틀리면 오답
+    rows = [r for r in rows if r["productId"] != "P004"]  # 빠진 상품
+    r = score(rows, exp)
+    assert r["core"]["값 · 단위 정확도"]["ok"] == r["core"]["값 · 단위 정확도"]["total"] - 1
+    assert r["core"]["변경 대상 recall"]["ok"] == r["core"]["변경 대상 recall"]["total"] - 1
+
+
+def test_explanation_record_trap():
+    exp = load_expected("expected_proposals.senior-explanation.yaml")
+    rows = perfect_from(exp) + [{"productId": "P001", "ruleId": "R025", "impact": "change_required", "proposedValue": "5", "unit": "years"}]
+    assert [t["rule_id"] for t in score(rows, exp)["traps"]] == ["R025"]
+
+
+@pytest.mark.parametrize("name", list(SCENARIOS))
+def test_expected_matches_data(name):
+    exp = load_expected(name)
+    data = ROOT / "data" / "business"
+    rules = {r["rule_id"]: r for r in json.loads((data / "product_rules.json").read_text(encoding="utf-8"))}
+    products = {p["product_id"] for p in json.loads((data / "products.json").read_text(encoding="utf-8"))}
+    contracts = {c["contract_id"] for c in json.loads((data / "loan_contracts.json").read_text(encoding="utf-8"))}
+    regs = ROOT / "data" / "regulations"
+
+    assert {e["product_id"] for e in exp["products"]} == products, "모든 상품에 판정이 있어야 함"
+    for e in exp["products"]:
+        if e["rule_id"]:
+            r = rules[e["rule_id"]]
+            assert r["product_id"] == e["product_id"] and r["effective_to"] is None, e
+            if "current" in e:
+                assert (r["value"], r["unit"]) == (e["current"]["value"], e["current"]["unit"]), e
+        for b in e["basis_any"]:
+            rid, aid = b.split("/", 1)
+            heads = "".join(p.read_text(encoding="utf-8") for p in (regs / rid).glob("v*.md"))
+            num, _, sub = aid.removeprefix("supp-").partition("-")
+            label = ("부칙 " if aid.startswith("supp-") else "") + f"제{num}조" + (f"의{sub}" if sub else "")
+            assert f"### {label}(" in heads, f"{name}: 근거 조항 없음 {b}"
+    for m in exp["must_not"]:
+        assert m["rule_id"] in rules, m
+    for group in exp.get("bonus", {}).get("contracts", {}).values():
+        assert set(group) <= contracts

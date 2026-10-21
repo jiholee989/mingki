@@ -1,0 +1,46 @@
+# 상품별 제안 정답 — 고령자 설명 확인 의무 신설 시나리오 (Agent에 노출 금지). 사람이 읽는 설명은 answer_key.md 5절.
+# Agent 실행: AGENT_ARTICLE_IDS=15-2   채점: python eval/score_proposals.py 결과.json --expected eval/expected_proposals.senior-explanation.yaml
+# 채점 규칙은 expected_proposals.yaml 머리말과 같다. 새 규칙(rule_id: null)은 rule_key 이름을 보지 않고 값 · 단위로 채점한다.
+
+scenario: senior-explanation
+requirement: { article: credit-loan-ops/15-2, new_rule: { suggested_rule_key: SENIOR_EXPLANATION_REQUIRED, value: "true", unit: bool } }
+effective_date: "2026-12-01"
+transition: "시행일 이후 체결하는 계약부터 적용 (부칙 제3조, 체결일 기준)"
+
+products:
+  - { product_id: P001, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P002, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2], reason: "녹취 · 쉬운 설명은 있지만 이해 확인 · 확인 전 체결 금지는 없음" }
+  - { product_id: P003, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P004, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P005, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15-2, credit-loan-ops/15], reason: "만 34세 이하 전용이라 고령자와 계약하지 않음", basis_required: true }
+  - { product_id: P006, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P007, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P008, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P009, impact: needs_check, rule_id: null, basis_any: [credit-loan-ops/3, credit-loan-ops/15-2], reason: "개인사업자 사업자금 대출이 운영기준(개인신용대출) 적용 대상인지 확인 필요", basis_required: true }
+  - { product_id: P010, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P011, impact: change_required, rule_id: null, proposed: { value: "true", unit: bool }, basis_any: [credit-loan-ops/15-2] }
+  - { product_id: P012, impact: keep, rule_id: null, basis_any: [credit-loan-ops/21, credit-loan-ops/supp-3], reason: "판매 중단, 시행일 이후 새로 체결하는 계약이 없음", basis_required: true }
+
+must_not:
+  - { rule_id: R025, trap: true, reason: "설명 기록 10년 (설명의무 기준 제7조)이 제15조의2의 5년보다 길어 이미 충족. 5년으로 줄이면 오답" }
+  - { rule_id: R042, trap: true, reason: "설명 기록 10년, 이미 충족" }
+  - { rule_id: R069, trap: true, reason: "설명 기록 10년, 이미 충족" }
+  - { rule_id: R065, trap: true, reason: "설명 기록 120개월(10년), 이미 충족" }
+  - { rule_id: R026, reason: "녹취 대상 나이, 제15조의2와 무관" }
+  - { rule_id: R029, reason: "녹취 대상 나이, 제15조의2와 무관" }
+  - { rule_id: R010, reason: "가입 나이는 제15조 시나리오" }
+
+bonus:
+  follow_up:
+    - { product_id: P001, item: "설명 · 동의 항목에 고령자 이해 확인과 기록 추가", source: "doc://P001", keywords: [설명, 확인, 기록, 절차] }
+    - { product_id: P002, item: "이해 확인 · 확인 전 체결 금지를 업무 절차에 추가", source: "doc://P002", keywords: [확인, 체결, 절차] }
+    - { product_id: P006, item: "비대면(앱) 화면에 고령자 이해 확인 단계 추가", source: "doc://P006", keywords: [화면, 앱, 비대면, 확인] }
+    - { product_id: P011, item: "번역 설명서에 이해 확인 항목 반영", source: "doc://P011", keywords: [번역, 설명서] }
+  extra:
+    - { item: "설명 기록 보관은 설명의무 기준 10년이 더 길어 기존 규칙으로 충족 (제15조의2 ② 5년)", basis: consumer-explanation/7 }
+    - { item: "확인 전 계약 체결 금지(제15조의2 ③)는 심사 전산 · 업무 절차 변경으로 후속 작업", basis: credit-loan-ops/15-2 }
+  contracts:
+    contracted_after_effective_senior: [C0092]  # 70세, 2026-11 신청 · 시행일 이후 체결 예정 → 설명 확인 대상
+    not_senior_under_old_rule: [C0004, C0029]   # 60 · 61세, 신청일 기준 종전 65세라 고령자 아님 → 설명 확인 대상 아님
+  info:
+    - "C0004 · C0029는 시행일 이후 체결이라 제15조의2 대상처럼 보이지만, 고령자 여부는 부칙 제2조 ①에 따라 종전 기준"
