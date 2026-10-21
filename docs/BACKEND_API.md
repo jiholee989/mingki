@@ -67,7 +67,7 @@ GET  /api/auth/me
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
-| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기에서 FAILED가 된 작업. Agent는 부르지 않고 확인 대기로 되돌림). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 확인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
+| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기에서 FAILED가 된 작업. Agent는 부르지 않고 확인 대기로 되돌림). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 확인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED). 다시 시도가 실패하면 사유 뒤에 `(처음 실패: …)`로 맨 처음 원인을 붙여 `errorMessage`와 응답에 남긴다 |
 | `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
 
 ### 주요 객체

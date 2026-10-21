@@ -34,4 +34,14 @@ class RetryGuardTest {
         assertThat(RetryGuard.problem(TaskStatus.DONE, NOW.minusDays(1), 300, NOW))
                 .hasValueSatisfying(reason -> assertThat(reason).contains("끝난 작업"));
     }
+
+    @Test
+    void failedRetryKeepsTheFirstReason() {
+        assertThat(RetryGuard.failureReason("Agent 가 다시 시작하지 못했습니다", null)).isEqualTo("Agent 가 다시 시작하지 못했습니다");
+        String once = RetryGuard.failureReason("Agent 가 다시 시작하지 못했습니다", "상품 규칙 반영 실패: P008");
+        assertThat(once).isEqualTo("Agent 가 다시 시작하지 못했습니다 (처음 실패: 상품 규칙 반영 실패: P008)");
+        // 또 다시 시도해도 맨 처음 원인 하나만 남는다
+        assertThat(RetryGuard.failureReason("Agent 에 연결할 수 없습니다", once))
+                .isEqualTo("Agent 에 연결할 수 없습니다 (처음 실패: 상품 규칙 반영 실패: P008)");
+    }
 }
