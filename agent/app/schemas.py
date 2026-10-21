@@ -74,10 +74,12 @@ class ProductDraft(ProposalText):
 
 class RevisionText(ProposalText):
     revision_response: str = Field(max_length=300, description="요청별 실제 반영 내용·반영 불가 사유")
+    revision_outcome: Literal["revised", "cannot_apply", "needs_clarification"] = "revised"
 
 
 class ProductRevision(ProductDraft):
     revision_response: str = Field(max_length=300, description="요청별 실제 반영 내용·반영 불가 사유")
+    revision_outcome: Literal["revised", "cannot_apply", "needs_clarification"] = "revised"
 
 
 class RevisionCheck(BaseModel):
@@ -117,6 +119,7 @@ class ProductProposal(BaseModel):
     basis_refs: list[str] = Field(default_factory=list)
     generation_error: str | None = None
     revision_response: str = ""
+    revision_outcome: Literal["none", "revised", "cannot_apply", "needs_clarification", "failed"] = "none"
     changed_fields: list[str] = Field(default_factory=list)
 
 

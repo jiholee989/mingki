@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from pydantic import ValidationError
+from openai import OpenAIError
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.reasoning import BehaviorOutput, ProductAssessmentsOutput, RequirementJudgment
 from app.schemas import Requirement, ProductDraft, ProductRevision, RevisionCheck, ProposalText, RevisionText, RuleChange
@@ -113,6 +114,11 @@ class LlmReasoner:
                         + str(exc.errors(include_input=False))
                     )
                 )
+            except OpenAIError as exc:
+                status = getattr(exc, "status_code", None)
+                detail = f", HTTP {status}" if status else ""
+                # 공급자의 원문 응답·요청 헤더 대신 오류 종류만 노출한다.
+                raise ValueError(f"모델 요청 실패 ({type(exc).__name__}{detail}). 연결·모델 권한·사용 한도를 확인하세요.") from None
         logger.info("model stage=%s elapsed=%.2f", prompt, time.monotonic() - started)
         return output
 
