@@ -45,10 +45,21 @@ class TaskStatusTest {
     @ParameterizedTest
     @EnumSource(value = TaskStatus.class, names = {"WAITING_REQUIREMENT_APPROVAL", "WAITING_REVIEW"})
     void onlyHumansLeaveWaitingStates(TaskStatus waiting) {
+        // FAILED 도 안 된다. 기다리는 Agent 는 실행하지 않으므로, 그때 온 FAILED 는 겹친 요청의 뒷처리다
         for (TaskStatus next : TaskStatus.values()) {
-            boolean allowed = next == waiting || next == FAILED;
-            assertThat(waiting.agentCanMoveTo(next)).as(waiting + " → " + next).isEqualTo(allowed);
+            assertThat(waiting.agentCanMoveTo(next)).as(waiting + " → " + next).isEqualTo(next == waiting);
         }
+    }
+
+    @Test
+    void failedTaskRestoresToWhereItStopped() {
+        assertThat(TaskStatus.restoredAfterFailure("apply", true)).isEqualTo(PUBLISHING);
+        assertThat(TaskStatus.restoredAfterFailure("interrupt_review", true)).isEqualTo(PUBLISHING);   // 승인 직후 죽음
+        assertThat(TaskStatus.restoredAfterFailure("interrupt_review", false)).isEqualTo(WAITING_REVIEW);
+        assertThat(TaskStatus.restoredAfterFailure("interrupt_requirements", false)).isEqualTo(WAITING_REQUIREMENT_APPROVAL);
+        assertThat(TaskStatus.restoredAfterFailure("proposal_agent", false)).isEqualTo(DESIGNING);
+        assertThat(TaskStatus.restoredAfterFailure(null, false)).isEqualTo(EXTRACTING);
+        assertThat(TaskStatus.restoredAfterFailure("report", false)).isEqualTo(EXTRACTING);
     }
 
     @ParameterizedTest

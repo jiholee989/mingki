@@ -82,7 +82,7 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
-| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. 승인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
+| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기에서 FAILED가 된 작업. Agent는 부르지 않고 확인 대기로 되돌림). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 승인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
 | `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, workTickets, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
 
 ### 승인 규칙 (서버가 검사)
@@ -148,7 +148,8 @@ POST {AGENT_BASE_URL}/run
 POST {AGENT_BASE_URL}/resume
 {"taskId","threadId","step":"REQUIREMENTS"|"REVIEW","decision","approvalId","comment","payload","callbackBaseUrl"}
 
-POST {AGENT_BASE_URL}/continue      ← 사용자 "다시 시도" (POST /api/ai/tasks/{id}/retry)가 먼저 보냄. Agent 가 409(이어갈 게 없음)면 저장된 승인으로 /resume, 그것도 없으면 /run 을 다시 보냄
+POST {AGENT_BASE_URL}/continue      ← 사용자 "다시 시도" (POST /api/ai/tasks/{id}/retry)가 먼저 보냄. Agent 가 409(이어갈 게 없음)면 저장된 승인으로 /resume, 그것도 없으면 /run 을 다시 보냄.
+                                      Agent 가 그 thread 를 아직 돌리고 있으면 423 으로 거절해야 한다 (백엔드는 사용자에게 "아직 실행 중" 409). 받은 순간부터 끝날 때까지가 "실행 중"이다 — 원문을 받는 구간도 포함
 {"taskId","threadId","callbackBaseUrl"}
 ```
 
@@ -367,6 +368,11 @@ POST /internal/product-rules/versions
 - 일반 큐 API `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않는다 (400). 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
 
 Agent가 `apply` 도중 죽어 `PUBLISHING`에 멈추면 사용자가 `POST /api/ai/tasks/{id}/retry`로 이어간다. Agent는 같은 멱등키로 다시 요청하므로 큐 작업이 중복 생기지 않는다.
+
+"다시 시도"는 Agent가 **멈춘** 작업을 위한 것이다. 돌고 있는 작업에 겹쳐 보내면 같은 thread를 두 번 돌리게 되고, 뒤늦게 난 오류가 멀쩡한 작업을 FAILED로 만든다. 세 겹으로 막는다.
+- 백엔드: 진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다. FAILED 작업은 바로 받는다.
+- 백엔드: 확인 대기(`WAITING_*`) 중 Agent가 보낸 `FAILED`는 409로 거절한다. 기다리는 Agent는 아무것도 실행하지 않으므로 그 FAILED는 겹친 요청의 뒷처리다.
+- Agent: 요청을 받은 순간부터 끝날 때까지 그 thread를 "실행 중"으로 보고, 그동안 `/continue`는 423으로 거절한다. 백엔드는 423이면 `/resume` · `/run`으로 넘어가지 않고 "아직 실행 중" 409를 돌려준다.
 
 Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/jobs/{jobId}`가 `DONE` · `DEAD`가 될 때까지 기다린다. 모두 `DONE`이면 `DONE {outcome:"DONE"}`, 하나라도 `DEAD`면 `FAILED {reason}`.
 

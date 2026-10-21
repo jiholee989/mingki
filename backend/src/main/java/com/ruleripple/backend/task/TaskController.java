@@ -214,18 +214,29 @@ public class TaskController {
      */
     @PostMapping("/{id}/retry")
     public ResponseEntity<Map<String, Object>> retryTask(@AuthenticationPrincipal AuthUser me, @PathVariable UUID id) {
-        AnalysisTask task = service.prepareRetry(id, me);
+        TaskService.RetryPlan plan = service.prepareRetry(id, me);
+        AnalysisTask task = plan.task();
         String how;
-        try {
-            how = retryAgent(task);
-        } catch (HttpStatusCodeException e) {
-            // Agent 쪽 작업이 이미 끝났거나(반영 실패로 report 까지 감) 기록과 어긋남. 되돌린 상태를 다시 FAILED 로
-            String reason = "Agent 가 다시 시작하지 못했습니다: " + agentMessage(e);
-            service.retryFailed(id, reason);
-            throw new ResponseStatusException(HttpStatus.CONFLICT, reason + " — 리포트의 실패 사유를 확인하세요");
-        } catch (ResourceAccessException e) {
-            service.retryFailed(id, "Agent 에 연결할 수 없습니다: " + e.getMessage());
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Agent 에 연결할 수 없습니다: " + e.getMessage());
+        if (task.getStatus().isWaiting()) {
+            // 확인 대기에서 FAILED 가 됐던 작업. Agent 는 그대로 기다리고 있으니 부르지 않고 사람이 결정하게 둔다
+            how = "waiting";
+        } else {
+            try {
+                how = retryAgent(task);
+            } catch (HttpStatusCodeException e) {
+                if (e.getStatusCode().value() == 423) {
+                    // Agent 가 그 thread 를 아직 돌리고 있다. 겹쳐 보내지 않고 사용자에게 알린다
+                    service.retryStillRunning(id, plan.wasFailed());
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Agent 가 아직 실행 중입니다. 잠시 뒤 다시 시도하세요");
+                }
+                // Agent 쪽 작업이 이미 끝났거나(반영 실패로 report 까지 감) 기록과 어긋남. 되돌린 상태를 다시 FAILED 로
+                String reason = "Agent 가 다시 시작하지 못했습니다: " + agentMessage(e);
+                service.retryFailed(id, reason);
+                throw new ResponseStatusException(HttpStatus.CONFLICT, reason + " — 리포트의 실패 사유를 확인하세요");
+            } catch (ResourceAccessException e) {
+                service.retryFailed(id, "Agent 에 연결할 수 없습니다: " + e.getMessage());
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Agent 에 연결할 수 없습니다: " + e.getMessage());
+            }
         }
         return ResponseEntity.accepted().body(Map.<String, Object>of(
                 "taskId", id, "status", task.getStatus().name(), "accepted", true, "how", how));
