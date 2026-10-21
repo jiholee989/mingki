@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        server: [regulation-mcp, business-mcp, code-mcp]
+        server: [regulation-mcp, business-mcp]
     defaults:
       run:
         working-directory: mcp/${{ matrix.server }}
