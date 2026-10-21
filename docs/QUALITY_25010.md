@@ -11,7 +11,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 백엔드(Spring) · 전체 구조 | C | 작성함 |
 | Agent(LangGraph) | A | 백엔드가 확인한 사실만 적음. 담당이 보완 |
 | MCP 서버 3개 | B | 같음 |
-| 데이터 · 평가 | E | 같음 |
+| 데이터 · 평가 | E | 작성함 (2.1 정답지 · 채점 줄, 2.7 데이터 줄, 2.9 계약 영향 줄, 4 · 5절 숫자) |
 | 프론트 | D | 비어 있음 |
 
 ## 0. 한눈에 보기
@@ -50,10 +50,13 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| LLM이 그럴듯하지만 틀린 제안을 냄 | 정답지와 자동 비교. 판정 12/12, 변경 대상 recall, 값 · 단위, 날짜 · 경과조치, 함정 오판 0건을 핵심 지표로 두고 하나라도 미달이면 실패 | `eval/score_proposals.py`, `eval/expected_proposals*.yaml` (DSR · 고령자 · 설명 확인 3개 시나리오) | 실제 LLM 실행에서 12개 상품 중 11개 일치 (#35). 채점기 테스트 15개 |
+| LLM이 그럴듯하지만 틀린 제안을 냄 | 정답지와 자동 비교. 판정 12/12, 변경 대상 recall, 값 · 단위, 날짜 · 경과조치, 함정 오판 0건을 핵심 지표로 두고 하나라도 미달이면 실패 | `eval/score_proposals.py`, `eval/expected_proposals*.yaml` (DSR · 고령자 · 설명 확인 3개 시나리오) | 실제 LLM 실행에서 12개 상품 중 11개 일치 (#35, 다른 1건은 4절 P006). 채점기 테스트 18개 |
 | 같은 숫자 · 다른 의미(LTV 0.40, 정년 65), 단위가 다른 규칙(percent 35), 종료된 옛 행 | 함정을 데이터에 심고 정답지 `must_not`으로 채점. 유효 여부는 `effectiveTo == null`이 아니라 날짜(`asOf`)로 판단 | `data/business/product_rules.json`, `ProductRule.isValidOn`, business-mcp `as_of` | `BusinessQueriesTest.validityFollowsDatesNotMissingEndDate`, #23 리뷰에서 발견해 양쪽 수정 |
 | 제안이 근거 없이 나옴 | Agent 근거 검사: 인용 조항이 실제 diff에 있는지, 지금 값이 조회 결과와 같은지, 단위 변환(35% → ratio 0.35 / percent 35) | `agent/app/validation.py` | Agent 테스트 122개. 정답지는 검사에 쓰지 않는다 (SIMPLIFICATION 4절) |
-| 판단을 못 하는 경우를 "맞음"으로 포장 | 세 번째 판정 `needs_check`. 자료가 없으면 지어내지 않고 추가 확인으로 낸다 | `Proposals.IMPACTS`, `product_impact_agent` | 정답지에 `needs_check` 정답 포함 (P010, P009) |
+| 판단을 못 하는 경우를 "맞음"으로 포장 | 세 번째 판정 `needs_check`. 자료가 없으면 지어내지 않고 추가 확인으로 낸다 | `Proposals.IMPACTS`, `product_impact_agent` | 정답지에 `needs_check` 정답 포함 (DSR P010, 설명 확인 P009) |
+| 정답지가 데이터와 어긋나 채점이 틀림 (데이터를 늘리거나 고칠 때) | 정답지의 상품 · 규칙 ID · 지금 값 · 단위 · 근거 조항 · 계약 ID를 실제 데이터와 대조하는 테스트. 모든 상품에 판정이 있는지도 검사 | `eval/test_score_proposals.py` `test_expected_matches_data` | 시나리오 3개 모두 통과 (#44). 정답지 YAML의 쉼표로 이유가 잘리던 버그도 #42에서 고침 |
+| 새 규칙(제15조의2)처럼 규칙 이름을 Agent가 알 수 없음 | 새 규칙은 `rule_key` 이름을 채점하지 않고 값 · 단위 · 시행일로 채점 | `score_proposals.py` (`ruleId: null` 매칭) | `test_new_rule_is_scored_without_rule_id_or_key_name` (#44) |
+| 한 시나리오(v3 → v4 DSR)에만 맞춘 판단 | 시나리오마다 정답지를 따로 두고(`--expected`), Agent는 `AGENT_ARTICLE_IDS`로 조항 하나씩 실행. 상품 12개 · 규칙 82개 · 규정 4개로 데이터를 늘려 같은 숫자 · 다른 이름 · 다른 단위가 섞이게 함 | `eval/answer_key.md` 시나리오 표, `data/` (#19) | DSR 11/12 (#35). 고령자 · 설명 확인은 M3 |
 
 ### 2.2 성능 효율성 (Performance efficiency)
 
@@ -123,6 +126,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 깨진 채 머지 | PR마다 백엔드 · Agent · MCP 3개 · 프론트 테스트 (GitHub Actions) | `.github/workflows/ci.yml` (#38) | 작업 5개 통과 |
 | 결정이 슬랙에 흩어짐 | 결정은 `SIMPLIFICATION.md` PR로 확정. 문서에 없는 결정은 미확정. 열린 질문은 11절 | SIMPLIFICATION 10 · 11절 | v1 → v2 → v2.1 변경 이력 |
 | 스키마 변경 이력이 없음 | Flyway V1 ~ V5. 공유 DB 뒤로는 V1을 고치지 않고 새 버전으로 | `backend/src/main/resources/db/migration/` | 기존 DB에 V3 ~ V5 적용 확인 |
+| 규정이 바뀔 때마다 코드를 고침 | 규정 원문 · 상품 규칙 · 상품 문서를 데이터(`data/`)로 두고, 정책값은 시행일 버전 행으로 관리. 규정 파일 형식은 테스트로 고정 | `data/regulations/README.md`, `product_rules (effective_from, effective_to)`, regulation-mcp `test_data_format.py` | M1 · M2가 규정 파일만으로 동작 (#35) |
 | 안 쓰는 코드가 남아 혼란 | 옛 흐름 API · 테이블 · 큐 작업을 10.7 목록으로 두고 새 흐름이 끝까지 동작한 뒤 한 PR로 정리 | `BACKEND_API.md` 10.7 | 예정 |
 
 ### 2.8 이식성 (Portability)
@@ -144,7 +148,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 두 작업이 같은 규칙을 동시에 바꿈 | 접수 때와 워커에서 "지금 값이 제안 당시 값과 같은가"를 두 번 검사(숫자 비교). 다르면 409 "이미 바뀐 규칙". 워커는 테이블을 잠금 | `RuleVersions.problem`, `RuleVersionService.apply` | `RuleVersionsTest` 7개, 같은 키 재반영 → 409 (#29) |
 | 기존 행을 덮어써 이력이 사라짐 | 기존 행은 지우지 않고 `effective_to = 시행일 - 1`로 닫고 새 행(`R083`~)을 추가. 시행일 전 신청분은 종전 값을 봄(경과조치) | `RuleVersionService.apply` | 반영 뒤 R001=0.40(~11-30), R084=0.35(12-01~) |
 | 미래 버전이 겹침 | 시행일 뒤에 시작하는 행이 이미 있으면 거절 | `RuleVersions.problem` (#33) | `futureVersionBlocksAnEarlierEffectiveDate` |
-| 경과조치 대상 계약이 새 기준으로 심사됨 | 계약 영향 조회가 시행일 전 신청 · 만기가 시행일 이후인 계약을 표시하고, 제안서에 함께 보임. 계약 값은 바꾸지 않음 | `BusinessQueries.contractImpact` | 정답지 3절, `dsrImpactMatchesContractExample` |
+| 경과조치 대상 계약이 새 기준으로 심사됨 | 계약 영향 조회가 시행일 전 신청 · 만기가 시행일 이후인 계약을 표시하고, 제안서에 함께 보임. 계약 값은 바꾸지 않음 | `BusinessQueries.contractImpact`, 정답지 `bonus.contracts` | `dsrImpactMatchesContractExample`. 정답: DSR은 시행일 전 신청 9건 · 연장 예정 C0006 · C0068, 고령자는 시행일 전 신청 60 ~ 64세 16건, 설명 확인은 C0092 대상 · C0004 · C0029 대상 아님 (`answer_key.md` 3 ~ 5절). 아직 Agent가 조회 · 저장하지 않아 채점 안 함 (#43) |
 | 반영이 반만 되고 멈춤 | 큐 작업 단위가 제안 1건 = 규칙 1행. 실패한 건만 DEAD로 남고 사유가 기록됨 | 계약 10.4 | #34 부분 실패 테스트 |
 
 ## 3. 주요 트레이드오프
@@ -169,6 +173,9 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | `llm` 모드(MCP 없음)에서 승인하면 반영을 못 해 FAILED로 끝난다 | 개발 흐름에서 불편 | `live` 모드에서는 정상. A 판단 대기 |
 | 옛 흐름 API · 테이블이 아직 남아 있다 | 코드 양 · 혼란 | 10.7 정리 예정 |
 | M3(고령자 · 설명 확인) 판단 품질 | 정답지 · 채점기는 있으나 Agent가 아직 통과 못 함 | SIMPLIFICATION 9절 Agent 과제 4개 |
+| P006(소액대출) 판정이 정답지(`keep`)와 Agent(`needs_check`)가 다름 | DSR 판정 12개 중 1개 불일치 | 소액 기준(DSR 관리기준 제2조 4호)이 상품이 아니라 차주의 잔액 합계 기준이라 Agent 판단에 근거가 있다. 정답지 조율 중 (A · E, SIMPLIFICATION 11절) |
+| 개정 조항과 무관한 규칙을 바꾸는 함정 오판 | 조항 3개를 한 번에 돌린 실행에서 P010 `ESTIMATED_INCOME_RATIO` 0.85를 0.35로 제안 | #35. 채점기 `must_not`으로 잡히는 유형. 근거 검사에서 "개정 조항의 대상 규칙인가" 확인 검토 (A) |
+| 채점기 테스트가 CI에 없음 | 정답지를 고쳐도 자동 검사가 안 돎 | `pytest eval` 한 줄 추가 요청 (#42 리뷰) |
 
 ## 5. 검증 근거 모음
 
@@ -177,5 +184,6 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 백엔드 | 36개 (`./gradlew test`) + #39 추가분 | #25 · #28 · #29 · #35 · #39 PR 본문 |
 | Agent | 122개 (`uv run pytest`) | #27 · #30 · #34 · #35 |
 | MCP | regulation 78 · business 57 · code 32 | #20 · #23 · #31 |
-| 채점기 | 15개 (`pytest eval`) | #42 · #44 |
+| 채점기 · 정답지 | 18개 (`uv run --with pyyaml --with pytest pytest eval -q`) | #42 · #44. Agent 결과 채점: `eval/score_proposals.py 결과.json [--expected …]` |
+| 검색 | 질의 38개 (`eval/run_retrieval.py`) | #20. 규정 recall@3 키워드 82% · 의미 79% · 혼합 89% ([VECTOR_INDEX.md](./VECTOR_INDEX.md)) |
 | CI | PR마다 위 전부 (`.github/workflows/ci.yml`) | #38 |
