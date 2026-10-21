@@ -25,7 +25,8 @@ def make_proposal_agent(reasoner):
             if impact.impact == "no_change":
                 continue
             old = previous.get(impact.id)
-            retry = old and old.verification == "failed" and old.attempt < 2 and old.status == "pending"
+            retry = (old and old.verification == "failed" and old.attempt < 2 and old.status == "pending"
+                     and old.revision_outcome not in ("cannot_apply", "needs_clarification"))
             requested = old and old.status == "revision_requested"
             if old and not retry and not requested:
                 proposals.append(old)
@@ -42,17 +43,26 @@ def make_proposal_agent(reasoner):
                        "product": products[impact.product_id], "rules": rules,
                        "documents": [d for d in state.get("product_documents", []) if d["productId"] == impact.product_id],
                        "data_gaps": state.get("data_gaps", []), "impact": impact.model_dump(mode="json"),
+                       "review_history": [{"version": h.version, "action": h.action, "comment": h.comment}
+                                          for h in state.get("review_history", []) if h.proposal_id == impact.id and h.comment],
                        "mandatory_changes": contract, "previous_proposal": baseline.model_dump(mode="json") if baseline else None,
                        "comment": baseline.review_comment if baseline else "",
                        "validation_errors": [old.generation_error] if retry else [],
                        "previous_attempt": old.model_dump(mode="json") if retry else None}
-            error, response = None, ""
+            error, response, outcome = None, "", "none"
             try:
                 draft = reasoner.draft_product(context)
                 content = {name: getattr(draft, name) for name in CONTENT_FIELDS}
                 response = getattr(draft, "revision_response", "")
-            except ValueError as exc:
+                outcome = getattr(draft, "revision_outcome", "revised" if baseline else "none")
+                if baseline and outcome in ("cannot_apply", "needs_clarification"):
+                    if not response.strip():
+                        raise ValueError("반영 불가 또는 추가 확인 사유가 없습니다")
+                    # 요청을 이행하지 않은 후보로 기존 검토본을 덮어쓰지 않는다.
+                    content = {name: getattr(baseline, name) for name in CONTENT_FIELDS}
+            except (ValueError, TimeoutError, ConnectionError) as exc:
                 error = str(exc)
+                outcome = "failed" if baseline else "none"
                 content = {name: getattr(baseline, name) for name in CONTENT_FIELDS} if baseline else {
                     "recommendation": "제안 작성 실패: 상세에서 원인을 확인하세요", "actions": [],
                     "optional_actions": [], "precautions": [],
@@ -68,7 +78,7 @@ def make_proposal_agent(reasoner):
                 attempt=old.attempt + 1 if retry else 1,
                 review_comment=baseline.review_comment if baseline else "", document_refs=impact.document_refs,
                 basis_refs=impact.basis_refs,
-                generation_error=error, revision_response=response,
+                generation_error=error, revision_response=response, revision_outcome=outcome,
             ))
             generated += 1
         return {"proposals": proposals, "revision_baselines": baselines, "review_finish": False,

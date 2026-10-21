@@ -155,6 +155,21 @@ def validate_proposal(state, proposal, baseline=None):
     return list(dict.fromkeys(errors))
 
 
+def approval_problem(proposal):
+    """CLI 표시·검토·HTTP 승인에서 같은 승인 가능 기준을 사용한다."""
+    data = proposal.model_dump() if hasattr(proposal, "model_dump") else proposal
+    problems = []
+    if data.get("verification") != "passed":
+        problems.append("검증 미완료" if data.get("verification") == "pending" else "검증 실패")
+    if data.get("generation_error"):
+        problems.append(data["generation_error"])
+    if not (data.get("recommendation") or "").strip():
+        problems.append("제안 본문 없음")
+    if not data.get("actions") or any(not a.strip() for a in data["actions"]):
+        problems.append("필수 수행 항목 없음")
+    return "; ".join(problems) or None
+
+
 def validate_feedback(comment):
     text = normalize(comment).strip(".!?~")
     vague = {"새로운제안", "새로운아이디어", "새제안", "다른제안", "다른제안줘", "다른제안줘봐", "다른제안사항줘봐", "다시", "다시써줘", "수정해줘", "더좋게", "알아서", "바꿔줘"}

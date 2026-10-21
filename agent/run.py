@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from app.cli import select_proposals, review_command, show_review, show_details, show_unchanged
+from app.cli import REVIEW_HELP, select_proposals, review_command, show_review, show_details, show_unchanged, show_review_changes
 
 
 def configure_log(name, prefix, verbose=False):
@@ -52,10 +52,15 @@ def main():
         task_id = f"CLI-{uuid.uuid4().hex[:8]}"
         out = runner.start(task_id, args.regulation, args.old, args.new, article_ids=args.article)
         seen = 0
+        pending_changes = None
         while True:
             for event in out.get("events", [])[seen:]:
                 print(f"  · {event.node}: {event.message}")
             seen = len(out.get("events", []))
+            if pending_changes:
+                previous, decisions = pending_changes
+                show_review_changes(previous, out["proposals"], decisions)
+                pending_changes = None
             if "__interrupt__" not in out:
                 break
             value = out["__interrupt__"][0].value
@@ -63,6 +68,9 @@ def main():
             while True:
                 try:
                     command = input("검토 명령: ").strip()
+                    if command in ("?", "h", "help"):
+                        print(REVIEW_HELP)
+                        continue
                     if command.startswith("v "):
                         for proposal in select_proposals(command[2:], value["proposals"]):
                             show_details(proposal)
@@ -71,7 +79,12 @@ def main():
                         show_unchanged(value["unchanged"])
                         continue
                     decision = review_command(command, value["proposals"])
+                    editing = any(d["action"] in ("request_changes", "edit") for d in decision["decisions"])
+                    if editing:
+                        print("선택한 제안을 수정·검증하고 있습니다…", flush=True)
                     out = runner.resume(task_id, decision)
+                    if editing:
+                        pending_changes = (value["proposals"], decision["decisions"])
                     break
                 except (DecisionError, ValueError) as exc:
                     print(f"결정을 반영하지 못했습니다: {exc}")

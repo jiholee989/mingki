@@ -5,7 +5,7 @@ from typing import Literal
 from langgraph.types import interrupt
 from app.schemas import ProductProposal, ProposalReviewRecord, Event, ApplyApproval
 from app.nodes.proposal import changed_fields
-from app.validation import validate_proposal, validate_feedback
+from app.validation import approval_problem, validate_proposal, validate_feedback
 
 
 class ProposalEdits(BaseModel):
@@ -58,8 +58,9 @@ def validate_review(state, decision):
         elif edits:
             raise ValueError("직접 수정은 edit으로 반영한 뒤 새 버전을 승인하세요")
         elif item.action == "approve":
-            if old.verification != "passed" or old.generation_error or not old.recommendation.strip() or not old.actions:
-                raise ValueError("생성 오류 또는 수행 항목이 없는 제안은 승인할 수 없습니다")
+            if problem := approval_problem(old):
+                number = next(n for n, p in enumerate(state["proposals"], 1) if p.id == old.id)
+                raise ValueError(f"{number}번 {old.product_id} 승인 불가: {problem}. 재작성·직접 수정하거나 제외하세요")
             data["status"] = "approved"
         elif item.action == "reject":
             data["status"] = "rejected"
@@ -71,8 +72,7 @@ def validate_review(state, decision):
             proposal = ProductProposal.model_validate(data)
         except ValidationError:
             raise ValueError("직접 수정 내용의 형식이 올바르지 않습니다") from None
-        if not proposal.recommendation.strip() or any(not a.strip() for a in proposal.actions):
-            raise ValueError("제안과 수행 항목은 빈 문자열일 수 없습니다")
+        # 거절·재작성 요청은 실패한 빈 본문도 처리해야 한다. 승인과 편집 경로에서 본문을 검사한다.
         if item.action == "edit":
             errors = validate_proposal(state, proposal)
             if errors:
@@ -80,12 +80,15 @@ def validate_review(state, decision):
             proposal.verification = "passed"
             proposal.changed_fields = changed_fields(old, proposal)
             proposal.revision_response = "직접 수정: " + (item.comment or "사용자가 제안 본문을 편집했습니다")
+            proposal.revision_outcome = "revised"
         updated[old.id] = proposal
         history.append(ProposalReviewRecord(proposal_id=old.id, version=proposal.version,
                                             action=item.action, comment=item.comment,
                                             snapshot=proposal.model_copy(deep=True)))
     if command.finish and any(p.status not in ("approved", "rejected") for p in updated.values()):
-        raise ValueError("검토 대기·수정 요청 항목이 남아 있습니다. 승인 또는 제외 후 완료하세요")
+        remaining = ", ".join(f"{n}번 {p.product_id}" for n, p in enumerate(updated.values(), 1)
+                              if p.status not in ("approved", "rejected"))
+        raise ValueError(f"미결정 항목: {remaining}. a로 전체 검토를 완료하거나 승인·제외 후 f를 입력하세요")
     if command.apply_approval:
         from app.nodes.apply import approved_rows
         if not command.finish:
