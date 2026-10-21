@@ -7,7 +7,8 @@
 | 파일 | 방향 | API |
 |---|---|---|
 | `proposals.put.json` | Agent → Spring | `PUT {callbackBaseUrl}/proposals` |
-| `review.post.json` | 화면 → Spring | `POST /api/ai/tasks/{id}/review` |
+| `review.post.json` | 화면 → Spring | `POST /api/ai/tasks/{id}/review` (일부 제외하고 승인) |
+| `review.post.reject.json` | 화면 → Spring | 같은 API로 반려. `comment` 필수 |
 | `apply.post.json` | business-mcp → Spring | `POST /internal/product-rules/versions` |
 | `apply.job.json` | Spring → business-mcp · Agent | `GET /internal/jobs/{jobId}` 결과 |
 | `rule-keys.get.json` | Spring → business-mcp | `GET /internal/product-rules/keys` |
@@ -23,5 +24,6 @@
 | `proposals.get.json` | `GET /api/ai/tasks/{id}/proposals` | 확인 대기. 현재 회차만 추림 (`latest: true`). `productName` 포함, `canApprove: true` |
 | `proposals.get.done.json` | 같은 API | 반영 뒤. `decision`(APPLY · EXCLUDE)과 `apply`(큐 작업 · 새 `rule_id`) 붙음 |
 | `contract-impacts.task.get.json` | `GET /api/ai/tasks/{id}/contract-impacts` | Agent 판단 + 서버가 붙인 계약 정보 (`contractFound` · `productName` · `appliedAt` · `dsrAtApproval` …) |
-| `report.get.json` | `GET /api/ai/tasks/{id}/report` | 완료. `deliveries`에 `RULE_VERSION` |
+| `report.get.json` | `GET /api/ai/tasks/{id}/report` | 완료. `review`(가장 최근 확인 기록), `deliveries`에 `RULE_VERSION` |
+| `report.get.rejected.json` | 같은 API | 반려 뒤. `review.decision: REJECT`와 사유, 전달 기록 없음. 다른 작업의 실제 응답이고 `report`는 `status` · `summary` · `markdown`만 남겼다 |
 | `events.get.json` | `GET /api/ai/tasks/{id}/events?after=0` | 업로드부터 `DONE`까지 이벤트 순서. `STEP` · `APPROVAL_REQUIRED` · `RESUMED` · `TOOL_START/END` · `DONE` |

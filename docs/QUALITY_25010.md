@@ -54,6 +54,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 같은 숫자 · 다른 의미(LTV 0.40, 정년 65), 단위가 다른 규칙(percent 35), 종료된 옛 행 | 함정을 데이터에 심고 정답지 `must_not`으로 채점. 유효 여부는 `effectiveTo == null`이 아니라 날짜(`asOf`)로 판단 | `data/business/product_rules.json`, `ProductRule.isValidOn`, business-mcp `as_of` | `BusinessQueriesTest.validityFollowsDatesNotMissingEndDate`, #23 리뷰에서 발견해 양쪽 수정 |
 | 제안이 근거 없이 나옴 | Agent 근거 검사: 인용 조항이 실제 diff에 있는지, 지금 값이 조회 결과와 같은지, 단위 변환(35% → ratio 0.35 / percent 35) | `agent/app/validation.py` | Agent 테스트 122개. 정답지는 검사에 쓰지 않는다 (SIMPLIFICATION 4절) |
 | 판단을 못 하는 경우를 "맞음"으로 포장 | 세 번째 판정 `needs_check`. 자료가 없으면 지어내지 않고 추가 확인으로 낸다 | `Proposals.IMPACTS`, `product_impact_agent` | 정답지에 `needs_check` 정답 포함 (DSR P010, 설명 확인 P009) |
+| 같은 입력에 다른 결과가 나와 믿을 수 없음 | 같은 규정 · 같은 데이터면 같은 판정이 나오게 한다. 대상 규칙은 영향 판단 단계가, 제안 값은 개정 원문 숫자로 코드가 정한다. 그래서 반려 뒤 다시 올려도 결과가 같고, 결과를 바꾸려면 데이터나 Agent를 고친다 | `agent/app/validation.py` `expected_value`, 계약 10.3 | 같은 조건 3회 측정에서 DSR 판정 12/12 (#49) |
 | 정답지가 데이터와 어긋나 채점이 틀림 (데이터를 늘리거나 고칠 때) | 정답지의 상품 · 규칙 ID · 지금 값 · 단위 · 근거 조항 · 계약 ID를 실제 데이터와 대조하는 테스트. 모든 상품에 판정이 있는지도 검사 | `eval/test_score_proposals.py` `test_expected_matches_data` | 시나리오 3개 모두 통과 (#44). 정답지 YAML의 쉼표로 이유가 잘리던 버그도 #42에서 고침 |
 | 새 규칙(제15조의2)처럼 규칙 이름을 Agent가 알 수 없음 | 새 규칙은 `rule_key` 이름을 채점하지 않고 값 · 단위 · 시행일로 채점 | `score_proposals.py` (`ruleId: null` 매칭) | `test_new_rule_is_scored_without_rule_id_or_key_name` (#44) |
 | 한 시나리오(v3 → v4 DSR)에만 맞춘 판단 | 시나리오마다 정답지를 따로 두고(`--expected`), Agent는 `AGENT_ARTICLE_IDS`로 조항 하나씩 실행. 상품 12개 · 규칙 82개 · 규정 4개로 데이터를 늘려 같은 숫자 · 다른 이름 · 다른 단위가 섞이게 함 | `eval/answer_key.md` 시나리오 표, `data/` (#19) | DSR 11/12 (#35). 고령자 · 설명 확인은 M3 |
@@ -82,9 +83,10 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
 | 사람이 할 일을 화면이 추측해야 함 | 서버가 `pendingAction {step, path}`와 `canApprove`를 계산해서 준다. 화면은 상태와 이 값만 본다 | `TaskDtos.PendingAction`, `Proposals.canApprove` | `GET /api/ai/tasks/{id}` 응답 예시 |
-| 확인이 여러 단계면 사용자가 지침 | 사람 확인은 **1번**. 제안마다 반영 / 제외만 고른다 (팀 결정, SIMPLIFICATION 결정 사항) | `TaskService.reviewProposals` | #28 |
+| 확인이 여러 단계면 사용자가 지침 | 사람 확인은 **1번**. 제안마다 반영 / 제외만 고른다 (팀 결정, SIMPLIFICATION 결정 사항) | `TaskService.review` | #28 |
 | 왜 이런 판단인지 모름 | 제안마다 근거 조항(`basis`), 이유(`reason`), 경과조치(`transition`), 후속 작업(`followUp`)을 함께 저장 | `rule_proposals` V4 | 계약 10.2 |
 | 진행 상황을 모름 | 노드마다 `STEP {node, message}` 이벤트, 회차(`round`) 포함 | `TaskEventService` | 계약 10.1 이벤트 표 (#43) |
+| 반려한 이유가 사라짐 | 반려에는 사유를 필수로 받고(없으면 400), 리포트 응답 `review`에 결정 · 사유 · 확인한 사람을 붙인다 | `Proposals.missingRejectReason`, `TaskDtos.ReportResponse` | `ProposalsTest` (반려 예시 · 리포트 예시를 응답 모양으로 읽음), 실제 반려 흐름에서 400 · `REJECTED` · `review.comment` 확인 |
 
 ### 2.5 신뢰성 (Reliability)
 

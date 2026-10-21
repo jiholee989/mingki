@@ -167,7 +167,7 @@ public class TaskService {
         return out;
     }
 
-    /** 가장 최근 확인(REVIEW) 기록. 제안마다 반영 · 제외를 붙일 때 쓴다. */
+    /** 가장 최근 확인(REVIEW) 기록. 제안마다 반영 · 제외를 붙이고, 리포트에 확인 결과를 보여 줄 때 쓴다. */
     @Transactional(readOnly = true)
     public Optional<Approval> latestReview(UUID taskId) {
         List<Approval> reviews = approvals.findByTaskIdOrderByIdAsc(taskId).stream()
@@ -190,6 +190,7 @@ public class TaskService {
     public Approval review(UUID taskId, AuthUser me, Approval.Decision decision, String comment,
                            List<String> excludedProposalKeys) {
         if (decision == null) throw bad("decision 은 APPROVE | REJECT 입니다");
+        if (Proposals.missingRejectReason(decision, comment)) throw bad("반려 사유(comment)가 필요합니다");
         AnalysisTask task = lockAndExpect(taskId, TaskStatus.WAITING_REVIEW);
         List<RuleProposal> latest = Proposals.latest(proposals.findByTaskIdOrderByProposalKeyAscRoundAsc(taskId));
         List<String> changeKeys = Proposals.changeKeys(latest);

@@ -16,6 +16,27 @@
     "approved_count": 1,
     "rejected_count": 1
   },
+  "review": {
+    "id": 1,
+    "step": "REVIEW",
+    "decision": "APPROVE",
+    "approverId": 1,
+    "approver": {
+      "userId": 1,
+      "username": "officer1",
+      "displayName": "김준법"
+    },
+    "comment": "P005는 화면 문구 정비 후 반영",
+    "payload": {
+      "approvedProposalKeys": [
+        "P001:DSR_LIMIT"
+      ],
+      "excludedProposalKeys": [
+        "P005:DSR_LIMIT"
+      ]
+    },
+    "createdAt": "2026-10-21T00:00:00Z"
+  },
   "deliveries": [
     {
       "id": 1,

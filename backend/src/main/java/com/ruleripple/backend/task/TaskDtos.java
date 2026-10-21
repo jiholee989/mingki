@@ -100,7 +100,9 @@ public final class TaskDtos {
         }
     }
 
-    public record ReportResponse(TaskSummary task, Map<String, Object> report, List<DeliveryView> deliveries) {}
+    /** review: 가장 최근 확인 기록 (결정 · 사유 · 확인한 사람). 확인 전이면 null. */
+    public record ReportResponse(TaskSummary task, Map<String, Object> report, ApprovalView review,
+                                 List<DeliveryView> deliveries) {}
 
     public record EvaluationResponse(TaskSummary task, Map<String, Object> evaluation) {}
 

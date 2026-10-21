@@ -62,8 +62,8 @@ GET  /api/auth/me
 | `getRequirements(id)` | `GET /api/ai/tasks/{id}/requirements` | | `{task, documents, requirements[]}` — 요건마다 `oldText` · `newText` (신·구 원문) |
 | `getProposals(id)` | `GET /api/ai/tasks/{id}/proposals` | | 10.2 |
 | `getContractImpacts(id)` | `GET /api/ai/tasks/{id}/contract-impacts` | | 10.6 |
-| `reviewProposals(id, d)` | `POST /api/ai/tasks/{id}/review` | `{decision:"APPROVE"\|"REJECT", comment?, excludedProposalKeys?}` | `Approval` — 10.3 |
-| `getReport(id)` | `GET /api/ai/tasks/{id}/report` | | `{task, report, deliveries[]}` |
+| `reviewProposals(id, d)` | `POST /api/ai/tasks/{id}/review` | `{decision:"APPROVE"\|"REJECT", comment?, excludedProposalKeys?}` — 반려는 `comment` 필수 | `Approval` — 10.3 |
+| `getReport(id)` | `GET /api/ai/tasks/{id}/report` | | `{task, report, review, deliveries[]}` — `review`는 가장 최근 확인 기록 (결정 · 사유 · 확인한 사람), 확인 전이면 null ([예시](./contracts/report.get.json), [반려](./contracts/report.get.rejected.json)) |
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
@@ -268,7 +268,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 
 ### 10.3 사용자 확인
 
-`POST /api/ai/tasks/{id}/review` ([예시](./contracts/review.post.json))
+`POST /api/ai/tasks/{id}/review` ([승인 예시](./contracts/review.post.json), [반려 예시](./contracts/review.post.reject.json))
 
 ```json
 {"decision": "APPROVE", "excludedProposalKeys": ["P005:DSR_LIMIT"], "comment": "P005는 화면 문구 정비 후 반영"}
@@ -277,9 +277,14 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | 결정 | 검사 | 결과 |
 |---|---|---|
 | `APPROVE` | `canApprove`(아니면 409). 제외 키는 현재 `change_required` 제안이어야 함(400). 제외하고 남는 게 없으면 400 (REJECT로 보낸다) | `PUBLISHING`. 기록 payload `{approvedProposalKeys, excludedProposalKeys}` |
-| `REJECT` | | `REJECTED` |
+| `REJECT` | `comment`(반려 사유) 필수, 비면 400 | `REJECTED` |
 
 - 수정 요청(`REQUEST_CHANGES`)은 없다.
+- **반려는 작업을 끝낸다.** "다시 시도" 대상이 아니다. 같은 규정 · 같은 데이터로 다시 올리면 같은 판정이 나온다 (의도한 재현성). 결과를 바꾸는 길은 셋이다.
+  - 일부만 빼려면 반려 대신 `APPROVE` + `excludedProposalKeys`
+  - 데이터 · 상품 문서가 틀렸으면 고친 뒤 새로 올린다
+  - 판정이 틀렸으면 Agent를 고친다 (M3)
+- 반려 사유는 리포트 응답의 `review.comment`에 나온다. 모인 사유가 Agent 판정 오류 목록이 된다.
 - 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction`은 `{step:"REVIEW", path}`이고, `counts.proposals`는 현재 회차 제안 수다.
 - Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다. Agent는 그래프를 돌리기 전에 거부할 수 있다: 검토 대기 중인 thread가 아니면(없거나 이미 끝남) 409, `approvedProposalKeys ∪ excludedProposalKeys`가 Agent가 보낸 현재 `change_required` 키와 다르거나 APPROVE에 `approvalId`가 없으면 400. 202 뒤에는 `apply` → `report` → `DONE` 또는 `FAILED`가 콜백으로 온다.
 

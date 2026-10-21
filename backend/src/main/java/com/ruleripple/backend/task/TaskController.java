@@ -222,6 +222,7 @@ public class TaskController {
     public ReportResponse report(@PathVariable UUID id) {
         AnalysisTask t = service.get(id);
         return new ReportResponse(TaskSummary.of(t), t.getReport() == null ? Map.<String, Object>of() : t.getReport(),
+                service.latestReview(id).map(service::approvalView).orElse(null),
                 service.deliveries(id).stream().map(DeliveryView::of).toList());
     }
 
