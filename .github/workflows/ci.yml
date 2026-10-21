@@ -1,0 +1,84 @@
+# PR 마다 영역별 테스트를 돌린다 (SIMPLIFICATION.md 10절 "자동 검사").
+# 전부 단위 · 오프라인 테스트라 DB · RabbitMQ · LLM 키가 필요 없다.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (gradle test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew test --no-daemon
+
+  agent:
+    name: agent (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: agent/uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  mcp:
+    name: mcp (${{ matrix.server }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [regulation-mcp, business-mcp, code-mcp]
+    defaults:
+      run:
+        working-directory: mcp/${{ matrix.server }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: mcp/${{ matrix.server }}/uv.lock
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  frontend:
+    name: frontend (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
