@@ -96,15 +96,15 @@ public final class TaskDtos {
 
     public record ApplyResult(String jobId, String status, String closedRuleId, String newRuleId) {}
 
-    public record ProposalView(Long id, String proposalKey, String reqKey, String productId, String productName,
-                               String ruleId, String ruleKey, String impact, String current, String proposed, String unit,
+    public record ProposalView(Long id, String proposalKey, String reqKey, String productId, String ruleId,
+                               String ruleKey, String impact, String current, String proposed, String unit,
                                String currentValue, String proposedValue, LocalDate effectiveDate, String basis,
                                String reason, String transition, List<String> followUp, int round,
                                String verifyStatus, String verifyLog, boolean latest, String decision,
                                ApplyResult apply) {
-        /** productName 은 products 에서 붙인다 (없는 상품이면 null). decision: APPLY · EXCLUDE · null. apply 는 반영 작업이 생기면 채운다. */
-        public static ProposalView of(RuleProposal p, String productName, boolean latest, String decision, ApplyResult apply) {
-            return new ProposalView(p.getId(), p.getProposalKey(), p.getReqKey(), p.getProductId(), productName, p.getRuleId(),
+        /** decision: APPLY · EXCLUDE · null. apply 는 반영 작업이 생기면 채운다. */
+        public static ProposalView of(RuleProposal p, boolean latest, String decision, ApplyResult apply) {
+            return new ProposalView(p.getId(), p.getProposalKey(), p.getReqKey(), p.getProductId(), p.getRuleId(),
                     p.getRuleKey(), p.getImpact(), p.getCurrentText(), p.getProposedText(), p.getUnit(),
                     p.getCurrentValue(), p.getProposedValue(), p.getEffectiveDate(), p.getBasis(), p.getReason(),
                     p.getTransition(), p.getFollowUp(), p.getRound(), p.getVerifyStatus().name(), p.getVerifyLog(),
