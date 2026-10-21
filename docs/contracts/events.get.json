@@ -1,0 +1,120 @@
+[
+  {
+    "seq": 1,
+    "type": "STEP",
+    "payload": {
+      "node": "requirement_agent",
+      "message": "규정 업로드 완료, 요건 추출을 시작합니다"
+    }
+  },
+  {
+    "seq": 2,
+    "type": "STEP",
+    "payload": {
+      "node": "product_impact_agent"
+    }
+  },
+  {
+    "seq": 3,
+    "type": "STEP",
+    "payload": {
+      "node": "product_impact_agent",
+      "message": "상품 12개 × 변경 요건 1개 영향 분석 / 유효 규칙 82개 / 문서 12개"
+    }
+  },
+  {
+    "seq": 4,
+    "type": "STEP",
+    "payload": {
+      "node": "proposal_agent"
+    }
+  },
+  {
+    "seq": 5,
+    "type": "STEP",
+    "payload": {
+      "node": "verify",
+      "round": 1
+    }
+  },
+  {
+    "seq": 6,
+    "type": "STEP",
+    "payload": {
+      "node": "proposal_agent"
+    }
+  },
+  {
+    "seq": 7,
+    "type": "STEP",
+    "payload": {
+      "node": "verify",
+      "round": 2
+    }
+  },
+  {
+    "seq": 8,
+    "type": "APPROVAL_REQUIRED",
+    "payload": {
+      "step": "REVIEW"
+    }
+  },
+  {
+    "seq": 9,
+    "type": "RESUMED",
+    "payload": {
+      "by": "officer1",
+      "step": "REVIEW",
+      "decision": "APPROVE",
+      "approvalId": 1
+    }
+  },
+  {
+    "seq": 10,
+    "type": "STEP",
+    "payload": {
+      "node": "apply"
+    }
+  },
+  {
+    "seq": 11,
+    "type": "TOOL_START",
+    "payload": {
+      "tool": "APPLY_RULE_VERSION",
+      "jobId": "05ddf3a5-3230-4f75-8b58-f1b8f6b1a275",
+      "attempt": 1,
+      "maxAttempts": 3
+    }
+  },
+  {
+    "seq": 12,
+    "type": "TOOL_END",
+    "payload": {
+      "ok": true,
+      "tool": "APPLY_RULE_VERSION",
+      "jobId": "05ddf3a5-3230-4f75-8b58-f1b8f6b1a275",
+      "result": {
+        "newRuleId": "R083",
+        "productId": "P001",
+        "proposalKey": "P001:DSR_LIMIT",
+        "closedRuleId": "R001",
+        "effectiveFrom": "2026-12-01"
+      },
+      "attempt": 1
+    }
+  },
+  {
+    "seq": 13,
+    "type": "STEP",
+    "payload": {
+      "node": "report"
+    }
+  },
+  {
+    "seq": 14,
+    "type": "DONE",
+    "payload": {
+      "outcome": "DONE"
+    }
+  }
+]

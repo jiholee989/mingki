@@ -259,6 +259,7 @@ rr.jobs (direct) ─ job ──▶ rr.jobs.q ──▶ JobWorker ─ 성공 ─�
 ## 10. 단순화 흐름 계약 (v2)
 
 기준: [SIMPLIFICATION.md](./SIMPLIFICATION.md) v2. 요청 · 응답 예시는 [`docs/contracts/`](./contracts/)에 있고, 각 영역 테스트가 같은 파일을 읽는다.
+화면이 받는 응답은 [`docs/contracts/README.md`의 "화면 응답 예시"](./contracts/README.md)에 실제 서버 응답으로 있다 (`task.get.json` · `proposals.get.json` · `proposals.get.done.json` · `contract-impacts.task.get.json` · `report.get.json` · `events.get.json`).
 
 ### 10.1 상태 · 노드
 
@@ -310,7 +311,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 
 **화면** `GET /api/ai/tasks/{id}/proposals`
 - `{task, maxVerifyRounds, latestRound, canApprove, proposals[]}`
-- `proposals`는 회차 전체이고 현재 것은 `latest:true`. 서버가 `decision`(`APPLY` · `EXCLUDE` · null)과 반영 결과 `apply {jobId, status, closedRuleId, newRuleId}`를 붙인다.
+- `proposals`는 회차 전체이고 현재 것은 `latest:true`. 서버가 `productName`(products 조인), `decision`(`APPLY` · `EXCLUDE` · null), 반영 결과 `apply {jobId, status, closedRuleId, newRuleId}`를 붙인다.
 - 현재 제안 = 제안 묶음(`reqKey` × `productId`)마다 가장 높은 `round`의 행. 재작성 회차에서 빠진 규칙 행은 이전 회차에 남지만 현재 제안이 아니다 (키마다 최고 회차를 고르면 1회차에만 있던 `FAILED` 행이 `canApprove`를 영원히 막는다).
 - `canApprove`: `WAITING_REVIEW` + 현재 `change_required` 제안이 1건 이상 + 모두 `PASSED`.
 
@@ -377,7 +378,7 @@ Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/
 ### 10.6 계약 영향 저장 · 조회
 
 - Agent: `PUT {callbackBaseUrl}/contract-impacts` `{items:[{contractId, reqKey, reason, grandfathered, maturesAfterEffective}]}` — 전체 교체, `LOCATING` ~ `VERIFYING`.
-- 화면: `GET /api/ai/tasks/{id}/contract-impacts` → `{task, items}`. 계약 값은 바꾸지 않는다.
+- 화면: `GET /api/ai/tasks/{id}/contract-impacts` → `{task, items}`. 서버가 `contractId`로 `loan_contracts`를 조인해 `productId` · `productName` · `status` · `appliedAt` · `ageAtApplication` · `amount` · `repaymentType` · `maturityDate` · `extensionCount` · `dsrAtApproval` 등을 붙인다(Agent가 보낸 키는 그대로, 없는 키만 채움). 못 찾으면 `contractFound: false`. 계약 값은 바꾸지 않는다.
 
 ### 10.7 정리 예정 (옛 흐름)
 
