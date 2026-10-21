@@ -3,8 +3,10 @@ import copy
 import pytest
 
 from app.cli import show_review, show_details, review_command
-from app.schemas import RevisionCheck, RuleChange, ScopeCondition, Requirement
-from app.validation import validate_proposal, condition_errors, expected_value
+from app.graph import build_graph
+from app.runner import AgentRunner
+from app.schemas import ProductAssessment, RevisionCheck, RuleChange, ScopeCondition, Requirement
+from app.validation import change_problem, validate_proposal, condition_errors, expected_value
 from app.nodes.impact import make_product_impact_agent
 from app.runner import DecisionError
 from app.tools.local import LocalTools
@@ -215,3 +217,59 @@ def test_approved_rows_are_hidden_but_original_selection_numbers_work(capsys):
     assert "\n1 |" not in text and "\n2 |" in text
     command = review_command("p 2", value["proposals"])
     assert command["decisions"][0]["proposal_id"] == out["proposals"][1].id
+
+
+# ---------- 고른 규칙이 말이 되는지 (2026-10-21 실제 실행의 P004 · P010 · P012) ----------
+
+DSR_REQ = Requirement(id="REQ-8", article_id="8", article="제8조", article_ref="reg://credit-loan-ops/v4/8",
+                      change="modified", summary="DSR 한도", target="DSR",
+                      old_text="차주의 총부채원리금상환비율(DSR)은 40%를 초과할 수 없다.",
+                      new_text="차주의 총부채원리금상환비율(DSR)은 35%를 초과할 수 없다.")
+ON_SALE = {"productId": "P000", "status": "ON_SALE"}
+
+
+def rule(rule_id, key, value, unit="ratio"):
+    return {"ruleId": rule_id, "ruleKey": key, "value": value, "unit": unit}
+
+
+@pytest.mark.parametrize("row", [rule("R001", "DSR_LIMIT", "0.40"), rule("R056", "MAX_DSR_RATIO", "0.4"),
+                                 rule("R044", "DSR_LIMIT", "40", "percent"), rule("RX", "DSR_LIMIT", "0.38")])
+def test_rule_over_new_limit_can_change(row):
+    assert change_problem(DSR_REQ, row, ON_SALE) is None
+
+
+def test_rule_already_within_new_limit_is_kept():
+    verdict, note = change_problem(DSR_REQ, rule("R037", "DSR_LIMIT", "0.30"), ON_SALE)
+    assert verdict == "no_change" and "30%" in note
+    assert change_problem(DSR_REQ, rule("R015", "DSR_LIMIT", "0.35"), ON_SALE)[0] == "no_change"
+
+
+def test_rule_above_old_limit_is_not_the_same_limit():
+    verdict, note = change_problem(DSR_REQ, rule("R073", "ESTIMATED_INCOME_RATIO", "0.85"), ON_SALE)
+    assert verdict == "needs_review" and "R073" in note
+
+
+def test_sale_ended_product_goes_to_review():
+    assert change_problem(DSR_REQ, rule("R079", "DSR_LIMIT", "0.40"), {"status": "SALE_ENDED"})[0] == "needs_review"
+
+
+def test_non_limit_requirement_is_not_judged_by_numbers():
+    age = DSR_REQ.model_copy(update={"old_text": "고령자란 신청일 현재 만 65세 이상인 자를 말한다.",
+                                     "new_text": "고령자란 신청일 현재 만 60세 이상인 자를 말한다."})
+    assert change_problem(age, rule("R010", "ELIGIBLE_MIN_AGE", "65", "age"), ON_SALE) is None
+
+
+def test_wrong_targets_from_real_run_are_filtered_before_proposal():
+    """실제 실행에서 모델이 고른 R037(이미 30%) · R073(추정소득 비율) · R079(판매 중단)를 영향 판단에서 거른다."""
+    class RealMistakes(DsrReasoner):
+        def product_impacts(self, requirements, products, rules, *args):
+            picks = {"P001": "R001", "P004": "R037", "P010": "R073", "P012": "R079"}
+            return [ProductAssessment(requirement_id="REQ-8", product_id=pid, target_rule_ids=[rid], evidence_rule_ids=[rid],
+                                      scope="시행일 이후 신규 신청", applicability="all", impact="change_required",
+                                      reason="DSR 한도 변경") for pid, rid in picks.items()]
+    out = AgentRunner(build_graph(LocalTools(), RealMistakes())).start("T1", "credit-loan-ops", article_ids=["8"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P001"].impact == "change_required" and impacts["P001"].target_rule_ids == ["R001"]
+    assert impacts["P004"].impact == "no_change" and "R037" in impacts["P004"].evidence_rule_ids
+    assert impacts["P010"].impact == "needs_review" and impacts["P012"].impact == "needs_review"
+    assert {c.rule_id for p in out["proposals"] for c in p.changes} == {"R001"}

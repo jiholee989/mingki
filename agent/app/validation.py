@@ -15,20 +15,51 @@ def same_value(left, right):
         return left == right
 
 
+def _single_percent(text):
+    """원문에 비율 수치가 하나만 있으면 그 값(% 단위). 없거나 여러 개면 None."""
+    found = re.findall(r"(\d+(?:\.\d+)?)\s*%(?!p)", text or "")
+    found += re.findall(r"100\s*분의\s*(\d+(?:\.\d+)?)", text or "")
+    numbers = {Decimal(v) for v in found}
+    return next(iter(numbers)) if len(numbers) == 1 else None
+
+
 def expected_value(requirement, unit):
     """단일 수치가 명시된 개정 원문만 변환한다. 모호한 계산식은 추측하지 않는다."""
     text = requirement.new_text or ""
     if unit in ("ratio", "percent"):
-        found = re.findall(r"(\d+(?:\.\d+)?)\s*%(?!p)", text)
-        found += re.findall(r"100\s*분의\s*(\d+(?:\.\d+)?)", text)
-        numbers = {Decimal(v) for v in found}
-        if len(numbers) == 1:
-            value = next(iter(numbers))
+        value = _single_percent(text)
+        if value is not None:
             return str(value / 100 if unit == "ratio" else value)
     if unit == "age":
         numbers = set(re.findall(r"만\s*(\d+)\s*세", text))
         if len(numbers) == 1:
             return numbers.pop()
+    return None
+
+
+_UPPER_LIMIT = re.compile(r"초과할\s*수\s*없|이하|이내")
+
+
+def change_problem(requirement, rule, product):
+    """모델이 바꿀 대상으로 고른 규칙이 말이 되는지 본다. 문제가 없으면 None, 있으면 (판정, 이유).
+
+    규정 원문 · 상품 · 규칙 조회 결과만 쓴다. 판단을 대신하지 않고 위험한 변경만 막는다:
+    바꿀 필요가 없다는 것이 확실하면 no_change, 아니면 needs_review로 사람에게 넘긴다.
+    """
+    if product.get("status") == "SALE_ENDED":
+        return "needs_review", f"{rule['ruleId']}: 판매가 끝난 상품이라 기준 변경 대신 확인 필요"
+    old, new = _single_percent(requirement.old_text), _single_percent(requirement.new_text)
+    if rule["unit"] not in ("ratio", "percent") or old is None or new is None or not _UPPER_LIMIT.search(requirement.new_text or ""):
+        return None
+    try:
+        current = Decimal(rule["value"]) * (100 if rule["unit"] == "ratio" else 1)
+    except InvalidOperation:
+        return None
+    if current <= new:
+        return "no_change", f"{rule['ruleId']}: 지금 {current.normalize():f}%로 이미 개정 한도 {new:f}% 이내"
+    if current > old:
+        return "needs_review", (f"{rule['ruleId']} {rule['ruleKey']}: 지금 {current.normalize():f}%로 개정 전 한도 {old:f}%보다 커서 "
+                                "같은 한도 규칙인지 확인 필요")
     return None
 
 
@@ -65,6 +96,7 @@ def condition_errors(assessment, sources):
 def validate_proposal(state, proposal, baseline=None):
     req = next(r for r in state["requirements"] if r.id == proposal.requirement_id)
     rules = {r["ruleId"]: r for r in state["product_rules"] if r["productId"] == proposal.product_id}
+    product = next((p for p in state.get("products", []) if p["productId"] == proposal.product_id), {})
     errors = condition_errors(proposal, source_texts(state, proposal.product_id))
     if proposal.article_ref != req.article_ref or proposal.effective_date != req.effective_date:
         errors.append("법령 근거·시행일은 원래 요건과 같아야 합니다")
@@ -95,6 +127,9 @@ def validate_proposal(state, proposal, baseline=None):
             errors.append(f"{change.rule_id}: 개정 원문의 값·단위와 다릅니다. 기대 값: {expected or '수치 근거 확인 필요'} ({row['unit']})")
         if same_value(change.current_value, change.proposed_value):
             errors.append(f"{change.rule_id}: 이미 같은 값인 규칙을 변경 대상으로 넣었습니다")
+        problem = change_problem(req, row, product)  # 영향 판단에서 걸러지지만 직접 수정 등 다른 경로도 막는다
+        if problem:
+            errors.append(problem[1])
     if baseline and baseline.verification == "passed":
         before = [c.model_dump() for c in baseline.changes]
         after = [c.model_dump() for c in proposal.changes]
