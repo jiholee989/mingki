@@ -1,0 +1,43 @@
+{
+  "task": {
+    "id": "7c7593e7-2a9c-47b3-8607-23f690f223d4",
+    "title": "개인신용대출 운영기준 v3 → v4",
+    "status": "WAITING_REVIEW",
+    "currentNode": "interrupt_review",
+    "verifyRound": 2,
+    "requesterId": 1,
+    "createdAt": "2026-10-21T00:00:00Z",
+    "updatedAt": "2026-10-21T00:00:00Z"
+  },
+  "errorMessage": null,
+  "maxVerifyRounds": 2,
+  "documents": [
+    {
+      "side": "OLD",
+      "versionLabel": "v3",
+      "filename": "v3.md",
+      "sha256": "8597bfff08350612f2d6cffb714fb78bbe5854830a451fdd3573336f44068d8a"
+    },
+    {
+      "side": "NEW",
+      "versionLabel": "v4",
+      "filename": "v4.md",
+      "sha256": "fef8d0843d6376f00de2cfbe1c417a69d486f807525d0967bc30e7f18fa65ca8"
+    }
+  ],
+  "pendingAction": {
+    "step": "REVIEW",
+    "role": null,
+    "path": "/tasks/7c7593e7-2a9c-47b3-8607-23f690f223d4/review"
+  },
+  "counts": {
+    "requirements": 0,
+    "targets": 0,
+    "nonTargets": 0,
+    "patches": 0,
+    "testCases": 0,
+    "proposals": 4
+  },
+  "approvals": [],
+  "deliveries": []
+}
