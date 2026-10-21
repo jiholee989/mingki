@@ -1,140 +1,106 @@
 # Backend API 계약
 
 Spring Boot 백엔드가 프론트(Vue), Agent(FastAPI), MCP 서버와 주고받는 형태.
-설계 근거는 [PROJECT.md](./PROJECT.md), 프론트 쪽 계획은 [FRONTEND_PLAN.md](./FRONTEND_PLAN.md).
+흐름과 결정 사항은 [SIMPLIFICATION.md](./SIMPLIFICATION.md), 프론트 쪽 계획은 [FRONTEND_PLAN.md](./FRONTEND_PLAN.md).
 
-> **단순화 흐름(v2)은 [10절](#10-단순화-흐름-계약-v2)이 기준이다.** 5 ~ 7절의 요건 확정 · 패치 · 테스트 · 티켓 · PR은 옛 흐름이며, 새 흐름이 동작한 뒤 정리한다 (10.7).
+> 흐름은 하나다. 규정 개정 → 상품 × 규칙 제안 → 사람 확인 1번 → 반영. 세부 계약은 [10절](#10-단순화-흐름-계약-v2)에 있다.
+> 단순화 전 흐름(요건 확정 · 코드 패치 · 티켓 · Draft PR · 역할)은 V7 마이그레이션에서 지웠다 (10.7).
 
 ## 1. 누가 누구를 부르나
 
 ```
-Vue ──(/api/**, JWT)──▶ Spring ──(/run, /resume)──▶ Agent ──▶ MCP 서버 3개
-                          ▲                            │
-                          └──(/internal/**, 내부 토큰)──┘   ← Agent 콜백, business-mcp, code-mcp
+Vue ──(/api/**, JWT)──▶ Spring ──(/run · /resume · /continue)──▶ Agent ──▶ MCP 서버 2개 (regulation · business)
+                          ▲                                         │
+                          └──────(/internal/**, 내부 토큰)───────────┘   ← Agent 콜백, business-mcp
 ```
 
-- 공개 포트는 frontend(:80)와 backend(:8080)뿐. Agent · MCP · DB · RabbitMQ는 docker network 안에만 있다.
-- `/internal/**`은 `X-Internal-Token` 헤더가 맞아야 통과한다.
+- Agent · MCP · DB · RabbitMQ는 docker compose 안에서 서로 부른다. 개발 편의로 DB · RabbitMQ 포트를 열어 두고, 호스트에서 Agent를 띄울 때는 `docker-compose.agent-local.yml`로 MCP 포트를 127.0.0.1에 연다.
+- `/internal/**`은 `X-Internal-Token` 헤더가 맞아야 통과한다. 네트워크로 막지 않으므로 이 토큰이 유일한 경계다.
 
-## 2. FRONTEND_PLAN.md "백엔드와 확인할 것" 답변
+## 2. 자주 묻는 것
 
 | 질문 | 답 |
 |---|---|
 | 프론트는 Spring만 호출하나? | 네. Agent · MCP는 직접 호출하지 않는다. |
-| 세션 쿠키 vs JWT | JWT (`Authorization: Bearer`). 데모 역할 전환은 계정 두 개로 로그인 (`officer1` / `dev1`, 비밀번호 `password`). |
-| 폴링 vs SSE | 둘 다 된다. MVP는 `GET /tasks/{id}` + `GET /tasks/{id}/events?after=` 폴링으로 충분. SSE는 `/stream?access_token=` (EventSource는 헤더를 못 보냄). |
-| ① 요건 확정에서 내용 수정이 되나? | 확정 · 보류만. |
-| ② "수정함"은 코드 직접 수정인가? | MVP는 코멘트로 수정 요청 (`REQUEST_CHANGES`). Agent가 반영하고 verify를 다시 돈다. |
-| 검증 실패 패치의 publish 차단 예외? | 없음. 서버가 409로 막는다. 해당 위치를 `excludedSpecKeys`로 빼고 승인하거나 수정 요청한다. |
+| 세션 쿠키 vs JWT | JWT (`Authorization: Bearer`). 시드 계정 `officer1` · `planner1` · `dev1` · `dev2`, 비밀번호 `password`. 역할은 없다. |
+| 폴링 vs SSE | 둘 다 된다. `GET /tasks/{id}` + `GET /tasks/{id}/events?after=` 폴링으로 충분. SSE는 `/stream?access_token=` (EventSource는 헤더를 못 보냄). |
+| 사람 확인은 몇 번? | 한 번. 제안마다 반영 / 제외를 고른다 (`excludedProposalKeys`). 수정 요청은 없다 (10.3). |
+| 근거 검사를 통과 못 한 제안도 승인되나? | 아니다. 서버가 409로 막는다. `canApprove`가 같은 판단을 미리 알려준다. |
 | 규정 파일 형식 | `.md` / `.markdown` / `.txt`, UTF-8, 파일당 1MB 이하. |
-| 작업 티켓은 어디에 생기나? | 백엔드 `work_tickets` 테이블 (Jira 대신). 링크는 `/tickets/{id}`, 참조는 `RR-{id}`. |
+| 반영 결과는 어디에 남나? | `product_rules`에 새 행(`R083`~), `deliveries`에 `RULE_VERSION` 기록 (10.4). |
 | 명세서 출력 형식 | `GET /tasks/{id}/report`의 `report.markdown`. 화면 렌더링 + 다운로드. |
 | history 모드 SPA fallback | frontend 컨테이너(nginx)의 `try_files $uri /index.html`로 처리. Spring은 `/api`만 담당. |
 
-## 3. 인증 · 역할
+## 3. 인증
 
-| 역할 | 누구 | 할 수 있는 것 |
-|---|---|---|
-| `OFFICER` | 준법감시 · 상품기획 담당자 | 규정 업로드, ① 요건 확정 |
-| `DEVELOPER` | 개발자 | 규정 업로드, ② 검토 · 승인 |
-
-조회는 로그인한 사람 모두 가능. 역할이 다르면 403.
+역할은 없다. 로그인한 사용자는 모두 같은 일을 할 수 있다.
 
 ```http
 POST /api/auth/login   {"username":"officer1","password":"password"}
-→ {"token":"…","userId":1,"username":"officer1","displayName":"김준법","role":"OFFICER"}
+→ {"token":"…","userId":1,"username":"officer1","displayName":"김준법"}
 GET  /api/auth/me
+→ {"userId":1,"username":"officer1","displayName":"김준법"}
 ```
 
 ## 4. 작업 상태
 
-FRONTEND_PLAN.md 작업 상태 표와 같은 이름을 쓴다.
+상태 그림과 노드 → 상태 표는 [10.1](#101-상태--노드)에 있다.
 
-```
-EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶ DESIGNING ─▶ VERIFYING ─▶ WAITING_REVIEW ─(승인)─▶ PUBLISHING ─▶ DONE
-     │                    │                                          ▲            │              │
-     └▶ NO_CHANGE         └(전부 보류)▶ HELD                          └── 재시도 ──┘              ├(거절)▶ REJECTED
-                                                                     ▲                          └(수정 요청)▶ DESIGNING
-                                                                                  어디서든 오류 ▶ FAILED
-```
-
-단순화 흐름([SIMPLIFICATION.md](./SIMPLIFICATION.md))에서는 요건 확정 없이 `EXTRACTING ─▶ LOCATING`으로 바로 간다. 두 흐름 모두 허용한다.
-
-`GET /tasks/{id}`의 `pendingAction`이 지금 사람이 할 일을 알려준다 (`{step, role, path}` 또는 `null`).
+`GET /tasks/{id}`의 `pendingAction`이 지금 사람이 할 일을 알려준다. 확인 대기면 `{step:"REVIEW", path}`, 아니면 `null`.
 라우터 가드는 이 값과 `status`만 보면 된다.
 
 ## 5. 공개 API (`/api/ai/tasks`)
 
 에러는 항상 `{"error":"CONFLICT","message":"…"}` 형태.
-400 입력 오류 · 401 미인증 · 403 역할 · 404 없음 · 409 상태 충돌 · 413 파일 크기.
+400 입력 오류 · 401 미인증 · 403 승인 검증 실패 · 404 없음 · 409 상태 충돌 · 413 파일 크기.
 
 | 프론트 함수 | Method · Path | 요청 | 응답 |
 |---|---|---|---|
 | `createTask(files)` | `POST /api/ai/tasks` | multipart: `oldFile`, `newFile`, `title?`, `oldVersion?`(기본 v3), `newVersion?`(기본 v4) | **202** `{taskId, status}` |
 | `listTasks()` | `GET /api/ai/tasks?mine=false` | `mine=true`면 내가 만든 것만 | `TaskSummary[]` |
-| `getTask(id)` | `GET /api/ai/tasks/{id}` | | `{task, errorMessage, maxVerifyRounds, documents, pendingAction, counts, approvals, deliveries}` |
+| `getTask(id)` | `GET /api/ai/tasks/{id}` | | `{task, errorMessage, maxVerifyRounds, documents, pendingAction, counts:{requirements, proposals}, approvals, deliveries}` ([예시](./contracts/task.get.json)) |
 | `getRequirements(id)` | `GET /api/ai/tasks/{id}/requirements` | | `{task, documents, requirements[]}` — 요건마다 `oldText` · `newText` (신·구 원문) |
-| `approveRequirements(id, d)` | `POST /api/ai/tasks/{id}/requirements/approval` | `{decisions:[{requirementId, decision:"CONFIRMED"\|"HELD"}], comment?}` — **모든 요건**에 결정 필요 | `Approval` |
-| `getChangeSpecs(id)` | `GET /api/ai/tasks/{id}/change-specs` | | `{task, targets[], nonTargets[]}` — 대상 아님도 `reason` 포함 |
-| `getPatches(id)` | `GET /api/ai/tasks/{id}/patches` | | `{task, maxVerifyRounds, latestRound, passed, failed, pending, canApprove, patches[], testCases[]}` — `patches`는 회차 전체, 현재 것은 `latest:true` |
-| `reviewPatches(id, d)` | `POST /api/ai/tasks/{id}/review` | `{decision:"APPROVE"\|"REJECT"\|"REQUEST_CHANGES", comment?, excludedSpecKeys?}` — 수정 요청은 comment 필수 | `Approval` |
+| `getProposals(id)` | `GET /api/ai/tasks/{id}/proposals` | | 10.2 |
+| `getContractImpacts(id)` | `GET /api/ai/tasks/{id}/contract-impacts` | | 10.6 |
+| `reviewProposals(id, d)` | `POST /api/ai/tasks/{id}/review` | `{decision:"APPROVE"\|"REJECT", comment?, excludedProposalKeys?}` | `Approval` — 10.3 |
 | `getReport(id)` | `GET /api/ai/tasks/{id}/report` | | `{task, report, deliveries[]}` |
 | `getEvaluation(id)` | `GET /api/ai/tasks/{id}/evaluation` | | `{task, evaluation}` |
 | (폴링) | `GET /api/ai/tasks/{id}/events?after={seq}` | | `{seq, type, payload, createdAt}[]` |
 | (SSE) | `GET /api/ai/tasks/{id}/stream?access_token={jwt}` | `Last-Event-ID` 또는 `?after=` | `event: {type}` / `data: {seq,type,payload}` |
-| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기에서 FAILED가 된 작업. Agent는 부르지 않고 확인 대기로 되돌림). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 승인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
-| `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, workTickets, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
-
-### 승인 규칙 (서버가 검사)
-
-| 단계 | 누가 | 언제 | 검사 |
-|---|---|---|---|
-| ① 요건 확정 | OFFICER | `WAITING_REQUIREMENT_APPROVAL` | 모든 요건에 CONFIRMED/HELD. 하나라도 확정 → `LOCATING`, 전부 보류 → `HELD` |
-| ② 검토 · 승인 | DEVELOPER | `WAITING_REVIEW` | APPROVE: 제외하지 않은 현재 패치가 **전부 PASSED**여야 함 (아니면 409). `canApprove`가 같은 판단을 미리 알려준다 |
+| `retryTask(id)` | `POST /api/ai/tasks/{id}/retry` | | **202** `{taskId, status, accepted, how}` — "다시 시도". 진행 중(Agent가 도중에 죽음) 또는 `FAILED`(Agent 호출 실패) 작업만. `how`는 Agent에 보낸 것: `continue`(반영 도중 죽음) · `resume`(승인 직후 죽음, 저장된 승인 재전송) · `run`(업로드 직후 죽음) · `waiting`(확인 대기에서 FAILED가 된 작업. Agent는 부르지 않고 확인 대기로 되돌림). FAILED였으면 상태를 멈추기 전 자리로 되돌린다. **진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다** — 돌고 있는 Agent를 겹쳐 부르면 멀쩡한 작업이 깨지기 때문. 그 전엔 409(남은 초 포함). Agent가 423(아직 실행 중)이면 409, 확인 대기 · 정상 종료 작업은 409, Agent 연결 실패는 503(작업은 다시 FAILED) |
+| `resetDemo()` | `POST /api/demo/reset` | | `{tasks, jobs, products, productRules, loanContracts}` — 작업 기록을 지우고 업무 데이터를 `data/business` JSON으로 되돌린다. 계정은 남긴다. `DEMO_RESET_ENABLED=false`면 404 |
 
 ### 주요 객체
 
 ```jsonc
 // Requirement
-{"id":1,"reqKey":"R1","summary":"고령자 기준 만 65세 → 만 60세","target":"개인신용대출 전 상품",
+{"id":1,"reqKey":"R1","summary":"DSR 한도 40% → 35%","target":"개인신용대출 전 상품",
  "effectiveDate":"2026-12-01","transitional":"시행일 이후 신청분부터, 기존 계약은 종전 기준",
- "articleRef":"제15조","oldText":"…","newText":"…","status":"PROPOSED","detail":{}}
+ "articleRef":"제8조","oldText":"…","newText":"…","detail":{}}
 
-// ChangeSpec
-{"id":3,"specKey":"S3","reqKey":"R1","locationKind":"CODE","filePath":"loan/pricing.py",
- "symbol":"SENIOR_AGE_MONTHS","lineNo":12,"snippet":"SENIOR_AGE_MONTHS = 780",
- "changeType":"VALUE","target":true,"reason":"월 단위로 표현된 같은 기준 (65×12)","bundle":"pricing","detail":{}}
-// 대상 아님: "target":false, "changeType":null, "reason":"소득 추정용 은퇴 나이, 고령자 기준과 무관"
-
-// Patch
-{"id":7,"bundle":"eligibility","round":2,"specKeys":["S1","S4"],"filePath":"loan/eligibility.py",
- "diff":"--- a/…\n+++ b/…","verifyStatus":"PASSED","verifyLog":"…","failureKind":null,"latest":true,"detail":{}}
-
-// Approval — ① 요건 확정은 요청 값 그대로 CONFIRMED(하나라도 확정) · HELD(전부 보류)
-{"id":1,"step":"REQUIREMENTS","decision":"CONFIRMED","approverId":1,
- "approver":{"userId":1,"username":"officer1","displayName":"김준법","role":"OFFICER"},"comment":"R2 보류",
- "payload":{"decisions":[{"requirementId":1,"reqKey":"R1","decision":"CONFIRMED"},…],"confirmedReqKeys":["R1"]},
+// Approval — 사람 확인 기록 (10.3)
+{"id":1,"step":"REVIEW","decision":"APPROVE","approverId":1,
+ "approver":{"userId":1,"username":"officer1","displayName":"김준법"},"comment":"P005는 화면 문구 정비 후 반영",
+ "payload":{"approvedProposalKeys":["P001:DSR_LIMIT"],"excludedProposalKeys":["P005:DSR_LIMIT"]},
  "createdAt":"…"}
-// ② 검토 · 승인은 step "REVIEW", decision APPROVE · REJECT · REQUEST_CHANGES
 ```
 
-`changeType`: `VALUE`(①) · `LOGIC`(②) · `DB`(③) · `NEW`(④).
-`locationKind`: `CODE` · `CONFIG` · `DB` · `PRODUCT` · `DOC` · `UI`.
+제안(`RuleProposal`)은 10.2, 반영 기록(`Delivery`)은 10.4.
 
 ### 진행 이벤트 `type`
 
 | type | payload | 화면 |
 |---|---|---|
 | `STEP` | `{node, round?, message?}` | 단계 표시. `node=verify`면 `round`회차 |
-| `APPROVAL_REQUIRED` | `{step:"REQUIREMENTS"\|"REVIEW", summary?}` | 승인 화면으로 이동 버튼 |
-| `RESUMED` | `{step, decision, by, approvalId}` | |
+| `APPROVAL_REQUIRED` | `{step:"REVIEW", summary?}` | 확인 화면으로 이동 버튼. 다른 step은 400 |
+| `RESUMED` | `{step, decision, by, approvalId}` | `step:"RETRY"`면 "다시 시도" |
 | `TOOL_START` / `TOOL_END` (큐) | `{tool, attempt?, ok?, retrying?, dead?, error?}` | 큐 재시도 표시 |
 | `TOOL_START` (Agent) | `{node, tool, args}` — 단계 코드가 도구를 부르기 직전. ID 목록은 개수로 줄인다 | AI 작업 기록 |
 | `TOOL_END` (Agent) | `{node, tool, ok, ms, summary?, error?}` — `summary`는 결과 건수 요약("12건") | AI 작업 기록 |
 | `DECISION` | `{node, requirementId, productId, model:{impact, targetRuleIds, reason}\|null, final:{impact, targetRuleIds}, checks:[…]}` — 상품 영향 판단 직후 상품마다. `model`은 모델 판단, `final`은 코드 검사 뒤 판단, `checks`는 검사가 바꾼 이유 | AI 판단 기록 |
 | `TOKEN` | `{text}` | (선택) 스트리밍 |
 | `STATUS` | `{status}` | |
-| `DONE` | `{outcome:"DONE"\|"NO_CHANGE"\|"HELD"\|"REJECTED"}` | 종료 |
+| `DONE` | `{outcome:"DONE"\|"NO_CHANGE"\|"REJECTED"}` | 종료 |
 | `FAILED` | `{reason}` | 오류 화면 |
 
 Agent가 보내는 `TOOL_*` · `DECISION`은 상태를 바꾸지 않는 기록이다. 큐의 `TOOL_*`와는 `node` 유무로 구분한다. 기록 전송이 실패해도 Agent는 작업을 계속한다.
@@ -143,7 +109,7 @@ Agent가 보내는 `TOOL_*` · `DECISION`은 상태를 바꾸지 않는 기록�
 
 ### Spring → Agent
 
-둘 다 바로 202를 돌려주고, 실제 작업은 백그라운드에서 한다.
+셋 다 바로 202를 돌려주고, 실제 작업은 백그라운드에서 한다.
 
 ```http
 POST {AGENT_BASE_URL}/run
@@ -151,18 +117,14 @@ POST {AGENT_BASE_URL}/run
  "callbackBaseUrl":"http://backend:8080/internal/tasks/{taskId}"}
 
 POST {AGENT_BASE_URL}/resume
-{"taskId","threadId","step":"REQUIREMENTS"|"REVIEW","decision","approvalId","comment","payload","callbackBaseUrl"}
+{"taskId","threadId","step":"REVIEW","decision":"APPROVE"|"REJECT","approvalId","comment","payload","callbackBaseUrl"}
 
 POST {AGENT_BASE_URL}/continue      ← 사용자 "다시 시도" (POST /api/ai/tasks/{id}/retry)가 먼저 보냄. Agent 가 409(이어갈 게 없음)면 저장된 승인으로 /resume, 그것도 없으면 /run 을 다시 보냄.
                                       Agent 가 그 thread 를 아직 돌리고 있으면 423 으로 거절해야 한다 (백엔드는 사용자에게 "아직 실행 중" 409). 받은 순간부터 끝날 때까지가 "실행 중"이다 — 원문을 받는 구간도 포함
 {"taskId","threadId","callbackBaseUrl"}
 ```
 
-`decision`: REQUIREMENTS면 `CONFIRMED` · `HELD`, REVIEW면 `APPROVE` · `REJECT` · `REQUEST_CHANGES`.
-
-`/resume`의 payload
-- REQUIREMENTS: `{decisions:[{requirementId, reqKey, decision}], confirmedReqKeys:[…]}`
-- REVIEW: `{excludedSpecKeys:[…], approvedPatchIds:[…]}` (APPROVE일 때만 approvedPatchIds)
+`/resume`의 payload는 확인 기록과 같다. `{approvedProposalKeys:[…], excludedProposalKeys:[…]}` (REJECT면 `approvedProposalKeys` 없음).
 
 ### Agent → Spring (`{callbackBaseUrl}` 아래)
 
@@ -170,52 +132,32 @@ POST {AGENT_BASE_URL}/continue      ← 사용자 "다시 시도" (POST /api/ai/
 |---|---|---|
 | `GET /documents` | 시작 | → `[{side, versionLabel, filename, sha256, content}]` |
 | `GET ` (빈 경로) | 아무 때 | → `{id, title, status, currentNode, verifyRound, threadId}` |
-| `GET /approvals` | 재개 후 | → interrupt 기록 |
+| `GET /approvals` | 재개 후 | → 확인 기록 |
 | `POST /events` | 노드 진입마다 | `{type, payload}` — 위 이벤트 표 |
-| `PUT /requirements` | requirement_agent | `{items:[{reqKey, summary, target, effectiveDate, transitional, articleRef, oldText, newText, detail}]}` — EXTRACTING에서만, 전체 교체 |
-| `PUT /change-specs` | locate_agent | `{items:[{specKey, reqKey, locationKind, filePath, symbol, lineNo, snippet, changeType, target, reason, bundle, detail}]}` — specKey upsert |
-| `POST /test-cases` | test_agent | `{items:[{testKey, reqKey, name, kind:"BOUNDARY"\|"EFFECTIVE_DATE"\|"SYSTEM"\|"UNIT", code, detail}]}` — **한 번만**, 두 번째는 409 |
-| `PUT /patches` | design · verify | `{items:[{bundle, round, filePath, specKeys, diff, verifyStatus, verifyLog, failureKind, detail}]}` — (bundle, round, filePath) upsert. verify 결과만 보낼 땐 diff 생략 |
+| `PUT /requirements` | requirement_agent | `{items:[{reqKey, summary, target, effectiveDate, transitional, articleRef, oldText, newText, detail}]}` — 전체 교체 |
+| `PUT /proposals` | proposal_agent · verify | 10.2 |
+| `PUT /contract-impacts` | product_impact_agent 이후 | 10.6 |
 | `PUT /report` | report | `{markdown, summary, …}` 자유 형식 |
-| `PUT /evaluation` | 평가 스크립트 | `{locate:{recall, precision}, trapErrors, verifyPassRate:{round1, round2}, keywordBaseline:{…}, elapsedSec}` |
+| `PUT /evaluation` | 평가 스크립트 | 자유 형식 (`{…}`) |
 
 **순서 규칙**
-1. 노드에 들어갈 때 `STEP {node}` → 상태가 자동으로 바뀐다 (`requirement_agent`→EXTRACTING, `test_agent`·`locate_agent`→LOCATING, `plan`·`worker`·`merge`·`design_agent`→DESIGNING, `verify`→VERIFYING, `publish`→PUBLISHING).
-2. interrupt 직전에 산출물을 저장하고 `APPROVAL_REQUIRED {step}`을 보낸다.
-3. 실질 변경 0건이면 `PUT /report` 후 `DONE {outcome:"NO_CHANGE"}`.
+1. 노드에 들어갈 때 `STEP {node}` → 상태가 자동으로 바뀐다 (10.1 표).
+2. interrupt 직전에 제안을 저장하고 `APPROVAL_REQUIRED {step:"REVIEW"}`를 보낸다.
+3. 바꿀 상품이 없으면 `PUT /report` 후 `DONE {outcome:"NO_CHANGE"}`.
 4. 끝나면 `PUT /report` 후 `DONE {outcome}`. 오류는 `FAILED {reason}`.
-5. 위 4절 그림에 없는 전이는 409. `WAITING_*`에서 나가는 전이는 승인 API만 한다 (Agent는 `FAILED`만 가능). 종료 상태는 같은 outcome의 `DONE`만 받는다.
+5. 10.1 그림에 없는 전이는 409. `WAITING_REVIEW`에서 나가는 전이는 확인 API만 한다 (Agent가 보낸 `FAILED`도 409, 10.4). 종료 상태는 같은 outcome의 `DONE`만 받는다.
 6. 산출물 저장 가능 상태 (그 밖에는 409)
 
 | 경로 | 상태 |
 |---|---|
 | `PUT /requirements` | EXTRACTING |
-| `PUT /change-specs` | LOCATING · DESIGNING · VERIFYING |
-| `POST /test-cases` | LOCATING |
-| `PUT /patches` | DESIGNING · VERIFYING (검토 대기부터 고정) |
+| `PUT /proposals` | DESIGNING · VERIFYING (확인 대기부터 고정) |
+| `PUT /contract-impacts` | LOCATING · DESIGNING · VERIFYING |
 
 ## 7. 쓰기 도구 (승인 필요)
 
-`create_draft_pr` · `create_work_ticket`은 서버가 다시 검증한다. 그래프의 interrupt만 믿지 않는다.
-
-```http
-POST /internal/work-tickets      ← business-mcp create_work_ticket
-{"taskId","approvalId","idempotencyKey":"{taskId}:ticket:S1","title","description","type":"CODE"|"CONFIG"|"DB"|"DOC"|"TEST","targetRef","specKeys":["S1"],"assignee"}
-
-POST /internal/jobs              ← code-mcp create_draft_pr
-{"taskId","type":"CREATE_DRAFT_PR","approvalId","idempotencyKey":"{taskId}:pr:{bundle}","payload":{"branch","specKeys":[…]}}
-
-→ 202 {"jobId","status":"QUEUED","duplicate":false}
-```
-
-검증 (실패 시 403/409)
-1. `approvalId`가 같은 작업의 REVIEW/APPROVE 기록
-2. 그 작업의 **가장 최근** REVIEW 결정 (이후 수정 요청 · 거절로 뒤집히지 않음)
-3. 작업 상태가 `PUBLISHING`
-4. `specKeys`가 승인 때 제외한 위치가 아님
-
-같은 `idempotencyKey`로 다시 오면 새로 만들지 않고 기존 `jobId`를 `duplicate:true`로 돌려준다.
-publish 노드는 `GET /internal/jobs/{jobId}`로 `DONE`/`DEAD`를 기다린 뒤 report로 간다.
+쓰기 도구는 business-mcp `apply_rule_version` 하나다. 서버가 승인 기록을 다시 검증하고 저장된 제안에서 값을 꺼낸다 (10.4).
+큐에 작업을 넣는 일반 API는 없다. `/internal/jobs`는 조회(`GET /{jobId}`, `GET ?taskId=`)만 한다.
 
 ## 8. 큐 (가산점)
 
@@ -289,7 +231,6 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | `apply` | `PUBLISHING` |
 | `report` 뒤 `DONE {outcome}` | `DONE` · `NO_CHANGE` · `REJECTED` |
 
-- `WAITING_REQUIREMENT_APPROVAL` · `HELD`는 쓰지 않는다.
 - 역할 검사는 없다. 로그인한 사용자 누구나 확인할 수 있다.
 
 ### 10.2 제안 (`rule_proposals`)
@@ -339,7 +280,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | `REJECT` | | `REJECTED` |
 
 - 수정 요청(`REQUEST_CHANGES`)은 없다.
-- 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction.role`은 항상 null이고, `counts.proposals`(현재 회차 제안 수)가 붙는다.
+- 작업 상세(`GET /api/ai/tasks/{id}`)의 `pendingAction`은 `{step:"REVIEW", path}`이고, `counts.proposals`는 현재 회차 제안 수다.
 - Agent 재개: `POST /resume {step:"REVIEW", decision, approvalId, payload}` — payload는 위 기록과 같다. Agent는 그래프를 돌리기 전에 거부할 수 있다: 검토 대기 중인 thread가 아니면(없거나 이미 끝남) 409, `approvedProposalKeys ∪ excludedProposalKeys`가 Agent가 보낸 현재 `change_required` 키와 다르거나 APPROVE에 `approvalId`가 없으면 400. 202 뒤에는 `apply` → `report` → `DONE` 또는 `FAILED`가 콜백으로 온다.
 
 ### 10.4 반영 (쓰기 도구 · 승인 필요)
@@ -370,13 +311,13 @@ POST /internal/product-rules/versions
 - 새 규칙은 닫는 행 없이 새 행만 추가한다. `basis_articles`는 제안 `basis`의 첫 조항(`reg://{규정}/{버전}/{조항}` → `{규정}/{조항}`)
 - 결과 `GET /internal/jobs/{jobId}` → `{status, result: {proposalKey, productId, closedRuleId, newRuleId, effectiveFrom}}` ([예시](./contracts/apply.job.json)). 새 규칙이면 `closedRuleId: null`.
 - 전달 기록(`deliveries`)에 `RULE_VERSION`으로 남긴다.
-- 일반 큐 API `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않는다 (400). 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
+- 큐에 작업을 넣는 일반 API는 없다. 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
 
 Agent가 `apply` 도중 죽어 `PUBLISHING`에 멈추면 사용자가 `POST /api/ai/tasks/{id}/retry`로 이어간다. Agent는 같은 멱등키로 다시 요청하므로 큐 작업이 중복 생기지 않는다.
 
 "다시 시도"는 Agent가 **멈춘** 작업을 위한 것이다. 돌고 있는 작업에 겹쳐 보내면 같은 thread를 두 번 돌리게 되고, 뒤늦게 난 오류가 멀쩡한 작업을 FAILED로 만든다. 세 겹으로 막는다.
 - 백엔드: 진행 중인 작업은 마지막 변화 뒤 `RETRY_QUIET_SECONDS`(기본 300초)가 지나야 받는다. FAILED 작업은 바로 받는다.
-- 백엔드: 확인 대기(`WAITING_*`) 중 Agent가 보낸 `FAILED`는 409로 거절한다. 기다리는 Agent는 아무것도 실행하지 않으므로 그 FAILED는 겹친 요청의 뒷처리다.
+- 백엔드: 확인 대기(`WAITING_REVIEW`) 중 Agent가 보낸 `FAILED`는 409로 거절한다. 기다리는 Agent는 아무것도 실행하지 않으므로 그 FAILED는 겹친 요청의 뒷처리다.
 - Agent: 요청을 받은 순간부터 끝날 때까지 그 thread를 "실행 중"으로 보고, 그동안 `/continue`는 423으로 거절한다. 백엔드는 423이면 `/resume` · `/run`으로 넘어가지 않고 "아직 실행 중" 409를 돌려준다.
 
 Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/jobs/{jobId}`가 `DONE` · `DEAD`가 될 때까지 기다린다. 모두 `DONE`이면 `DONE {outcome:"DONE"}`, 하나라도 `DEAD`면 `FAILED {reason}`.
@@ -398,6 +339,20 @@ Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/
 - Agent: `PUT {callbackBaseUrl}/contract-impacts` `{items:[{contractId, reqKey, reason, grandfathered, maturesAfterEffective}]}` — 전체 교체, `LOCATING` ~ `VERIFYING`.
 - 화면: `GET /api/ai/tasks/{id}/contract-impacts` → `{task, items}`. 서버가 `contractId`로 `loan_contracts`를 조인해 `productId` · `productName` · `status` · `appliedAt` · `ageAtApplication` · `amount` · `repaymentType` · `maturityDate` · `extensionCount` · `dsrAtApproval` 등을 붙인다(Agent가 보낸 키는 그대로, 없는 키만 채움). 못 찾으면 `contractFound: false`. 계약 값은 바꾸지 않는다.
 
-### 10.7 정리 예정 (옛 흐름)
+### 10.7 옛 흐름 정리 (완료)
 
-새 흐름이 끝까지 동작하면 지운다: `/requirements/approval`, `/change-specs`, `/patches`, `/test-cases`, `/internal/work-tickets`, 큐 작업 `CREATE_DRAFT_PR` · `CREATE_TICKET`, `REQUEST_CHANGES`, 역할(`OFFICER` · `DEVELOPER`) 검사.
+단순화 전 흐름은 V7 마이그레이션(`V7__drop_old_flow.sql`)에서 지웠다.
+
+| 지운 것 | 무엇 |
+|---|---|
+| 공개 API | `POST /requirements/approval`, `GET /change-specs`, `GET /patches` |
+| Agent 콜백 | `PUT /change-specs`, `POST /test-cases`, `PUT /patches` |
+| 내부 API | `POST /internal/work-tickets`, `POST /internal/jobs` |
+| 큐 작업 | `CHECK_PATCH` · `CREATE_DRAFT_PR` · `CREATE_TICKET` (남은 건 `APPLY_RULE_VERSION`) |
+| 상태 · 결정 | `WAITING_REQUIREMENT_APPROVAL` · `HELD`, 확인 단계 `REQUIREMENTS`, 결정 `CONFIRMED` · `HELD` · `REQUEST_CHANGES`, `excludedSpecKeys` |
+| 역할 | `OFFICER` · `DEVELOPER` (`users.role`, JWT `role`, 로그인 · `me` · 승인자 응답의 `role`, `pendingAction.role`) |
+| 응답 필드 | `counts.targets` · `nonTargets` · `patches` · `testCases`, 요건 `status`, 리셋 응답 `workTickets` |
+| 테이블 | `change_specs` · `code_patches` · `test_cases` · `db_migrations` · `work_tickets` |
+| 전달 종류 | `PR` · `TICKET` (남은 건 `RULE_VERSION`) |
+
+V7은 옛 흐름의 흔적(위 상태 · 결정 · 테이블 · 큐 작업 · 전달 종류)이 있는 작업을 통째로 지운다. 단순화 흐름 작업과 업무 데이터는 그대로 둔다.

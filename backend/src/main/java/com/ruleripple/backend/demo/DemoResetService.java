@@ -15,7 +15,7 @@ public class DemoResetService {
 
     private static final Logger log = LoggerFactory.getLogger(DemoResetService.class);
 
-    public record Result(int tasks, int jobs, int workTickets, int products, int productRules, int loanContracts) {}
+    public record Result(int tasks, int jobs, int products, int productRules, int loanContracts) {}
 
     private final JdbcTemplate jdbc;
     private final BusinessDataLoader loader;
@@ -27,13 +27,12 @@ public class DemoResetService {
 
     @Transactional(rollbackFor = Exception.class)
     public Result reset() throws IOException {
-        // jobs · work_tickets 는 approvals 를 cascade 없이 참조해서 작업보다 먼저 지운다.
+        // jobs 는 approvals 를 cascade 없이 참조해서 작업보다 먼저 지운다.
         // 큐에 남은 메시지는 JobWorker 가 작업이 없으면 버린다.
         int jobs = jdbc.update("delete from jobs");
-        int tickets = jdbc.update("delete from work_tickets");
         int tasks = jdbc.update("delete from analysis_tasks");
         loader.reseed();
-        Result result = new Result(tasks, jobs, tickets, count("products"), count("product_rules"), count("loan_contracts"));
+        Result result = new Result(tasks, jobs, count("products"), count("product_rules"), count("loan_contracts"));
         log.info("시연 리셋 {}", result);
         return result;
     }

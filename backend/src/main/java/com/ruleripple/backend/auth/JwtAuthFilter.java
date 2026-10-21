@@ -34,14 +34,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
                 Claims claims = jwtService.parse(token);
-                User.Role role = User.Role.valueOf(claims.get("role", String.class));
                 AuthUser principal = new AuthUser(
                         ((Number) claims.get("uid")).longValue(),
                         claims.getSubject(),
-                        claims.get("name", String.class),
-                        role);
+                        claims.get("name", String.class));
                 var auth = new UsernamePasswordAuthenticationToken(
-                        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
+                        principal, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (Exception ignored) {
                 // 잘못된 토큰은 익명으로 두고, 보호된 경로에서 401 처리

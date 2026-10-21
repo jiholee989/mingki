@@ -13,8 +13,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthController {
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
-    public record LoginResponse(String token, Long userId, String username, String displayName, String role) {}
-    public record MeResponse(Long userId, String username, String displayName, String role) {}
+    public record LoginResponse(String token, Long userId, String username, String displayName) {}
+    public record MeResponse(Long userId, String username, String displayName) {}
 
     private final UserRepository users;
     private final PasswordEncoder encoder;
@@ -31,12 +31,12 @@ public class AuthController {
         User user = users.findByUsername(req.username())
                 .filter(u -> encoder.matches(req.password(), u.getPasswordHash()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid credentials"));
-        return new LoginResponse(jwt.issue(user), user.getId(), user.getUsername(), user.getDisplayName(), user.getRole().name());
+        return new LoginResponse(jwt.issue(user), user.getId(), user.getUsername(), user.getDisplayName());
     }
 
     @GetMapping("/me")
     public MeResponse me(@AuthenticationPrincipal AuthUser me) {
         if (me == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        return new MeResponse(me.id(), me.username(), me.displayName(), me.role().name());
+        return new MeResponse(me.id(), me.username(), me.displayName());
     }
 }

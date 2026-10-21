@@ -13,7 +13,7 @@ Spring Boot 3.3 · Java 21 · PostgreSQL 16 · RabbitMQ
 ## 실행
 
 ```bash
-# 루트에서 postgres · rabbitmq · backend · MCP 2개(regulation · business)
+# 루트에서 postgres · rabbitmq · backend · MCP 2개(regulation · business) · Agent
 docker compose up --build
 
 # 로컬 개발: 인프라만 docker로, 백엔드는 gradle
@@ -29,7 +29,7 @@ cd backend && ./gradlew test
 | http://localhost:8080/actuator/health | 헬스 체크 |
 | http://localhost:15672 | RabbitMQ 콘솔 (guest / guest) |
 
-시드 계정은 `officer1` · `planner1` · `dev1` · `dev2`, 비밀번호는 모두 `password`다. v2에서는 역할을 쓰지 않으므로 네 계정의 권한이 같다.
+시드 계정은 `officer1` · `planner1` · `dev1` · `dev2`, 비밀번호는 모두 `password`다. 역할은 없어서 네 계정이 할 수 있는 일이 같다.
 
 업무 데이터(상품 12 · 규칙 82 · 계약 120)는 기동할 때 `data/business/*.json`에서 **비어 있는 테이블에만** 넣는다 (`BusinessDataLoader`). JSON을 고친 뒤 다시 넣으려면 `POST /api/demo/reset`을 부르거나 `docker compose down -v`로 DB를 비운다.
 
@@ -105,8 +105,6 @@ com.ruleripple.backend
 └─ common/    ApiExceptionHandler  — 모든 오류는 {error, message}
 ```
 
-`ChangeSpec` · `CodePatch` · `TestCase` · `WorkTicket`과 `/change-specs` · `/patches` · `/test-cases` · `/work-tickets` 경로는 단순화 전(코드 수정) 흐름의 잔재다. 새 흐름이 끝까지 동작한 뒤 한 PR로 정리한다 (BACKEND_API 10.7).
-
 ## 설계 포인트
 
 자세한 근거는 [docs/QUALITY_25010.md](../docs/QUALITY_25010.md)에 있다.
@@ -121,4 +119,4 @@ com.ruleripple.backend
 | 큐 | 멱등키 `{taskId}:apply:{proposalKey}`, 일시 실패는 3초 간격 3회 재시도 → DLQ, 영구 실패는 재시도 없이 DEAD. 반영과 작업 완료는 한 트랜잭션 |
 | 복구 | Agent가 죽으면 `/retry`가 멈춘 자리(continue → resume → run)에서 잇는다 |
 | 유효 기간 | 규칙 유효 여부는 `effectiveTo == null`이 아니라 날짜(`asOf`)로 판단 |
-| 스키마 | Flyway V1 ~ V5, Hibernate는 `validate`만 |
+| 스키마 | Flyway V1 ~ V7, Hibernate는 `validate`만. V7이 단순화 전 흐름의 테이블 · 컬럼을 지운다 (BACKEND_API 10.7) |

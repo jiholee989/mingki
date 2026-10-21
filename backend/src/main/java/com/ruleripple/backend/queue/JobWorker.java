@@ -3,10 +3,6 @@ package com.ruleripple.backend.queue;
 import com.rabbitmq.client.Channel;
 import com.ruleripple.backend.config.RuleRippleProperties;
 import com.ruleripple.backend.internal.RuleVersionService;
-import com.ruleripple.backend.internal.WorkTicket;
-import com.ruleripple.backend.internal.WorkTicketRepository;
-import com.ruleripple.backend.task.Delivery;
-import com.ruleripple.backend.task.DeliveryRepository;
 import com.ruleripple.backend.task.TaskEventService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -15,7 +11,6 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -30,20 +25,15 @@ public class JobWorker {
 
     private final JobRepository jobs;
     private final JobPublisher publisher;
-    private final WorkTicketRepository tickets;
-    private final DeliveryRepository deliveries;
     private final TaskEventService events;
     private final RuleVersionService ruleVersions;
     private final int maxAttempts;
     private final double failureRate;
 
-    public JobWorker(JobRepository jobs, JobPublisher publisher, WorkTicketRepository tickets,
-                     DeliveryRepository deliveries, TaskEventService events, RuleVersionService ruleVersions,
-                     RuleRippleProperties props) {
+    public JobWorker(JobRepository jobs, JobPublisher publisher, TaskEventService events,
+                     RuleVersionService ruleVersions, RuleRippleProperties props) {
         this.jobs = jobs;
         this.publisher = publisher;
-        this.tickets = tickets;
-        this.deliveries = deliveries;
         this.events = events;
         this.ruleVersions = ruleVersions;
         this.maxAttempts = props.queue().maxAttempts();
@@ -97,9 +87,6 @@ public class JobWorker {
     private Map<String, Object> process(Job job) {
         maybeFail(job);
         return switch (job.getType()) {
-            case CREATE_TICKET -> createTicket(job);
-            case CREATE_DRAFT_PR -> createDraftPr(job);
-            case CHECK_PATCH -> checkPatch(job);
             case APPLY_RULE_VERSION -> ruleVersions.apply(job);
         };
     }
@@ -110,57 +97,6 @@ public class JobWorker {
         }
     }
 
-    private Map<String, Object> createTicket(Job job) {
-        Map<String, Object> p = job.getPayload();
-        WorkTicket t = new WorkTicket();
-        t.setTaskId(job.getTaskId());
-        t.setTitle(str(p, "title", "untitled"));
-        t.setDescription(str(p, "description", null));
-        t.setType(WorkTicket.Type.valueOf(str(p, "type", "CODE")));
-        t.setTargetRef(str(p, "targetRef", null));
-        t.setAssignee(str(p, "assignee", null));
-        t.setApprovalId(job.getApprovalId());
-        t.setCreatedBy("agent");
-        WorkTicket saved = tickets.save(t);
-        String ref = "RR-" + saved.getId();
-        String url = "/tickets/" + saved.getId();
-        if (job.getTaskId() != null) {
-            deliveries.save(new Delivery(job.getTaskId(), Delivery.Kind.TICKET, ref, url, job.getApprovalId()));
-        }
-        Map<String, Object> r = new LinkedHashMap<>();
-        r.put("ticketId", saved.getId());
-        r.put("ref", ref);
-        r.put("url", url);
-        return r;
-    }
-
-    /** 시연용 목: 실제 GitHub 대신 PR 번호와 링크를 만든다. 브랜치·커밋은 code-mcp 가 로컬 샘플 레포에 만든다. */
-    private Map<String, Object> createDraftPr(Job job) {
-        Map<String, Object> p = job.getPayload();
-        String branch = str(p, "branch", "rule-ripple/" + job.getId().toString().substring(0, 8));
-        int prNumber = 100 + Math.floorMod(job.getId().hashCode(), 900);   // 같은 작업은 같은 번호
-        String url = "https://github.com/example/loan-core/pull/" + prNumber;
-        if (job.getTaskId() != null) {
-            deliveries.save(new Delivery(job.getTaskId(), Delivery.Kind.PR, "#" + prNumber, url, job.getApprovalId()));
-        }
-        Map<String, Object> r = new LinkedHashMap<>();
-        r.put("branch", branch);
-        r.put("prNumber", prNumber);
-        r.put("url", url);
-        r.put("draft", true);
-        return r;
-    }
-
-    /** 샌드박스 실행 자체는 code-mcp 가 한다. 큐로 들어온 경우 결과만 기록한다. */
-    private Map<String, Object> checkPatch(Job job) {
-        Map<String, Object> p = job.getPayload();
-        Map<String, Object> r = new LinkedHashMap<>();
-        r.put("applied", Boolean.TRUE.equals(p.get("applied")));
-        r.put("testsPassed", p.getOrDefault("testsPassed", 0));
-        r.put("testsFailed", p.getOrDefault("testsFailed", 0));
-        return r;
-    }
-
     private void emit(Job job, String type, Map<String, Object> payload) {
         if (job.getTaskId() == null) return;
         try {
@@ -168,10 +104,5 @@ public class JobWorker {
         } catch (Exception e) {
             log.debug("event emit skipped: {}", e.getMessage());
         }
-    }
-
-    private static String str(Map<String, Object> m, String k, String def) {
-        Object v = m.get(k);
-        return v == null ? def : v.toString();
     }
 }
