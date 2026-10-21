@@ -58,4 +58,17 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    testLogging {
+        events 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+    // 통합 테스트는 Docker 가 없으면 조용히 건너뛴다. 로그에 수를 남기고, CI 에서는 건너뛴 테스트가 있으면 실패시킨다
+    afterSuite { desc, result ->
+        if (desc.parent == null) {
+            logger.lifecycle("테스트 ${result.testCount}개: 통과 ${result.successfulTestCount} · 실패 ${result.failedTestCount} · 건너뜀 ${result.skippedTestCount}")
+            if (System.getenv('CI') && result.skippedTestCount > 0) {
+                throw new GradleException("CI 에서 건너뛴 테스트가 ${result.skippedTestCount}개 있습니다 (Docker 를 못 찾았는지 확인)")
+            }
+        }
+    }
 }
