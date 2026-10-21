@@ -23,7 +23,8 @@ data/regulations/
 
 파서가 결정적으로 읽을 수 있도록 다음 규칙을 지킵니다.
 
-1. **frontmatter**: `regulation_id`, `title`, `version`, `effective_from`(YYYY-MM-DD), `previous_version`, `fictional`
+1. **frontmatter**: `regulation_id`, `title`, `version`, `effective_from`(YYYY-MM-DD), `previous_version`, `applies_to`, `fictional`
+   - `applies_to`: 규정이 적용되는 상품 ID 목록 (`[P001, P002]`). 규정의 큰 적용 범위만 적고, 조항 안의 예외(예: 사업자대출 제외)는 반영하지 않습니다. 예외 판단은 조항을 읽고 하도록 둡니다.
 2. **장**: `## 제N장 제목`. 구조 표시용이며 조항 ID에는 들어가지 않습니다.
 3. **조항**: `### 제N조(제목)` 또는 `### 제N조의M(제목)`. 다음 `###` 또는 `##` 전까지가 조항 본문입니다.
 4. **부칙**: `## 부칙` 아래 `### 부칙 제N조(제목)`.

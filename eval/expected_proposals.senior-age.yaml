@@ -1,0 +1,48 @@
+# 상품별 제안 정답 — 고령자 기준 시나리오 (Agent에 노출 금지). 사람이 읽는 설명은 answer_key.md 4절.
+# Agent 실행: AGENT_ARTICLE_IDS=15   채점: python eval/score_proposals.py 결과.json --expected eval/expected_proposals.senior-age.yaml
+# 채점 규칙은 expected_proposals.yaml 머리말과 같다.
+
+scenario: senior-age
+requirement: { article: credit-loan-ops/15, from: { value: "65", unit: age }, to: { value: "60", unit: age } }
+effective_date: "2026-12-01"
+close_previous_on: "2026-11-30"
+transition: "시행일 전 신청분과 기존 계약 기간 연장은 종전 만 65세 (부칙 제2조)"
+
+products:
+  - { product_id: P001, impact: keep, rule_id: R005, basis_any: [credit-loan-ops/15, credit-loan-ops/16], reason: "고령자 우대 폭(0.3%p)은 그대로, 적용 나이는 규정 정의를 따름" }
+  - { product_id: P002, impact: change_required, rule_id: R010, current: { value: "65", unit: age }, proposed: { value: "60", unit: age }, basis_any: [credit-loan-ops/15], trap: "키 이름에 SENIOR 없음 (시연 주인공)" }
+  - { product_id: P003, impact: keep, rule_id: R019, basis_any: [credit-loan-ops/15, credit-loan-ops/16] }
+  - { product_id: P004, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P005, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15, credit-loan-ops/23], reason: "만 34세 이하 전용 상품", basis_required: false }
+  - { product_id: P006, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P007, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P008, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P009, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P010, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P011, impact: keep, rule_id: null, basis_any: [credit-loan-ops/15] }
+  - { product_id: P012, impact: keep, rule_id: R081, basis_any: [credit-loan-ops/21], reason: "판매 중단, 연장은 계약 당시 기준", basis_required: true }
+
+must_not:
+  - { rule_id: R008, trap: true, reason: "정년 65 (운영기준 제7조), 고령자 기준 아님" }
+  - { rule_id: R026, trap: true, reason: "녹취 대상 65 (고령 금융소비자 보호기준), 운영기준 고령자와 별개 (운영기준 제24조 ②)" }
+  - { rule_id: R029, trap: true, reason: "녹취 대상 65 (고령 금융소비자 보호기준), 운영기준 고령자와 별개" }
+  - { rule_id: R030, trap: true, reason: "초고령 80 (고령 금융소비자 보호기준)" }
+  - { rule_id: R045, reason: "청년 상품 최소 나이 19" }
+  - { rule_id: R046, reason: "청년 상품 최대 나이 34" }
+  - { rule_id: R005, reason: "고령자 우대 폭 변경 없음" }
+  - { rule_id: R013, reason: "고령자 우대 폭 변경 없음" }
+  - { rule_id: R019, reason: "고령자 우대 폭 변경 없음" }
+  - { rule_id: R081, reason: "판매 중단 상품" }
+  - { rule_id: R014, reason: "중도상환수수료 면제 여부 변경 없음" }
+
+bonus:
+  follow_up:
+    - { product_id: P002, item: "신청 대상 · 화면 문구 '만 65세 이상' 수정", source: "doc://P002", keywords: [문구, 화면, 신청 대상, 65] }
+    - { product_id: P001, item: "화면 문구 '만 65세 이상 고객은 연 0.3%p 우대' 수정", source: "doc://P001", keywords: [문구, 화면, 65] }
+  extra:
+    - { product_id: P001, item: "녹취 대상 65세(고령 금융소비자 보호기준)는 바꾸지 않는다고 명시", basis: senior-protection/5 }
+  contracts:
+    applied_before_effective: [C0004, C0029]  # 60 · 61세, 시행일 전 신청 → 종전 기준(비고령자)
+    grandfathered_age_60_64: [C0002, C0004, C0013, C0016, C0019, C0026, C0029, C0034, C0047, C0069, C0070, C0079, C0080, C0082, C0101, C0118]
+  info:
+    - "계약 목록은 2026-11-30 기준(만기 지난 계약 제외). 계약 영향 API는 조회한 날 기준으로 만기를 거르므로 실행일에 따라 다를 수 있음"

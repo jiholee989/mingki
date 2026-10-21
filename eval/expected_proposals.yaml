@@ -6,7 +6,7 @@
 # 채점 규칙
 #   products   : 12개 상품 모두 판정이 있어야 한다. impact가 같아야 정답.
 #                change_required는 rule_id · proposed(value, unit)도 같아야 정답.
-#                basis_any는 근거로 인정하는 조항 ("{regulation_id}/{article_id}"). keep · needs_check는 이유 근거로 채점.
+#                basis_any는 근거로 인정하는 조항 ("{regulation_id}/{article_id}"). basis_required: true인 상품은 근거도 채점.
 #   must_not   : 이 rule_id에 낸 변경 제안은 오답 (trap: true는 함정)
 #   bonus      : follow_up · extra · contracts는 가산점. 채점 제외 항목은 info
 
@@ -23,13 +23,13 @@ products:
   - { product_id: P003, impact: keep, rule_id: R015, current: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8, credit-loan-ops/3], reason: 이미 신 기준과 같음 }
   - { product_id: P004, impact: keep, rule_id: R037, current: { value: "0.30", unit: ratio }, basis_any: [credit-loan-ops/8, credit-loan-ops/3], reason: 신 기준보다 엄격 }
   - { product_id: P005, impact: change_required, rule_id: R044, current: { value: "40", unit: percent }, proposed: { value: "35", unit: percent }, basis_any: [credit-loan-ops/8], trap: 단위 }
-  - { product_id: P006, impact: keep, rule_id: null, basis_any: [dsr-management/10, dsr-management/2], reason: 소액신용대출 한도 적용 제외 }
+  - { product_id: P006, impact: keep, rule_id: null, basis_any: [dsr-management/10, dsr-management/2], reason: 소액신용대출 한도 적용 제외, basis_required: true }
   - { product_id: P007, impact: change_required, rule_id: R056, current: { value: "0.4", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8], trap: 키 이름 }
   - { product_id: P008, impact: change_required, rule_id: R062, current: { value: "0.40", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8] }
-  - { product_id: P009, impact: keep, rule_id: null, basis_any: [dsr-management/3], reason: 사업자대출은 DSR 적용 대상 아님 }
-  - { product_id: P010, impact: needs_check, rule_id: null, basis_any: [credit-loan-ops/3, credit-loan-ops/8], reason: 현재 DSR 기준 데이터 없음, 문서 정비 중 }
+  - { product_id: P009, impact: keep, rule_id: null, basis_any: [dsr-management/3], reason: 사업자대출은 DSR 적용 대상 아님, basis_required: true }
+  - { product_id: P010, impact: needs_check, rule_id: null, basis_any: [credit-loan-ops/3, credit-loan-ops/8], reason: "현재 DSR 기준 데이터 없음, 문서 정비 중", basis_required: true }
   - { product_id: P011, impact: change_required, rule_id: R075, current: { value: "0.40", unit: ratio }, proposed: { value: "0.35", unit: ratio }, basis_any: [credit-loan-ops/8], trap: 종료된 옛 행 R074 }
-  - { product_id: P012, impact: keep, rule_id: R079, current: { value: "0.40", unit: ratio }, basis_any: [credit-loan-ops/21], reason: 판매 중단, 연장은 계약 당시 기준 }
+  - { product_id: P012, impact: keep, rule_id: R079, current: { value: "0.40", unit: ratio }, basis_any: [credit-loan-ops/21], reason: "판매 중단, 연장은 계약 당시 기준", basis_required: true }
 
 must_not:
   - { rule_id: R007, trap: true, reason: "LTV 0.40" }
