@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import pytest
 from app.llm import LlmReasoner, output_schema
-from app.reasoning import RequirementCandidate, RequirementsOutput
+from app.reasoning import RequirementJudgment
 from app.schemas import Requirement, ProductDraft
 
 
@@ -24,40 +24,43 @@ def requirement():
         target="DSR_LIMIT",
     )
 
+def judgment(**overrides):
+    return {"is_material": True, "summary": "이하에서 미만으로 변경", "target": "DSR_LIMIT",
+            "behavior_change": "기존에는 35% 허용 / 개정 후에는 35% 거절", "old_value": None, "new_value": None, **overrides}
+
+
+CHANGE_8 = {"article_id": "8", "change": "modified", "old_text": "35% 이하", "new_text": "35% 미만", "new_uri": "reg://r/v4/8"}
+
+
 def test_llm_output_can_represent_semantic_change_without_numeric_change():
-    reasoner = LlmReasoner(Model(RequirementsOutput(items=[RequirementCandidate(**{**requirement().model_dump(), "behavior_change": "기존에는 35% 허용 / 개정 후에는 35% 거절"}, is_material=True)])))
-    rows = reasoner.requirements({"old_text": "35% 이하", "new_text": "35% 미만"})
+    rows = LlmReasoner(Model(judgment())).requirements({"changes": [CHANGE_8]})
     assert len(rows) == 1 and rows[0].summary == "이하에서 미만으로 변경"
+    assert (rows[0].id, rows[0].article_id, rows[0].article, rows[0].article_ref) == ("REQ-8", "8", "제8조", "reg://r/v4/8")
 
 def test_missing_description_preserves_source_and_marks_review_needed():
-    output = {"items": [{**requirement().model_dump(), "is_material": True}]}
-    rows = LlmReasoner(Model(output)).requirements({"changes": [{
-        "article_id": "8", "old_text": "35% 이하", "new_text": "35% 미만",
-    }]})
+    rows = LlmReasoner(Model(judgment(behavior_change=""))).requirements({"changes": [CHANGE_8]})
     assert len(rows) == 1
     assert "35% 이하" in rows[0].behavior_change
     assert "35% 미만" in rows[0].behavior_change
     assert "확인 필요" in rows[0].summary
 
 def test_only_empty_new_obligation_description_is_repaired():
-    bad = {**requirement().model_dump(), "change": "added", "article_id": "15-2", "is_material": True}
+    bad = judgment(behavior_change="")
     class RepairModel:
         def __init__(self):
             self.titles = []
         def with_structured_output(self, schema, **kwargs):
             self.titles.append(schema["title"])
-            output = {"behavior_change": "기존에는 의무 없음 / 개정 후 확인 의무 추가"} if schema["title"] == "BehaviorOutput" else {"items": [bad]}
+            output = {"behavior_change": "기존에는 의무 없음 / 개정 후 확인 의무 추가"} if schema["title"] == "BehaviorOutput" else bad
             return SimpleNamespace(invoke=lambda messages: output)
     model = RepairModel()
-    rows = LlmReasoner(model).requirements({"changes": [{"article_id": "15-2"}]})
-    assert len(rows) == 1 and rows[0].article_id == "15-2"
+    rows = LlmReasoner(model).requirements({"changes": [{"article_id": "15-2", "change": "added"}]})
+    assert len(rows) == 1 and rows[0].article_id == "15-2" and rows[0].article == "제15조의2"
     assert "의무 추가" in rows[0].behavior_change
-    assert model.titles == ["RequirementsOutput", "BehaviorOutput"]
+    assert model.titles == ["RequirementJudgment", "BehaviorOutput"]
 
 def test_supplementary_empty_description_does_not_trigger_repair():
-    body = {**requirement().model_dump(), "is_material": True, "behavior_change": "기존에는 이하 / 개정 후 미만"}
-    supplement = {**body, "id": "REQ-supp-2", "article_id": "supp-2", "behavior_change": ""}
-    rows = LlmReasoner(Model({"items": [body, supplement]})).requirements({"changes": [{"article_id": "8"}, {"article_id": "supp-2"}]})
+    rows = LlmReasoner(Model(judgment())).requirements({"changes": [CHANGE_8, {"article_id": "supp-2"}]})
     assert [r.id for r in rows] == ["REQ-8"]
 
 def test_product_assessment_and_proposal_use_structured_model_without_tool_loop():
@@ -91,7 +94,7 @@ def test_product_assessment_and_proposal_use_structured_model_without_tool_loop(
     assert len(model.requests) == 2
 
 
-@pytest.mark.parametrize("schema", [RequirementsOutput, ProductDraft])
+@pytest.mark.parametrize("schema", [RequirementJudgment, ProductDraft])
 def test_structured_schema_requires_every_field(schema):
     result = output_schema(schema)
     assert result["additionalProperties"] is False
@@ -106,8 +109,9 @@ def test_missing_api_key_never_falls_back_to_fixed_answers(monkeypatch):
 
 
 def test_missing_changed_article_is_not_silently_dropped():
+    """조항마다 따로 물으므로 빠질 수 없다. 모델 출력이 잘못되면 조항을 조용히 빼지 않고 멈춘다."""
     reasoner = LlmReasoner(Model({"items": []}))
-    with pytest.raises(ValueError, match="빠졌습니다"):
+    with pytest.raises(ValueError, match="형식 오류"):
         reasoner.requirements({"changes": [{"article_id": "15-2"}]})
 
 
@@ -132,8 +136,8 @@ def test_context_limit_stops_before_model_call():
 
 
 def test_wording_only_change_is_excluded():
-    candidate = RequirementCandidate(**{**requirement().model_dump(), "behavior_change": ""}, is_material=False)
-    assert LlmReasoner(Model(RequirementsOutput(items=[candidate]))).requirements({}) == []
+    wording = judgment(is_material=False, behavior_change="")
+    assert LlmReasoner(Model(wording)).requirements({"changes": [CHANGE_8]}) == []
 
 
 def test_revision_uses_dedicated_prompt_and_requires_feedback_explanation():
@@ -218,3 +222,18 @@ def test_model_text_cannot_override_source_owned_mandatory_values():
     contract = [{"rule_id": "R001", "rule_key": "DSR_LIMIT", "current_value": "0.40", "proposed_value": "0.35", "unit": "ratio"}]
     draft = LlmReasoner(model).draft_product({"mandatory_changes": contract})
     assert [c.model_dump() for c in draft.changes] == contract
+
+
+def test_one_requirement_per_changed_article_regardless_of_context():
+    """고령자 시나리오: 모델이 맥락의 부칙 · 다른 조항까지 요건으로 쪼개 같은 규칙을 두 번 바꾸려다 작업이 실패했다.
+    요건의 개수 · 번호는 코드가 정한다. 바뀐 본문 조항마다 한 번 묻고, 부칙은 묻지 않는다."""
+    class Counting:
+        def __init__(self):
+            self.payloads = []
+        def with_structured_output(self, schema, **kwargs):
+            return SimpleNamespace(invoke=lambda messages: (self.payloads.append(messages[-1].content), judgment())[1])
+    model = Counting()
+    changes = [{"article_id": a, "change": "modified"} for a in ("8", "15", "15-2", "supp-1", "supp-2")]
+    rows = LlmReasoner(model).requirements({"changes": changes, "regulation_context": [{"uri": "reg://r/v4/20"}]})
+    assert [r.id for r in rows] == ["REQ-8", "REQ-15", "REQ-15-2"]
+    assert len(model.payloads) == 3

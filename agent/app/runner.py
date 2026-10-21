@@ -84,6 +84,9 @@ class AgentRunner:
         """listener: node_started(node) · node_updated(node, delta)를 가진 객체. 호출 단위로 받는다."""
         if listener is None and self.on_update is None:
             return self.graph.invoke(value, config)
+        if listener is not None:
+            # 노드가 도구 호출 · 판단을 작업 기록으로 남기도록 호출 단위로 넘긴다 (job_reader와 같은 방식)
+            config = {**config, "configurable": {**config["configurable"], "recorder": listener}}
         on_update = listener.node_updated if listener else self.on_update
         interrupts = ()
         for mode, chunk in self.graph.stream(value, config, stream_mode=["updates", "tasks"]):

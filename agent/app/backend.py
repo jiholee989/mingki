@@ -92,6 +92,19 @@ def proposal_keys(proposal):
     return [f"{proposal.product_id}:{proposal.requirement_id}"]
 
 
+BASIS_LIMIT = 200  # rule_proposals.basis VARCHAR(200)
+
+
+def basis_text(refs):
+    """근거 조항 uri를 쉼표로 잇는다. 백엔드 칸(200자)을 넘지 않게 앞에서부터 들어가는 만큼만."""
+    out = []
+    for ref in dict.fromkeys(r for r in refs if r):
+        if len(", ".join([*out, ref])) > BASIS_LIMIT:
+            break
+        out.append(ref)
+    return ", ".join(out) or None
+
+
 def proposal_rows(proposal):
     """Agent 제안 1건 → 백엔드 제안 행들 (docs/contracts/proposals.put.json 모양). 키는 작성 버전이 바뀌어도 유지한다."""
     base = {
@@ -100,7 +113,7 @@ def proposal_rows(proposal):
         "current": proposal.current,
         "proposed": proposal.recommendation,
         "effectiveDate": proposal.effective_date.isoformat() if proposal.effective_date else None,
-        "basis": proposal.article_ref,
+        "basis": basis_text([proposal.article_ref, *proposal.basis_refs]),
         "reason": proposal.reason,
         "transition": proposal.transitional,
         "followUp": [*proposal.actions, *proposal.optional_actions],
@@ -126,7 +139,7 @@ def keep_row(impact, round_):
     return {"proposalKey": f"{impact.product_id}:{impact.requirement_id}", "reqKey": impact.requirement_id,
             "productId": impact.product_id, "ruleId": evidence[0] if len(evidence) == 1 else None,
             "ruleKey": None, "impact": "keep", "current": impact.current, "proposed": None, "unit": None,
-            "currentValue": None, "proposedValue": None, "effectiveDate": None, "basis": None,
+            "currentValue": None, "proposedValue": None, "effectiveDate": None, "basis": basis_text(impact.basis_refs),
             "reason": impact.reason, "transition": None, "followUp": [], "round": round_,
             "verifyStatus": "PASSED", "verifyLog": None}
 

@@ -67,6 +67,7 @@ def make_proposal_agent(reasoner):
                 version=old.version if retry else old.version + 1 if old else 1,
                 attempt=old.attempt + 1 if retry else 1,
                 review_comment=baseline.review_comment if baseline else "", document_refs=impact.document_refs,
+                basis_refs=impact.basis_refs,
                 generation_error=error, revision_response=response,
             ))
             generated += 1

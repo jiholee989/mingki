@@ -14,9 +14,9 @@ from business_mcp.backend import Backend
 
 RULES = [
     {"ruleId": "R010", "productId": "P002", "ruleKey": "ELIGIBLE_MIN_AGE", "value": "65", "unit": "age",
-     "effectiveFrom": "2024-01-01", "effectiveTo": None},
+     "effectiveFrom": "2024-01-01", "effectiveTo": None, "basisArticles": ["credit-loan-ops/15"]},
     {"ruleId": "R011", "productId": "P002", "ruleKey": "DSR_LIMIT", "value": "0.40", "unit": "ratio",
-     "effectiveFrom": "2024-01-01", "effectiveTo": None},
+     "effectiveFrom": "2024-01-01", "effectiveTo": None, "basisArticles": ["credit-loan-ops/8", "dsr-management/8"]},
     {"ruleId": "R050", "productId": "P012", "ruleKey": "DSR_LIMIT", "value": "0.45", "unit": "ratio",
      "effectiveFrom": "2020-01-01", "effectiveTo": "2023-12-31"},
     {"ruleId": "R060", "productId": "P007", "ruleKey": "MAX_DSR_RATIO", "value": "40", "unit": "percent",
@@ -102,6 +102,7 @@ async def test_sends_internal_token_and_caller(spring):
 async def test_product_rules_pass_backend_response_through(spring):
     rules = await call("get_product_rules", {"rule_key": "DSR_LIMIT"})
     assert rules == [RULES[1], RULES[2]]   # camelCase 그대로, 가공 없음 (종료된 행도 기본으로 포함)
+    assert rules[0]["basisArticles"] == ["credit-loan-ops/8", "dsr-management/8"]   # 근거 조항도 그대로
     assert spring.requests[0].url.params["key"] == "DSR_LIMIT"
 
 

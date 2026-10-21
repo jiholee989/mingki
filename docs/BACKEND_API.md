@@ -128,11 +128,16 @@ EXTRACTING ─▶ WAITING_REQUIREMENT_APPROVAL ─(확정)─▶ LOCATING ─▶
 | `STEP` | `{node, round?, message?}` | 단계 표시. `node=verify`면 `round`회차 |
 | `APPROVAL_REQUIRED` | `{step:"REQUIREMENTS"\|"REVIEW", summary?}` | 승인 화면으로 이동 버튼 |
 | `RESUMED` | `{step, decision, by, approvalId}` | |
-| `TOOL_START` / `TOOL_END` | `{tool, attempt?, ok?, retrying?, dead?, error?}` | 큐 재시도 표시 |
+| `TOOL_START` / `TOOL_END` (큐) | `{tool, attempt?, ok?, retrying?, dead?, error?}` | 큐 재시도 표시 |
+| `TOOL_START` (Agent) | `{node, tool, args}` — 단계 코드가 도구를 부르기 직전. ID 목록은 개수로 줄인다 | AI 작업 기록 |
+| `TOOL_END` (Agent) | `{node, tool, ok, ms, summary?, error?}` — `summary`는 결과 건수 요약("12건") | AI 작업 기록 |
+| `DECISION` | `{node, requirementId, productId, model:{impact, targetRuleIds, reason}\|null, final:{impact, targetRuleIds}, checks:[…]}` — 상품 영향 판단 직후 상품마다. `model`은 모델 판단, `final`은 코드 검사 뒤 판단, `checks`는 검사가 바꾼 이유 | AI 판단 기록 |
 | `TOKEN` | `{text}` | (선택) 스트리밍 |
 | `STATUS` | `{status}` | |
 | `DONE` | `{outcome:"DONE"\|"NO_CHANGE"\|"HELD"\|"REJECTED"}` | 종료 |
 | `FAILED` | `{reason}` | 오류 화면 |
+
+Agent가 보내는 `TOOL_*` · `DECISION`은 상태를 바꾸지 않는 기록이다. 큐의 `TOOL_*`와는 `node` 유무로 구분한다. 기록 전송이 실패해도 Agent는 작업을 계속한다.
 
 ## 6. Agent ↔ Spring
 
@@ -303,7 +308,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | `unit` | `ratio` · `percent` · … | `change_required`면 필수. 기존 규칙의 단위를 바꾸지 않는다 |
 | `currentValue` · `proposedValue` | 문자열 | `change_required`면 `proposedValue` 필수, 기존 규칙이면 `currentValue`도 필수 |
 | `effectiveDate` | `YYYY-MM-DD` | `change_required`면 필수 |
-| `basis` | 문자열 | 근거 조항 (`reg://credit-loan-ops/v4/8`) |
+| `basis` | 문자열 | 근거 조항 (`reg://credit-loan-ops/v4/8`). 여러 개면 쉼표로 구분 (예: 유지 근거인 적용 예외 조항). 200자 이하 |
 | `reason` | 문자열 | 필수 (`keep` · `needs_check`는 왜 그런지) |
 | `transition` | 문자열 | 경과조치 |
 | `followUp` | 문자열 배열 | 후속 작업 (화면 문구 · 심사 절차 · 설명서) |
@@ -361,8 +366,8 @@ POST /internal/product-rules/versions
 - 행을 잠그고 4번을 다시 검사한다. 다르면 **재시도하지 않고 바로 `DEAD`** (`lastError` = "이미 바뀐 규칙"). 다시 해도 결과가 같기 때문이다.
 - 규칙 행 · 전달 기록 · 작업 완료(`DONE`, `result`)를 한 트랜잭션에 커밋한다. 커밋 뒤 워커가 죽어 메시지를 다시 받아도 작업이 `DONE`이라 반영을 반복하지 않는다.
 - 기존 행: `effective_to = effectiveDate - 1일`
-- 새 행: `rule_id` = 기존 최대 번호 다음(`R083`부터), `value = proposedValue`, `unit`, `effective_from = effectiveDate`, `effective_to = null`
-- 새 규칙은 닫는 행 없이 새 행만 추가한다.
+- 새 행: `rule_id` = 기존 최대 번호 다음(`R083`부터), `value = proposedValue`, `unit`, `effective_from = effectiveDate`, `effective_to = null`, `basis_articles` = 기존 행 그대로
+- 새 규칙은 닫는 행 없이 새 행만 추가한다. `basis_articles`는 제안 `basis`의 첫 조항(`reg://{규정}/{버전}/{조항}` → `{규정}/{조항}`)
 - 결과 `GET /internal/jobs/{jobId}` → `{status, result: {proposalKey, productId, closedRuleId, newRuleId, effectiveFrom}}` ([예시](./contracts/apply.job.json)). 새 규칙이면 `closedRuleId: null`.
 - 전달 기록(`deliveries`)에 `RULE_VERSION`으로 남긴다.
 - 일반 큐 API `POST /internal/jobs`는 `APPLY_RULE_VERSION`을 받지 않는다 (400). 제안 · 지금 값 검사를 건너뛰지 못하게 반영은 이 API로만 받는다.
@@ -382,6 +387,7 @@ Agent `apply` 노드: 승인된 제안마다 한 번씩 호출하고 `/internal/
 |---|---|
 | `GET /internal/products` | `?status=ON_SALE\|SALE_ENDED` |
 | `GET /internal/product-rules` | `?productId=`, `?asOf=YYYY-MM-DD` — 그날 유효한 행만 (`effectiveFrom ≤ asOf`, `effectiveTo`가 null이거나 `≥ asOf`) |
+| 규칙 행 (신규 칸) | `basisArticles: ["{regulation_id}/{article_id}"]` — 이 규칙이 따르는 규정 조항 (예: `credit-loan-ops/15`, `senior-protection/5`). 버전 없이 조항만. 비어 있으면 상품 자체 기준이거나 미확인. Agent는 바뀐 조항을 따르지 않는 규칙을 변경 대상에서 뺀다 |
 | `GET /internal/product-rules/keys` (신규) | `?asOf=` (기본 오늘) → `[{ruleKey, units, productIds, activeRows, closedRows, upcomingRows}]`. #23 `list_rule_keys` 모양에 `upcomingRows`(아직 시작 전인 행, 반영 직후 생김)를 더했다. `productIds`는 `asOf`에 유효한 행이 있는 상품 ([예시](./contracts/rule-keys.get.json)) |
 | `GET /internal/contracts/impact` | `?dsrFrom=&dsrTo=` — `dsr_at_approval`이 (dsrFrom, dsrTo] 안. 나이 조건과 함께 주면 둘 다 만족. 계약마다 `dsrAtApproval` · `repaymentType` · `maturityDate` · `extensionCount` · `maturesAfterEffective`(만기 ≥ `appliedBefore`) 추가. 연장 사례(C0006)는 만기일시 · 연장 이력으로 Agent가 판단한다 ([예시](./contracts/contract-impact.get.json)) |
 

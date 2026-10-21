@@ -3,8 +3,10 @@ import copy
 import pytest
 
 from app.cli import show_review, show_details, review_command
-from app.schemas import RevisionCheck, RuleChange, ScopeCondition, Requirement
-from app.validation import validate_proposal, condition_errors, expected_value
+from app.graph import build_graph
+from app.runner import AgentRunner
+from app.schemas import ProductAssessment, RevisionCheck, RuleChange, ScopeCondition, Requirement
+from app.validation import change_problem, validate_proposal, condition_errors, expected_value
 from app.nodes.impact import make_product_impact_agent
 from app.runner import DecisionError
 from app.tools.local import LocalTools
@@ -120,14 +122,31 @@ def impact_state(tools):
         "snapshot_date": "2026-11-30", "regulation_context": tools.get_regulation_context("credit-loan-ops", "v4")["articles"]}
 
 
-def test_numeric_small_loan_exemption_is_not_a_blanket_product_exemption():
-    class Blanket(DsrReasoner):
-        def product_impacts(self, *args):
-            rows = super().product_impacts(*args)
-            return [r.model_copy(update={"impact": "no_change", "applicability": "excluded", "target_rule_ids": [],
-                        "evidence_rule_ids": ["R054"], "document_refs": ["product-doc://P006"]}) if r.product_id == "P006" else r for r in rows]
+class SmallLoanExempt(DsrReasoner):
+    """P006(소액대출)을 소액 예외로 유지 판단한다."""
+    def product_impacts(self, *args):
+        rows = super().product_impacts(*args)
+        return [r.model_copy(update={"impact": "no_change", "applicability": "excluded", "target_rule_ids": [],
+                    "evidence_rule_ids": ["R054"], "document_refs": ["product-doc://P006"]}) if r.product_id == "P006" else r for r in rows]
+
+
+def test_small_loan_exemption_keeps_product_without_changeable_rule():
+    """P006에는 이번 개정으로 바뀔 DSR 규칙이 없다. 차주별 소액 해당 여부는 심사 절차의 일이라 상품 규칙은 유지다."""
     tools = LocalTools()
-    out = make_product_impact_agent(tools, Blanket())(impact_state(tools))
+    out = make_product_impact_agent(tools, SmallLoanExempt())(impact_state(tools))
+    item = next(i for i in out["product_impacts"] if i.product_id == "P006")
+    assert item.impact == "no_change"
+
+
+def test_numeric_small_loan_exemption_is_not_a_blanket_exemption_when_a_rule_could_change():
+    """같은 소액 예외라도 상품에 바뀔 DSR 규칙이 있으면 차주 자료 없이 상품 전체를 유지로 확정하지 않는다."""
+    class WithDsrRule(LocalTools):
+        def get_product_rules(self, *args, **kwargs):
+            return super().get_product_rules(*args, **kwargs) + [
+                {"ruleId": "R900", "productId": "P006", "ruleKey": "DSR_LIMIT", "value": "0.40", "unit": "ratio",
+                 "effectiveFrom": "2024-01-01", "effectiveTo": None}]
+    tools = WithDsrRule()
+    out = make_product_impact_agent(tools, SmallLoanExempt())(impact_state(tools))
     item = next(i for i in out["product_impacts"] if i.product_id == "P006")
     assert item.impact == "needs_review" and item.applicability == "unknown"
     assert "차주별" in item.reason
@@ -215,3 +234,158 @@ def test_approved_rows_are_hidden_but_original_selection_numbers_work(capsys):
     assert "\n1 |" not in text and "\n2 |" in text
     command = review_command("p 2", value["proposals"])
     assert command["decisions"][0]["proposal_id"] == out["proposals"][1].id
+
+
+# ---------- 고른 규칙이 말이 되는지 (2026-10-21 실제 실행의 P004 · P010 · P012) ----------
+
+DSR_REQ = Requirement(id="REQ-8", article_id="8", article="제8조", article_ref="reg://credit-loan-ops/v4/8",
+                      change="modified", summary="DSR 한도", target="DSR",
+                      old_text="차주의 총부채원리금상환비율(DSR)은 40%를 초과할 수 없다.",
+                      new_text="차주의 총부채원리금상환비율(DSR)은 35%를 초과할 수 없다.")
+ON_SALE = {"productId": "P000", "status": "ON_SALE"}
+
+
+def rule(rule_id, key, value, unit="ratio"):
+    return {"ruleId": rule_id, "ruleKey": key, "value": value, "unit": unit}
+
+
+@pytest.mark.parametrize("row", [rule("R001", "DSR_LIMIT", "0.40"), rule("R056", "MAX_DSR_RATIO", "0.4"),
+                                 rule("R044", "DSR_LIMIT", "40", "percent"), rule("RX", "DSR_LIMIT", "0.38")])
+def test_rule_over_new_limit_can_change(row):
+    assert change_problem(DSR_REQ, row, ON_SALE) is None
+
+
+def test_rule_already_within_new_limit_is_kept():
+    verdict, note = change_problem(DSR_REQ, rule("R037", "DSR_LIMIT", "0.30"), ON_SALE)
+    assert verdict == "no_change" and "30%" in note
+    assert change_problem(DSR_REQ, rule("R015", "DSR_LIMIT", "0.35"), ON_SALE)[0] == "no_change"
+
+
+def test_rule_above_old_limit_is_not_the_same_limit():
+    verdict, note = change_problem(DSR_REQ, rule("R073", "ESTIMATED_INCOME_RATIO", "0.85"), ON_SALE)
+    assert verdict == "needs_review" and "R073" in note
+
+
+def test_sale_ended_product_goes_to_review():
+    assert change_problem(DSR_REQ, rule("R079", "DSR_LIMIT", "0.40"), {"status": "SALE_ENDED"})[0] == "needs_review"
+
+
+def test_non_limit_requirement_is_not_judged_by_numbers():
+    age = DSR_REQ.model_copy(update={"old_text": "고령자란 신청일 현재 만 65세 이상인 자를 말한다.",
+                                     "new_text": "고령자란 신청일 현재 만 60세 이상인 자를 말한다."})
+    assert change_problem(age, rule("R010", "ELIGIBLE_MIN_AGE", "65", "age"), ON_SALE) is None
+
+
+def test_wrong_targets_from_real_run_are_filtered_before_proposal():
+    """실제 실행에서 모델이 고른 R037(이미 30%) · R073(추정소득 비율) · R079(판매 중단)를 영향 판단에서 거른다."""
+    class RealMistakes(DsrReasoner):
+        def product_impacts(self, requirements, products, rules, *args):
+            picks = {"P001": "R001", "P004": "R037", "P010": "R073", "P012": "R079"}
+            return [ProductAssessment(requirement_id="REQ-8", product_id=pid, target_rule_ids=[rid], evidence_rule_ids=[rid],
+                                      scope="시행일 이후 신규 신청", applicability="all", impact="change_required",
+                                      reason="DSR 한도 변경") for pid, rid in picks.items()]
+    out = AgentRunner(build_graph(LocalTools(), RealMistakes())).start("T1", "credit-loan-ops", article_ids=["8"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P001"].impact == "change_required" and impacts["P001"].target_rule_ids == ["R001"]
+    assert impacts["P004"].impact == "no_change" and "R037" in impacts["P004"].evidence_rule_ids
+    assert impacts["P010"].impact == "needs_review" and impacts["P012"].impact == "needs_review"
+    assert {c.rule_id for p in out["proposals"] for c in p.changes} == {"R001"}
+
+
+@pytest.mark.parametrize("row", [rule("R060", "DSR_LINE_TERM_MONTHS", "60", "months"), rule("R055", "COOLING_OFF_DAYS", "14", "days")])
+def test_rule_whose_new_value_cannot_be_derived_goes_to_review(row):
+    verdict, note = change_problem(DSR_REQ, row, ON_SALE)
+    assert verdict == "needs_review" and row["ruleId"] in note
+
+
+def test_one_underivable_target_does_not_block_the_others():
+    """실제 실행 3회차: P007이 R056(비율)과 함께 R060(개월)을, P006이 R055(일)를 골라 근거 검사에 실패하고 확인 전체가 막혔다."""
+    class ExtraTargets(DsrReasoner):
+        def product_impacts(self, requirements, products, rules, *args):
+            picks = {"P007": ["R060", "R056"], "P006": ["R055"]}
+            return [ProductAssessment(requirement_id="REQ-8", product_id=pid, target_rule_ids=rids, evidence_rule_ids=rids,
+                                      scope="시행일 이후 신규 신청", applicability="all", impact="change_required",
+                                      reason="DSR 한도 변경") for pid, rids in picks.items()]
+    out = AgentRunner(build_graph(LocalTools(), ExtraTargets())).start("T1", "credit-loan-ops", article_ids=["8"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P007"].impact == "change_required" and impacts["P007"].target_rule_ids == ["R056"]
+    assert impacts["P006"].impact == "needs_review" and impacts["P006"].target_rule_ids == []
+    proposals = {p.product_id: p for p in out["proposals"]}
+    assert proposals["P007"].verification == "passed" and [c.rule_id for c in proposals["P007"].changes] == ["R056"]
+    assert proposals["P006"].verification == "passed"
+
+
+# ---------- 근거 조항 (basis_refs) ----------
+
+def test_keep_supported_only_by_regulation_article_is_kept():
+    class KeepByArticle(DsrReasoner):
+        def product_impacts(self, *args):
+            return [r.model_copy(update={"impact": "no_change", "applicability": "all", "target_rule_ids": [],
+                        "evidence_rule_ids": [], "document_refs": [], "basis_refs": ["reg://credit-loan-ops/v4/8"]})
+                    if r.product_id == "P003" else r for r in super().product_impacts(*args)]
+    tools = LocalTools()
+    out = make_product_impact_agent(tools, KeepByArticle())(impact_state(tools))
+    item = next(i for i in out["product_impacts"] if i.product_id == "P003")
+    assert item.impact == "no_change" and item.basis_refs == ["reg://credit-loan-ops/v4/8"]
+
+
+def test_basis_refs_reach_backend_rows_and_only_known_articles_are_allowed():
+    from app.backend import keep_row
+    from app.llm import output_schema
+    from app.reasoning import ProductAssessmentsOutput
+    from app.schemas import ProductImpact
+    impact = ProductImpact(id="REQ-8:P009", requirement_id="REQ-8", product_id="P009", product_name="사장님 신용대출",
+                           impact="no_change", reason="사업자대출은 적용 대상 아님", current="-",
+                           basis_refs=["reg://dsr-management/v2/3"])
+    assert keep_row(impact, 1)["basis"] == "reg://dsr-management/v2/3"
+    payload = {"rules": [{"ruleId": "R001"}], "documents": [],
+               "regulation_context": [{"uri": "reg://dsr-management/v2/3"}, {"uri": "reg://credit-loan-ops/v4/8"}]}
+    schema = output_schema(ProductAssessmentsOutput, payload)
+    assert schema["$defs"]["ProductAssessment"]["properties"]["basis_refs"]["items"]["enum"] == \
+        ["reg://credit-loan-ops/v4/8", "reg://dsr-management/v2/3"]
+
+
+def test_basis_text_fits_backend_column():
+    from app.backend import BASIS_LIMIT, basis_text
+    refs = [f"reg://dsr-management/v2/{n}" for n in range(1, 20)]
+    text = basis_text(["reg://credit-loan-ops/v4/8", *refs])
+    assert len(text) <= BASIS_LIMIT and text.startswith("reg://credit-loan-ops/v4/8, reg://dsr-management/v2/1")
+    assert basis_text([]) is None
+
+
+
+# ---------- 규칙의 근거 조항 (basisArticles) ----------
+
+AGE_REQ = Requirement(id="REQ-15", article_id="15", article="제15조", article_ref="reg://credit-loan-ops/v4/15",
+                      change="modified", summary="고령자 기준", target="SENIOR_AGE",
+                      old_text="고령자란 신청일 현재 만 65세 이상인 자를 말한다.",
+                      new_text="고령자란 신청일 현재 만 60세 이상인 자를 말한다.")
+
+
+def test_rule_following_another_article_is_not_a_target():
+    """상담 녹음 나이(고령 고객 보호 규정)는 숫자 65와 단위가 같아도 운영기준 제15조 개정과 무관하다."""
+    recording = {**rule("R026", "SENIOR_RECORDING_AGE", "65", "age"), "basisArticles": ["senior-protection/5", "senior-protection/2"]}
+    verdict, note = change_problem(AGE_REQ, recording, ON_SALE)
+    assert verdict == "needs_review" and "senior-protection/5" in note
+    eligible = {**rule("R010", "ELIGIBLE_MIN_AGE", "65", "age"), "basisArticles": ["credit-loan-ops/15"]}
+    assert change_problem(AGE_REQ, eligible, ON_SALE) is None
+    assert change_problem(AGE_REQ, rule("RX", "SENIOR_RECORDING_AGE", "65", "age"), ON_SALE) is None  # 근거 조항이 없으면 기존 판단
+
+
+def test_senior_age_traps_are_filtered_by_rule_basis():
+    """고령자 시나리오 실제 실행: 모델이 P001 · P002의 상담 녹음 나이(R026 · R029)와 보호자 연락 나이(R030)를 함께 골랐다."""
+    class SeniorMistakes(DsrReasoner):
+        def requirements(self, diff):
+            source = next(c for c in diff["changes"] if c["article_id"] == "15")
+            return [AGE_REQ.model_copy(update={"article_ref": source["new_uri"]})]
+
+        def product_impacts(self, requirements, products, rules, *args):
+            picks = {"P001": ["R026"], "P002": ["R010", "R029", "R030"]}
+            return [ProductAssessment(requirement_id="REQ-15", product_id=pid, target_rule_ids=rids, evidence_rule_ids=rids,
+                                      scope="시행일 이후 신규 신청", applicability="all", impact="change_required",
+                                      reason="고령자 기준 변경") for pid, rids in picks.items()]
+    out = AgentRunner(build_graph(LocalTools(), SeniorMistakes())).start("T1", "credit-loan-ops", article_ids=["15"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P002"].target_rule_ids == ["R010"] and impacts["P002"].impact == "change_required"
+    # 모델은 P001을 바꿔야 한다고 봤는데 고른 규칙이 무관하다 → 조용히 유지로 확정하지 않고 사람에게 넘긴다
+    assert impacts["P001"].impact == "needs_review" and impacts["P001"].target_rule_ids == []

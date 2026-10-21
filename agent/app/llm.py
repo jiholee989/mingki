@@ -8,9 +8,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 from langchain_core.messages import HumanMessage, SystemMessage
-from app.reasoning import BehaviorOutput, ProductAssessmentsOutput, RequirementsOutput
+from app.reasoning import BehaviorOutput, ProductAssessmentsOutput, RequirementJudgment
 from app.schemas import Requirement, ProductDraft, ProductRevision, RevisionCheck, ProposalText, RevisionText, RuleChange
-from app.validation import condition_errors, exemption_needs_customer_data, ground_conditions
+from app.validation import changeable_rules, condition_errors, exemption_needs_customer_data, ground_conditions
 
 logger = logging.getLogger(__name__)
 PROMPTS = Path(__file__).resolve().parents[1] / "prompts"
@@ -50,7 +50,16 @@ def output_schema(model, payload=None):
         sources = sorted({a["uri"] for a in payload["regulation_context"]} | set(documents))
         if sources:
             schema["$defs"]["ScopeCondition"]["properties"]["source_ref"]["enum"] = sources
+        articles = sorted({a["uri"] for a in payload["regulation_context"]})
+        if articles:
+            properties["basis_refs"]["items"]["enum"] = articles
     return schema
+
+
+def article_label(article_id):
+    """조항 ID를 원문 표기로: "8" → "제8조", "15-2" → "제15조의2"."""
+    number, _, branch = article_id.partition("-")
+    return f"제{number}조" + (f"의{branch}" if branch else "")
 
 
 class LlmReasoner:
@@ -108,47 +117,42 @@ class LlmReasoner:
         return output
 
     def requirements(self, diff):
+        """바뀐 본문 조항 하나 = 요건 하나. 개수 · 번호 · 조항은 코드가 정하고, 모델은 조항마다 판단과 설명만 채운다.
+
+        부칙(supp-*)은 요건이 아니다. 노드가 경과조치로 붙인다. 표현만 바뀐 조항(is_material=false)은 뺀다.
+        """
         changes = diff.get("changes", [])
         body = [c for c in changes if not c["article_id"].startswith("supp-")]
-        payload = {**diff, "changes": body,
-                   "supplementary_changes": [c for c in changes if c not in body]}
-        expected = {c["article_id"] for c in body}
-        for attempt in range(2):
-            candidates = self._ask("requirement.md", RequirementsOutput, payload).items
-            missing = expected - {c.article_id for c in candidates}
-            if not missing:
-                break
-            if attempt:
-                raise ValueError(f"변경 조항의 실질 변경 판단이 빠졌습니다: {sorted(missing)}")
-            payload["correction"] = f"누락 조항 {sorted(missing)}도 반드시 판정하세요. 제N조의2는 본문 조항이며 부칙이 아닙니다."
-
-        # 문체 판정도 출력에 남기되, 실질 변화와 동작 차이를 설명한 요건만 진행한다.
-        items = [
-            Requirement.model_validate(item.model_dump())
-            for item in candidates
-            if item.is_material and not item.article_id.startswith("supp-")
-        ]
-        sources = {c["article_id"]: c for c in body}
-        for item in items:
-            if item.behavior_change.strip():
+        context = {k: v for k, v in diff.items() if k != "changes"}
+        context["supplementary_changes"] = [c for c in changes if c not in body]
+        items = []
+        for change in body:
+            aid = change["article_id"]
+            judged = self._ask("requirement.md", RequirementJudgment, {**context, "change": change})
+            if not judged.is_material:
                 continue
-            source = sources.get(item.article_id, {})
-            logger.info("동작 설명 보완 article=%s", item.article_id)
-            try:
-                detail = self._ask("requirement-detail.md", BehaviorOutput,
-                                   {"requirement": item, "source": source})
-                item.behavior_change = detail.behavior_change.strip()
-            except ValueError:
-                pass  # 형식 보완 실패 시에도 실제 원문을 보존해 제안 검토로 넘긴다.
+            item = Requirement(id=f"REQ-{aid}", article_id=aid, article=article_label(aid),
+                               article_ref=change.get("new_uri") or change.get("old_uri") or "",
+                               change=change.get("change") or "modified", summary=judged.summary, target=judged.target,
+                               behavior_change=judged.behavior_change.strip(),
+                               old_value=judged.old_value, new_value=judged.new_value)
+            if not item.behavior_change:
+                logger.info("동작 설명 보완 article=%s", aid)
+                try:
+                    detail = self._ask("requirement-detail.md", BehaviorOutput, {"requirement": item, "source": change})
+                    item.behavior_change = detail.behavior_change.strip()
+                except ValueError:
+                    pass  # 형식 보완 실패 시에도 실제 원문을 보존해 제안 검토로 넘긴다.
             if not item.behavior_change:
                 item.behavior_change = (
-                    f"기존 원문: {source.get('old_text') or '없음'} / "
-                    f"개정 원문: {source.get('new_text') or '없음'}"
+                    f"기존 원문: {change.get('old_text') or '없음'} / "
+                    f"개정 원문: {change.get('new_text') or '없음'}"
                     " (동작 영향 설명 미생성: 제안 검토에서 확인 필요)"
                 )
                 item.summary += " [동작 영향 확인 필요]"
-                logger.warning("동작 설명 미생성 article=%s: 원문과 함께 검토 필요로 표시", item.article_id)
-        logger.info("요건 선별: 채택 %s / 제외 %s", len(items), len(candidates) - len(items))
+                logger.warning("동작 설명 미생성 article=%s: 원문과 함께 검토 필요로 표시", aid)
+            items.append(item)
+        logger.info("요건 선별: 채택 %s / 표현만 변경 %s", len(items), len(body) - len(items))
         return items
 
     def product_impacts(self, requirements, products, rules, regulation_context=None, documents=None, data_gaps=None):
@@ -183,7 +187,9 @@ class LlmReasoner:
                         ground_conditions(row, sources)
                         errors.extend(condition_errors(row, sources))
                         own_rules = [r for r in payload["rules"] if r["productId"] == row.product_id]
-                        if row.applicability == "excluded" and exemption_needs_customer_data(req, own_rules):
+                        product = next((p for p in batch if p["productId"] == row.product_id), {})
+                        if (row.applicability == "excluded" and exemption_needs_customer_data(req, own_rules)
+                                and changeable_rules(req, own_rules, product)):
                             errors.append(f"{row.product_id}: 수치로 정한 DSR 예외 한도는 차주별 조건입니다. 차주 자료 없이 상품 전체를 제외하지 말고 needs_review/unknown 또는 조건부 범위로 설명하세요")
                     if not errors:
                         break
