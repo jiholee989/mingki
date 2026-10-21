@@ -124,8 +124,10 @@ def get_product_rules(
             생략하면 종료된 옛 버전 · 시작 전 행까지 전체. 시행일 기준으로 보려면 시행일을 넣는다
 
     Returns:
-        [{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo}]
+        [{ruleId, productId, ruleKey, value, unit, effectiveFrom, effectiveTo, basisArticles}]
         unit: ratio | percent | percent_point | krw | age | score | bool | years | months … (상품마다 다를 수 있음)
+        basisArticles: 이 규칙이 따르는 규정 조항 ["{regulation_id}/{article_id}"]. 바뀐 조항을 따르지 않는 규칙은
+            그 개정으로 바꿀 대상이 아니다 (예: 상담 녹음 나이는 senior-protection/5). 비어 있으면 상품 자체 기준이거나 미확인
     """
     day = _as_of(as_of)
     params = {"key": rule_key, "asOf": day.isoformat() if day else None}

@@ -109,10 +109,13 @@ public class RuleVersionService {
                     p.getEffectiveDate().minusDays(1), p.getRuleId());
         }
         String newRuleId = RuleVersions.nextRuleId(jdbc.queryForList("select rule_id from product_rules", String.class));
+        // 근거 조항은 기존 행을 이어받는다. 새 규칙(기존 행 없음)은 제안 basis 의 첫 조항
         jdbc.update("""
-                insert into product_rules (rule_id, product_id, rule_key, value, unit, effective_from, effective_to)
-                values (?, ?, ?, ?, ?, ?, null)
-                """, newRuleId, p.getProductId(), p.getRuleKey(), p.getProposedValue(), p.getUnit(), p.getEffectiveDate());
+                insert into product_rules (rule_id, product_id, rule_key, value, unit, effective_from, effective_to, basis_articles)
+                values (?, ?, ?, ?, ?, ?, null,
+                        coalesce((select basis_articles from product_rules where rule_id = ?), ?::jsonb))
+                """, newRuleId, p.getProductId(), p.getRuleKey(), p.getProposedValue(), p.getUnit(), p.getEffectiveDate(),
+                p.getRuleId(), RuleVersions.basisArticlesJson(p.getBasis()));
         deliveries.save(new Delivery(job.getTaskId(), Delivery.Kind.RULE_VERSION, newRuleId, null, job.getApprovalId()));
 
         Map<String, Object> result = new LinkedHashMap<>();

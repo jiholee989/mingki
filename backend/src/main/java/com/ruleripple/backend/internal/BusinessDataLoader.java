@@ -38,7 +38,7 @@ public class BusinessDataLoader implements ApplicationRunner {
 
     @JsonIgnoreProperties({"source"})
     record RuleRow(String ruleId, String productId, String ruleKey, String value, String unit,
-                   LocalDate effectiveFrom, LocalDate effectiveTo) {}
+                   LocalDate effectiveFrom, LocalDate effectiveTo, List<String> basisArticles) {}
 
     @JsonIgnoreProperties({"note"})
     record ContractRow(String contractId, String productId, String customerId, LocalDate birthDate,
@@ -102,13 +102,14 @@ public class BusinessDataLoader implements ApplicationRunner {
         if (!isEmpty("product_rules")) return;
         List<RuleRow> rows = read("product_rules.json", new TypeReference<>() {});
         jdbc.batchUpdate("""
-                insert into product_rules (rule_id, product_id, rule_key, value, unit, effective_from, effective_to)
-                values (?, ?, ?, ?, ?, ?, ?)
+                insert into product_rules (rule_id, product_id, rule_key, value, unit, effective_from, effective_to, basis_articles)
+                values (?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 """, rows.stream().map(r -> new Object[]{
                         r.ruleId(), r.productId(), r.ruleKey(), r.value(), r.unit(),
-                        r.effectiveFrom(), r.effectiveTo()}).toList(),
+                        r.effectiveFrom(), r.effectiveTo(),
+                        toJson(r.basisArticles() == null ? List.of() : r.basisArticles())}).toList(),
                 new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR,
-                        Types.DATE, Types.DATE});
+                        Types.DATE, Types.DATE, Types.VARCHAR});
         log.info("product_rules {}건 시드", rows.size());
     }
 

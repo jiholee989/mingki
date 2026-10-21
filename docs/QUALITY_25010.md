@@ -38,7 +38,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
                                                     regulation-mcp ◀── Agent ──▶ business-mcp ──▶ Spring /internal
 ```
 
-- 공개 포트는 프론트 · 백엔드 · (개발용) MCP 2개뿐이다. DB · RabbitMQ는 docker network 안에만 있다. Agent는 지금 호스트에서 띄운다 (compose의 `agent:`는 주석, MCP 포트는 `docker-compose.agent-local.yml`로 127.0.0.1에만 연다).
+- Agent · MCP는 docker network 안에서만 불린다. 밖으로 열린 건 백엔드(8080)와 개발 편의용 DB · RabbitMQ 포트다. 호스트에서 Agent를 띄울 때는 `docker-compose.agent-local.yml`로 MCP 포트를 127.0.0.1에만 연다.
 - **업무 규칙은 Spring 한 곳에만 있다.** MCP는 Spring `/internal/**`을 감싸고, Agent는 MCP를 통해서만 업무 데이터를 본다. 그래서 "무엇이 허용되는가"를 고칠 때 한 곳만 고친다.
 - 정답지(`eval/`)는 어느 컨테이너에도 마운트되지 않는다. Agent가 읽을 수 있는 건 규정 원문 · 상품 문서 · Spring 응답뿐이다 (`docker-compose.yml`의 마운트 목록).
 
@@ -133,7 +133,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 
 | 위험 | 설계 | 위치 | 확인 |
 |---|---|---|---|
-| 개발자마다 환경이 달라 안 돌아감 | `docker compose up --build`로 postgres · rabbitmq · backend · MCP 2개. Agent는 호스트에서 띄우고 `docker-compose.agent-local.yml`로 MCP 포트를 열어 연결. 설정은 전부 환경 변수(`DB_HOST`, `AGENT_BASE_URL`, `JOB_FAILURE_RATE`, `AGENT_MODE` …) | `docker-compose.yml`, `backend/README.md` 환경 변수 표, `agent/README.md` | #25에서 backend 이미지 빌드 · 기동 · 시드 확인, #35에서 Docker 스택 전체 실행 |
+| 개발자마다 환경이 달라 안 돌아감 | `docker compose up --build` 한 번으로 postgres · rabbitmq · backend · MCP 2개 · Agent(#49). 호스트에서 Agent를 띄울 때는 `docker-compose.agent-local.yml`로 MCP 포트를 열어 연결. 설정은 전부 환경 변수(`DB_HOST`, `AGENT_BASE_URL`, `JOB_FAILURE_RATE`, `AGENT_MODE` …) | `docker-compose.yml`, `backend/README.md` 환경 변수 표, `agent/README.md` | #25에서 backend 이미지 빌드 · 기동 · 시드 확인, #35에서 Docker 스택 전체 실행 |
 | 데이터가 DB에만 있어 옮기기 어려움 | 업무 데이터의 원천은 `data/business/*.json` 하나. 기동 때 빈 테이블에 넣고, 리셋으로 되돌림 | `BusinessDataLoader` | |
 | 로컬 개발이 컨테이너 없이 안 됨 | 백엔드는 `./gradlew bootRun`, Agent는 `llm` 모드(로컬 자료) · `live` 모드(MCP)로 선택 | README | |
 | Agent 실행 환경 고정 | Python 3.12 · uv · `uv.lock`, JDK 21 · Gradle wrapper 8.10 | `pyproject.toml`, `gradle/wrapper` | CI가 같은 조합으로 실행 |
@@ -171,7 +171,7 @@ ISO/IEC 25010:2023의 특성 9개를 쓴다. 2011판 이름이 다른 것은 괄
 | Agent 한 프로세스가 thread 단위로 잠근다 | Agent를 여러 개 띄우면 같은 작업이 겹칠 수 있다 | 분산 잠금 없음 (#34) |
 | 체크포인터 DB 재연결은 코드로만 확인 | DB 재시작 실험을 안 했다 | |
 | `llm` 모드(MCP 없음)에서 승인하면 반영을 못 해 FAILED로 끝난다 | 개발 흐름에서 불편 | `live` 모드에서는 정상. A 판단 대기 |
-| Agent가 compose 밖(호스트)에 있다 | 한 명령으로 전체가 뜨지 않고, `/internal/**`을 네트워크로 격리하지 못한다 | `agent:` 서비스 주석 해제는 A 판단 대기 |
+| `/internal/**`을 네트워크로 격리하지 않는다 | backend 포트가 열려 있어 내부 토큰이 유일한 경계다 | 운영이라면 `/internal`을 별도 포트나 네트워크로 나눈다 |
 | M3(고령자 · 설명 확인) 판단 품질 | 정답지 · 채점기는 있으나 Agent가 아직 통과 못 함 | SIMPLIFICATION 9절 Agent 과제 4개 |
 | P006(소액대출) 판정이 정답지(`keep`)와 Agent(`needs_check`)가 다름 | DSR 판정 12개 중 1개 불일치 | 소액 기준(DSR 관리기준 제2조 4호)이 상품이 아니라 차주의 잔액 합계 기준이라 Agent 판단에 근거가 있다. 정답지 조율 중 (A · E, SIMPLIFICATION 11절) |
 | 개정 조항과 무관한 규칙을 바꾸는 함정 오판 | 조항 3개를 한 번에 돌린 실행에서 P010 `ESTIMATED_INCOME_RATIO` 0.85를 0.35로 제안 | #35. 채점기 `must_not`으로 잡히는 유형. 근거 검사에서 "개정 조항의 대상 규칙인가" 확인 검토 (A) |

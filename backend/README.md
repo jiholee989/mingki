@@ -13,7 +13,7 @@ Spring Boot 3.3 · Java 21 · PostgreSQL 16 · RabbitMQ
 ## 실행
 
 ```bash
-# 루트에서 postgres · rabbitmq · backend · MCP 2개(regulation · business)
+# 루트에서 postgres · rabbitmq · backend · MCP 2개(regulation · business) · Agent
 docker compose up --build
 
 # 로컬 개발: 인프라만 docker로, 백엔드는 gradle

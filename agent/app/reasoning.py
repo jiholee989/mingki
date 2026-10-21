@@ -5,13 +5,14 @@ from pydantic import BaseModel
 from app.schemas import Requirement, ProductAssessment, ProductDraft, RevisionCheck
 
 
-class RequirementCandidate(Requirement):
+class RequirementJudgment(BaseModel):
+    """바뀐 본문 조항 하나에 대한 모델 판단. 요건의 개수 · 번호 · 조항 · 원문은 코드가 정한다."""
     is_material: bool
+    summary: str
+    target: str
     behavior_change: str
-
-
-class RequirementsOutput(BaseModel):
-    items: list[RequirementCandidate]
+    old_value: str | None
+    new_value: str | None
 
 
 class BehaviorOutput(BaseModel):

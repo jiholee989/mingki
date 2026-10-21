@@ -3,6 +3,7 @@
 import time
 from app.backend import proposal_rows
 from app.schemas import ApplyApproval, ApplyResult, Event
+from app.tools.base import recorder_of, recording
 from app.validation import validate_proposal
 
 
@@ -39,6 +40,7 @@ def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, max_read_
     def apply(state, config=None):
         results, error = [], None
         reader = (config or {}).get("configurable", {}).get("job_reader") or job_reader
+        belt = recording(tools, recorder_of(config), "apply")
         try:
             approval = ApplyApproval.model_validate(state.get("apply_approval"))
             rows = approved_rows(state["proposals"], approval)
@@ -54,7 +56,7 @@ def make_apply(tools, job_reader=None, *, timeout=60, poll_interval=1, max_read_
                 item = ApplyResult(proposal_key=key)
                 results.append(item)
                 try:
-                    response = tools.apply_rule_version(
+                    response = belt.apply_rule_version(
                         task_id=state["task_id"], approval_id=approval.approval_id,
                         proposal_key=key, idempotency_key=f"{state['task_id']}:apply:{key}")
                     job_id = response.get("jobId")
