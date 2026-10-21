@@ -16,6 +16,16 @@ scripts/smoke.sh --reset          # 업로드부터 반영 완료까지 한 번 
 
 `scripts/smoke.sh`는 로그인 → 규정 v3 · v4 업로드 → 확인 대기 → 변경 제안 전부 반영 → 완료를 API로 돌리고, 제안과 새로 생긴 규칙 번호를 출력한다. `--reset`은 시작 전에 작업 기록과 업무 데이터를 처음 상태로 되돌린다.
 
+## AI 정확도 측정
+
+```bash
+uv run --with pyyaml python eval/run_agent.py --runs 3
+```
+
+회차마다 초기화 → 업로드 → 확인 대기까지 돌리고, 제안을 정답지(`eval/expected_proposals.yaml`)와 비교해 점수를 낸다. 반영은 하지 않는다. 회차별 점수 · 평균 · 상품별 정답 횟수를 출력하고, 결과는 `eval/results/`에 저장한다. 실행할 때마다 OpenAI 사용료가 든다.
+
+`.env`의 `AGENT_ARTICLE_IDS`를 바꿔 다른 조항을 분석하면 정답 파일도 맞춘다: `15` → `--expected eval/expected_proposals.senior-age.yaml`, `15-2` → `--expected eval/expected_proposals.senior-explanation.yaml`.
+
 ## 구성
 
 | 서비스 | 하는 일 | 주소 (호스트) |
