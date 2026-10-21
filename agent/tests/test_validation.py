@@ -273,3 +273,26 @@ def test_wrong_targets_from_real_run_are_filtered_before_proposal():
     assert impacts["P004"].impact == "no_change" and "R037" in impacts["P004"].evidence_rule_ids
     assert impacts["P010"].impact == "needs_review" and impacts["P012"].impact == "needs_review"
     assert {c.rule_id for p in out["proposals"] for c in p.changes} == {"R001"}
+
+
+@pytest.mark.parametrize("row", [rule("R060", "DSR_LINE_TERM_MONTHS", "60", "months"), rule("R055", "COOLING_OFF_DAYS", "14", "days")])
+def test_rule_whose_new_value_cannot_be_derived_goes_to_review(row):
+    verdict, note = change_problem(DSR_REQ, row, ON_SALE)
+    assert verdict == "needs_review" and row["ruleId"] in note
+
+
+def test_one_underivable_target_does_not_block_the_others():
+    """실제 실행 3회차: P007이 R056(비율)과 함께 R060(개월)을, P006이 R055(일)를 골라 근거 검사에 실패하고 확인 전체가 막혔다."""
+    class ExtraTargets(DsrReasoner):
+        def product_impacts(self, requirements, products, rules, *args):
+            picks = {"P007": ["R060", "R056"], "P006": ["R055"]}
+            return [ProductAssessment(requirement_id="REQ-8", product_id=pid, target_rule_ids=rids, evidence_rule_ids=rids,
+                                      scope="시행일 이후 신규 신청", applicability="all", impact="change_required",
+                                      reason="DSR 한도 변경") for pid, rids in picks.items()]
+    out = AgentRunner(build_graph(LocalTools(), ExtraTargets())).start("T1", "credit-loan-ops", article_ids=["8"])
+    impacts = {i.product_id: i for i in out["product_impacts"]}
+    assert impacts["P007"].impact == "change_required" and impacts["P007"].target_rule_ids == ["R056"]
+    assert impacts["P006"].impact == "needs_review" and impacts["P006"].target_rule_ids == []
+    proposals = {p.product_id: p for p in out["proposals"]}
+    assert proposals["P007"].verification == "passed" and [c.rule_id for c in proposals["P007"].changes] == ["R056"]
+    assert proposals["P006"].verification == "passed"

@@ -48,6 +48,8 @@ def change_problem(requirement, rule, product):
     """
     if product.get("status") == "SALE_ENDED":
         return "needs_review", f"{rule['ruleId']}: 판매가 끝난 상품이라 기준 변경 대신 확인 필요"
+    if expected_value(requirement, rule["unit"]) is None:  # 예: 35% 개정으로 60개월 · 15일 규칙의 새 값은 정할 수 없다
+        return "needs_review", f"{rule['ruleId']} {rule['ruleKey']}: 개정 원문으로 이 규칙({rule['unit']})의 새 값을 정할 수 없어 확인 필요"
     old, new = _single_percent(requirement.old_text), _single_percent(requirement.new_text)
     if rule["unit"] not in ("ratio", "percent") or old is None or new is None or not _UPPER_LIMIT.search(requirement.new_text or ""):
         return None
