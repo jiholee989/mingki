@@ -13,7 +13,20 @@ import java.util.Optional;
  */
 final class RetryGuard {
 
+    private static final String FIRST = "(처음 실패: ";
+
     private RetryGuard() {}
+
+    /**
+     * 다시 시도가 실패했을 때 남길 사유. 처음 실패 사유를 뒤에 붙인다.
+     * 여러 번 다시 시도해도 맨 처음 원인 하나만 남긴다.
+     */
+    static String failureReason(String reason, String earlier) {
+        if (earlier == null || earlier.isBlank()) return reason;
+        int i = earlier.indexOf(FIRST);
+        String first = i < 0 ? earlier : earlier.substring(i + FIRST.length(), earlier.length() - (earlier.endsWith(")") ? 1 : 0));
+        return reason + " " + FIRST + first + ")";
+    }
 
     /** 거절 사유. 비어 있으면 받아도 된다. */
     static Optional<String> problem(TaskStatus status, OffsetDateTime updatedAt, int quietSeconds, OffsetDateTime now) {

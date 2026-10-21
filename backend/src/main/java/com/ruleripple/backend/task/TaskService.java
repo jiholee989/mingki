@@ -221,8 +221,11 @@ public class TaskService {
 
     // ===================== 이어가기 (Agent 가 도중에 죽었을 때) =====================
 
-    /** 다시 시도 준비 결과. wasFailed 면 상태를 되돌린 것이라 Agent 가 거절하면 FAILED 로 되돌려야 한다. */
-    public record RetryPlan(AnalysisTask task, boolean wasFailed) {}
+    /**
+     * 다시 시도 준비 결과. wasFailed 면 상태를 되돌린 것이라 Agent 가 거절하면 FAILED 로 되돌려야 한다.
+     * firstError 는 되돌리기 전의 실패 사유다. 다시 시도도 실패하면 함께 남긴다.
+     */
+    public record RetryPlan(AnalysisTask task, boolean wasFailed, String firstError) {}
 
     /**
      * "다시 시도" 준비. 진행 중이거나 FAILED 인 작업만 (RetryGuard). Agent 호출은 컨트롤러가 커밋 뒤에 동기로 한다.
@@ -236,6 +239,7 @@ public class TaskService {
         RetryGuard.problem(task.getStatus(), task.getUpdatedAt(), props.agent().retryQuietSeconds(), OffsetDateTime.now())
                 .ifPresent(reason -> { throw conflict(reason); });
         boolean wasFailed = task.getStatus() == TaskStatus.FAILED;
+        String firstError = wasFailed ? task.getErrorMessage() : null;
         events.append(taskId, "RESUMED", Map.<String, Object>of("step", "RETRY", "by", me.username(),
                 "message", "멈춘 자리부터 다시 시작합니다"));
         if (wasFailed) {
@@ -245,13 +249,13 @@ public class TaskService {
             events.append(taskId, "STATUS", Map.<String, Object>of("status", restored.name()));
             task.setStatus(restored);
         }
-        return new RetryPlan(task, wasFailed);
+        return new RetryPlan(task, wasFailed, firstError);
     }
 
     /** Agent 가 "아직 실행 중"(423)이라 거절했다. 되돌렸던 상태를 FAILED 로 돌리고, 진행 중이던 작업은 그대로 둔다. */
     @Transactional
-    public void retryStillRunning(UUID taskId, boolean wasFailed) {
-        if (wasFailed) retryFailed(taskId, "Agent 가 아직 실행 중입니다. 잠시 뒤 다시 시도하세요");
+    public void retryStillRunning(UUID taskId, RetryPlan plan) {
+        if (plan.wasFailed()) retryFailed(taskId, "Agent 가 아직 실행 중입니다. 잠시 뒤 다시 시도하세요", plan.firstError());
     }
 
     /** 가장 최근 확인이 APPROVE 면 그 기록. Agent 가 확인 대기 상태로 남아 있을 때 다시 보낼 승인이다. */
@@ -260,10 +264,12 @@ public class TaskService {
         return latestReview(taskId).filter(a -> a.getDecision() == Approval.Decision.APPROVE);
     }
 
-    /** 다시 시도가 FAILED 로 끝나면 사용자에게 보이게 기록한다. */
+    /** 다시 시도가 FAILED 로 끝나면 사용자에게 보이게 기록한다. 처음 실패 사유를 함께 남기고, 남긴 사유를 돌려준다. */
     @Transactional
-    public void retryFailed(UUID taskId, String reason) {
-        events.append(taskId, "FAILED", Map.<String, Object>of("reason", reason));
+    public String retryFailed(UUID taskId, String reason, String firstError) {
+        String message = RetryGuard.failureReason(reason, firstError);
+        events.append(taskId, "FAILED", Map.<String, Object>of("reason", message));
+        return message;
     }
 
     // ===================== helpers =====================
