@@ -47,6 +47,7 @@ def make_requirement_agent(tools, reasoner):
         return {
             "requirements": requirements,
             "regulation_context": articles,
+            "related_regulations": context.get("related", []),
             "data_gaps": context["data_gaps"],
             "snapshot_date": snapshot_date,
             "mode": "llm" if tools.is_local else "live",

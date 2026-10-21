@@ -2,7 +2,7 @@
 
 from typing import Protocol
 from pydantic import BaseModel
-from app.schemas import Requirement, ProductAssessment, ProductDraft, RevisionCheck
+from app.schemas import Lookup, Requirement, ProductAssessment, ProductDraft, RevisionCheck
 
 
 class RequirementJudgment(BaseModel):
@@ -19,12 +19,17 @@ class BehaviorOutput(BaseModel):
     behavior_change: str
 
 
+class LookupsOutput(BaseModel):
+    items: list[Lookup]
+
+
 class ProductAssessmentsOutput(BaseModel):
     items: list[ProductAssessment]
 
 
 class Reasoner(Protocol):
     def requirements(self, diff: dict) -> list[Requirement]: ...
+    def choose_lookups(self, requirement, products, rules, regulation_context, related) -> list[Lookup]: ...
     def product_impacts(self, requirements, products, rules, regulation_context=None, documents=None, data_gaps=None) -> list[ProductAssessment]: ...
     def draft_product(self, context: dict) -> ProductDraft: ...
     def check_revision(self, context: dict) -> RevisionCheck: ...

@@ -33,6 +33,15 @@ class ScopeCondition(BaseModel):
     quote: str
 
 
+class Lookup(BaseModel):
+    """영향 판단 전에 모델이 고른 조회. 하네스가 실행한다 (app/lookups.py)."""
+    tool: Literal["get_article", "search_regulation"]
+    regulation_id: str | None = Field(description="get_article이면 필수. search_regulation이면 좁힐 규정, 없으면 null(전체)")
+    article_id: str | None = Field(description="get_article의 조항 ID (예: 10, 15-2). search_regulation이면 null")
+    query: str | None = Field(description="search_regulation의 질문. get_article이면 null")
+    reason: str = Field(description="이 조회로 무엇을 확인하려는지 한 문장")
+
+
 class ProductAssessment(BaseModel):
     requirement_id: str
     product_id: str

@@ -50,6 +50,10 @@ def lines(events):
         elif t in ("TOOL_START", "TOOL_END"):  # 백엔드 대기열 작업 (node 없음)
             state = "시작" if t == "TOOL_START" else ("완료" if p.get("ok") else "재시도" if p.get("retrying") else "실패")
             yield f"큐    {p.get('tool')} {p.get('jobId') or ''} {state} (시도 {p.get('attempt')})"
+        elif t == "TOOL_PLAN":
+            for x in p.get("lookups") or []:
+                target = f"{x.get('regulationId')}/{x.get('articleId')}" if x["tool"] == "get_article" else f"\"{x.get('query')}\""
+                yield f"선택  {p['requirementId']}: {x['tool']} {target} — {x.get('reason')}"
         elif t == "DECISION":
             model, final = p.get("model"), p["final"]
             before = f"AI {IMPACT.get(model['impact'], model['impact'])} [{rules(model['targetRuleIds'])}]" if model else "AI 판단 없음"

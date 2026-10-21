@@ -23,6 +23,9 @@ class DsrReasoner:
                             article_ref=source["new_uri"], change="modified", summary="DSR 40%에서 35%로",
                             target="DSR_LIMIT", old_value="0.40", new_value="0.35")]
 
+    def choose_lookups(self, requirement, products, rules, regulation_context, related):
+        return []   # 테스트 기본: 더 볼 조항 없음
+
     def product_impacts(self, requirements, products, rules, regulation_context=None, documents=None, data_gaps=None):
         result = []
         for req in requirements:
@@ -77,7 +80,8 @@ def test_only_review_after_proposals_without_code_or_write_tools():
     assert tools.called("get_products") and tools.called("get_product_rules")
     for tool in ("get_file", "search_code", "check_patch", "create_draft_pr", "create_work_ticket"):
         assert not tools.called(tool)
-    assert set(sum((list(v) for v in NODE_TOOLS.values()), [])) == {"diff_versions", "get_regulation_context", "get_products", "get_product_rules", "get_product_documents"}
+    assert set(sum((list(v) for v in NODE_TOOLS.values()), [])) == {"diff_versions", "get_regulation_context", "get_products", "get_product_rules",
+                                                                     "get_product_documents", "get_article", "search_regulation"}
 
 
 def test_partial_approval_stays_in_review_without_new_generation():
@@ -366,6 +370,8 @@ def test_article_filter_preserves_context_and_rejects_unknown_article():
     out = runner.start("filtered", "credit-loan-ops", article_ids=["8"])
     assert {c["article_id"] for c in reasoner.diff["changes"] if not c["article_id"].startswith("supp-")} == {"8"}
     assert out["snapshot_date"] == "2026-11-30"
-    assert any(a["regulation_id"] == "dsr-management" for a in reasoner.diff["regulation_context"])
+    # 문맥은 바뀐 규정의 조항만. 다른 규정은 목록으로 남고 Agent가 골라 본다
+    assert {a["regulation_id"] for a in reasoner.diff["regulation_context"]} == {"credit-loan-ops"}
+    assert "dsr-management" in {r["regulation_id"] for r in out["related_regulations"]}
     with pytest.raises(ValueError, match="없는 조항"):
         runner.start("bad-filter", "credit-loan-ops", article_ids=["999"])

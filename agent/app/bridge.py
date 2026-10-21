@@ -92,6 +92,12 @@ class SpringBridge:
             payload["error"] = error
         self._record("TOOL_END", payload)
 
+    def planned(self, node, requirement_id, lookups):
+        """모델이 고른 조회와 이유. 실행 결과는 이어지는 TOOL_START · TOOL_END."""
+        self._record("TOOL_PLAN", {"node": node, "requirementId": requirement_id, "lookups": [
+            {"tool": x.tool, "regulationId": x.regulation_id, "articleId": x.article_id, "query": x.query, "reason": x.reason}
+            for x in lookups]})
+
     def decided(self, node, requirement_id, product_id, model, impact, target_rule_ids, checks):
         """model: 모델의 판단(ProductAssessment) 또는 None. impact · target_rule_ids: 코드 검사 뒤 최종 판단."""
         self._record("DECISION", {

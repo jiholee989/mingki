@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 from langchain_core.messages import HumanMessage, SystemMessage
-from app.reasoning import BehaviorOutput, ProductAssessmentsOutput, RequirementJudgment
+from app.reasoning import BehaviorOutput, LookupsOutput, ProductAssessmentsOutput, RequirementJudgment
 from app.schemas import Requirement, ProductDraft, ProductRevision, RevisionCheck, ProposalText, RevisionText, RuleChange
 from app.validation import changeable_rules, condition_errors, exemption_needs_customer_data, ground_conditions
 
@@ -38,6 +38,11 @@ def output_schema(model, payload=None):
             for value in node:
                 strict(value)
     strict(schema)
+    if model is LookupsOutput and payload:
+        # 고를 수 있는 규정은 함께 볼 수 있는 다른 규정 목록 안에서만
+        ids = sorted({r["regulation_id"] for r in payload.get("related_regulations", [])})
+        if ids:
+            schema["$defs"]["Lookup"]["properties"]["regulation_id"]["anyOf"][0]["enum"] = ids
     if model is ProductAssessmentsOutput and payload:
         properties = schema["$defs"]["ProductAssessment"]["properties"]
         ids = sorted({r["ruleId"] for r in payload["rules"]})
@@ -154,6 +159,14 @@ class LlmReasoner:
             items.append(item)
         logger.info("요건 선별: 채택 %s / 표현만 변경 %s", len(items), len(body) - len(items))
         return items
+
+    def choose_lookups(self, requirement, products, rules, regulation_context, related):
+        """요건 하나를 판단하기 전에 더 볼 다른 규정 조항을 모델이 고른다. 실행은 하네스가 한다 (app/lookups.py)."""
+        payload = {"requirement": requirement,
+                   "products": [{k: p.get(k) for k in ("productId", "name", "description", "status")} for p in products],
+                   "rules": [{k: r.get(k) for k in ("productId", "ruleKey", "value", "unit", "basisArticles")} for r in rules],
+                   "regulation_context": regulation_context, "related_regulations": related}
+        return self._ask("product-lookups.md", LookupsOutput, payload).items
 
     def product_impacts(self, requirements, products, rules, regulation_context=None, documents=None, data_gaps=None):
         items = []
