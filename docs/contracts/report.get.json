@@ -1,0 +1,29 @@
+{
+  "task": {
+    "id": "7c7593e7-2a9c-47b3-8607-23f690f223d4",
+    "title": "개인신용대출 운영기준 v3 → v4",
+    "status": "DONE",
+    "currentNode": "report",
+    "verifyRound": 2,
+    "requesterId": 1,
+    "createdAt": "2026-10-21T00:00:00Z",
+    "updatedAt": "2026-10-21T00:00:00Z"
+  },
+  "report": {
+    "status": "PARTIALLY_APPROVED",
+    "summary": "제안 1건 승인 / 1건 제외",
+    "markdown": "# Rule Ripple 상품 변경 제안서\n\n**PARTIALLY_APPROVED** · 제안 1건 승인 / 1건 제외",
+    "approved_count": 1,
+    "rejected_count": 1
+  },
+  "deliveries": [
+    {
+      "id": 1,
+      "kind": "RULE_VERSION",
+      "externalRef": "R083",
+      "url": null,
+      "approvalId": 1,
+      "createdAt": "2026-10-21T00:00:00Z"
+    }
+  ]
+}
