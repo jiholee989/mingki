@@ -40,6 +40,7 @@ class ProductAssessment(BaseModel):
     target_rule_ids: list[str] = Field(default_factory=list, description="실제로 바꿀 기존 규칙 ID만. 참고한 전체 목록 금지")
     evidence_rule_ids: list[str] = Field(default_factory=list, description="판단에 참고한 규칙 ID")
     document_refs: list[str] = Field(default_factory=list)
+    basis_refs: list[str] = Field(default_factory=list, description="판단 근거 조항 uri. 유지 · 적용 제외면 그 이유가 되는 조항")
     scope: str = Field(default="", description="변경을 적용할 고객·거래 범위")
     applicability: Literal["all", "conditional", "excluded", "unknown"] = "unknown"
     conditions: list[ScopeCondition] = Field(default_factory=list)
@@ -113,6 +114,7 @@ class ProductProposal(BaseModel):
     review_comment: str = ""
     human_edited: bool = False
     document_refs: list[str] = Field(default_factory=list)
+    basis_refs: list[str] = Field(default_factory=list)
     generation_error: str | None = None
     revision_response: str = ""
     changed_fields: list[str] = Field(default_factory=list)

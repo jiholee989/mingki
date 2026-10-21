@@ -97,7 +97,7 @@ class SpringBridge:
         self._record("DECISION", {
             "node": node, "requirementId": requirement_id, "productId": product_id,
             "model": {"impact": IMPACTS[model.impact], "targetRuleIds": list(model.target_rule_ids),
-                      "reason": model.reason} if model else None,
+                      "reason": model.reason, "basisRefs": list(model.basis_refs)} if model else None,
             "final": {"impact": IMPACTS[impact], "targetRuleIds": list(target_rule_ids)},
             "checks": checks,
         })

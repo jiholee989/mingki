@@ -4,7 +4,7 @@ from collections import defaultdict
 from app.schemas import Event, ProductImpact, ProductAssessment
 from app.data import active_rules
 from app.tools.base import recorder_of, recording
-from app.validation import change_problem, exemption_needs_customer_data, ground_conditions, condition_errors
+from app.validation import change_problem, changeable_rules, exemption_needs_customer_data, ground_conditions, condition_errors
 
 
 def code_checks(model_reason, reason):
@@ -37,6 +37,7 @@ def make_product_impact_agent(tools, reasoner):
             if rule["productId"] not in known:
                 raise ValueError("상품 규칙의 상품 ID를 확인할 수 없습니다")
             by_product[rule["productId"]][rule["ruleId"]] = rule
+        articles = {a["uri"] for a in state["regulation_context"]}
         candidates = defaultdict(list)
         req_ids = {r.id for r in state["requirements"]}
         for item in reasoner.product_impacts(state["requirements"], products, rules, state["regulation_context"], documents, data_gaps):
@@ -55,6 +56,7 @@ def make_product_impact_agent(tools, reasoner):
                     target_ids = list(dict.fromkeys(row.target_rule_ids))
                     evidence_ids = list(dict.fromkeys(row.evidence_rule_ids))
                     refs = list(dict.fromkeys(row.document_refs))
+                    basis = [uri for uri in dict.fromkeys(row.basis_refs) if uri in articles]
                     valid = all(rid in by_product[pid] for rid in target_ids + evidence_ids) and all(ref in document_refs[pid] for ref in refs)
                     impact = row.impact if valid else "needs_review"
                     reason = row.reason if valid else row.reason + " / 다른 상품 또는 미조회 규칙·문서 근거: 확인 필요"
@@ -70,16 +72,18 @@ def make_product_impact_agent(tools, reasoner):
                             reason += " / " + "; ".join(note for _, note in problems.values())
                             if not target_ids:
                                 impact = "no_change" if all(v == "no_change" for v, _ in problems.values()) else "needs_review"
-                    if impact == "no_change" and not evidence_ids and not refs:
+                    if impact == "no_change" and not evidence_ids and not refs and not basis:
                         impact = "needs_review"
                         reason += " / 유지·적용 제외를 뒷받침할 규칙·문서 근거 없음: 추가 확인"
                 else:
-                    target_ids, evidence_ids, refs, impact = [], [], [], "needs_review"
+                    target_ids, evidence_ids, refs, basis, impact = [], [], [], [], "needs_review"
                     reason = "상품별 영향 판단이 누락되었거나 중복되어 추가 확인이 필요합니다"
                 scope = row.scope if len(rows) == 1 else "적용 범위 추가 확인"
                 applicability = row.applicability if len(rows) == 1 else "unknown"
                 conditions = row.conditions if len(rows) == 1 else []
-                if impact == "no_change" and exemption_needs_customer_data(req, list(by_product[pid].values())):
+                # 바꿀 수 있는 규칙이 없으면 상품 규칙은 유지다. 차주별 조건 확인은 심사 절차의 일이다
+                changeable = changeable_rules(req, list(by_product[pid].values()), product)
+                if impact == "no_change" and changeable and exemption_needs_customer_data(req, list(by_product[pid].values())):
                     impact, applicability, target_ids = "needs_review", "unknown", []
                     reason += " / 차주별 DSR 예외 한도 충족 여부를 확인할 자료가 없어 전체 면제를 확정하지 않음"
                 sources = {**{a["uri"]: a["text"] for a in state["regulation_context"]},
@@ -93,7 +97,7 @@ def make_product_impact_agent(tools, reasoner):
                     reason += " / 적용 조건의 인용 근거가 확인되지 않아 수치 변경을 확정하지 않음"
                 if impact == "no_change":
                     target_ids = []
-                    if applicability in ("conditional", "unknown"):
+                    if applicability in ("conditional", "unknown") and changeable:
                         impact = "needs_review"
                         reason += " / 조건부 예외·적용 범위를 확인해야 하므로 무조건 유지로 확정하지 않음"
                 relevant = [by_product[pid][rid] for rid in target_ids]
@@ -102,7 +106,7 @@ def make_product_impact_agent(tools, reasoner):
                     id=f"{req.id}:{pid}", requirement_id=req.id, product_id=pid,
                     product_name=product["name"], impact=impact, target_rule_ids=target_ids, evidence_rule_ids=evidence_ids,
                     scope=scope, applicability=applicability, conditions=conditions,
-                    document_refs=refs, reason=reason, current=current or "관련 상품 규칙이 특정되지 않음: 상품·업무 절차 확인 필요",
+                    document_refs=refs, basis_refs=basis, reason=reason, current=current or "관련 상품 규칙이 특정되지 않음: 상품·업무 절차 확인 필요",
                 ))
                 if hasattr(recorder, "decided"):
                     # 모델 판단(rows[0])과 코드 검사 뒤 최종 판단을 함께 남긴다

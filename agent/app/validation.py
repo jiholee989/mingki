@@ -65,6 +65,11 @@ def change_problem(requirement, rule, product):
     return None
 
 
+def changeable_rules(requirement, rules, product):
+    """이번 개정으로 값을 바꿀 수 있는 규칙. 하나도 없으면 상품 규칙은 바꿀 것이 없다 (조건부 예외여도 유지)."""
+    return [rule for rule in rules if change_problem(requirement, rule, product) is None]
+
+
 def source_texts(state, product_id):
     refs = {a["uri"]: a["text"] for a in state["regulation_context"]}
     refs.update({d["uri"]: d["content"] for d in state.get("product_documents", []) if d["productId"] == product_id})

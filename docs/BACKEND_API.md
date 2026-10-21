@@ -303,7 +303,7 @@ EXTRACTING ─▶ LOCATING ─▶ DESIGNING ⇄ VERIFYING ─▶ WAITING_REVIEW 
 | `unit` | `ratio` · `percent` · … | `change_required`면 필수. 기존 규칙의 단위를 바꾸지 않는다 |
 | `currentValue` · `proposedValue` | 문자열 | `change_required`면 `proposedValue` 필수, 기존 규칙이면 `currentValue`도 필수 |
 | `effectiveDate` | `YYYY-MM-DD` | `change_required`면 필수 |
-| `basis` | 문자열 | 근거 조항 (`reg://credit-loan-ops/v4/8`) |
+| `basis` | 문자열 | 근거 조항 (`reg://credit-loan-ops/v4/8`). 여러 개면 쉼표로 구분 (예: 유지 근거인 적용 예외 조항). 200자 이하 |
 | `reason` | 문자열 | 필수 (`keep` · `needs_check`는 왜 그런지) |
 | `transition` | 문자열 | 경과조치 |
 | `followUp` | 문자열 배열 | 후속 작업 (화면 문구 · 심사 절차 · 설명서) |

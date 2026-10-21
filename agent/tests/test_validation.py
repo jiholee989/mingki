@@ -122,14 +122,31 @@ def impact_state(tools):
         "snapshot_date": "2026-11-30", "regulation_context": tools.get_regulation_context("credit-loan-ops", "v4")["articles"]}
 
 
-def test_numeric_small_loan_exemption_is_not_a_blanket_product_exemption():
-    class Blanket(DsrReasoner):
-        def product_impacts(self, *args):
-            rows = super().product_impacts(*args)
-            return [r.model_copy(update={"impact": "no_change", "applicability": "excluded", "target_rule_ids": [],
-                        "evidence_rule_ids": ["R054"], "document_refs": ["product-doc://P006"]}) if r.product_id == "P006" else r for r in rows]
+class SmallLoanExempt(DsrReasoner):
+    """P006(소액대출)을 소액 예외로 유지 판단한다."""
+    def product_impacts(self, *args):
+        rows = super().product_impacts(*args)
+        return [r.model_copy(update={"impact": "no_change", "applicability": "excluded", "target_rule_ids": [],
+                    "evidence_rule_ids": ["R054"], "document_refs": ["product-doc://P006"]}) if r.product_id == "P006" else r for r in rows]
+
+
+def test_small_loan_exemption_keeps_product_without_changeable_rule():
+    """P006에는 이번 개정으로 바뀔 DSR 규칙이 없다. 차주별 소액 해당 여부는 심사 절차의 일이라 상품 규칙은 유지다."""
     tools = LocalTools()
-    out = make_product_impact_agent(tools, Blanket())(impact_state(tools))
+    out = make_product_impact_agent(tools, SmallLoanExempt())(impact_state(tools))
+    item = next(i for i in out["product_impacts"] if i.product_id == "P006")
+    assert item.impact == "no_change"
+
+
+def test_numeric_small_loan_exemption_is_not_a_blanket_exemption_when_a_rule_could_change():
+    """같은 소액 예외라도 상품에 바뀔 DSR 규칙이 있으면 차주 자료 없이 상품 전체를 유지로 확정하지 않는다."""
+    class WithDsrRule(LocalTools):
+        def get_product_rules(self, *args, **kwargs):
+            return super().get_product_rules(*args, **kwargs) + [
+                {"ruleId": "R900", "productId": "P006", "ruleKey": "DSR_LIMIT", "value": "0.40", "unit": "ratio",
+                 "effectiveFrom": "2024-01-01", "effectiveTo": None}]
+    tools = WithDsrRule()
+    out = make_product_impact_agent(tools, SmallLoanExempt())(impact_state(tools))
     item = next(i for i in out["product_impacts"] if i.product_id == "P006")
     assert item.impact == "needs_review" and item.applicability == "unknown"
     assert "차주별" in item.reason
@@ -296,3 +313,42 @@ def test_one_underivable_target_does_not_block_the_others():
     proposals = {p.product_id: p for p in out["proposals"]}
     assert proposals["P007"].verification == "passed" and [c.rule_id for c in proposals["P007"].changes] == ["R056"]
     assert proposals["P006"].verification == "passed"
+
+
+# ---------- 근거 조항 (basis_refs) ----------
+
+def test_keep_supported_only_by_regulation_article_is_kept():
+    class KeepByArticle(DsrReasoner):
+        def product_impacts(self, *args):
+            return [r.model_copy(update={"impact": "no_change", "applicability": "all", "target_rule_ids": [],
+                        "evidence_rule_ids": [], "document_refs": [], "basis_refs": ["reg://credit-loan-ops/v4/8"]})
+                    if r.product_id == "P003" else r for r in super().product_impacts(*args)]
+    tools = LocalTools()
+    out = make_product_impact_agent(tools, KeepByArticle())(impact_state(tools))
+    item = next(i for i in out["product_impacts"] if i.product_id == "P003")
+    assert item.impact == "no_change" and item.basis_refs == ["reg://credit-loan-ops/v4/8"]
+
+
+def test_basis_refs_reach_backend_rows_and_only_known_articles_are_allowed():
+    from app.backend import keep_row
+    from app.llm import output_schema
+    from app.reasoning import ProductAssessmentsOutput
+    from app.schemas import ProductImpact
+    impact = ProductImpact(id="REQ-8:P009", requirement_id="REQ-8", product_id="P009", product_name="사장님 신용대출",
+                           impact="no_change", reason="사업자대출은 적용 대상 아님", current="-",
+                           basis_refs=["reg://dsr-management/v2/3"])
+    assert keep_row(impact, 1)["basis"] == "reg://dsr-management/v2/3"
+    payload = {"rules": [{"ruleId": "R001"}], "documents": [],
+               "regulation_context": [{"uri": "reg://dsr-management/v2/3"}, {"uri": "reg://credit-loan-ops/v4/8"}]}
+    schema = output_schema(ProductAssessmentsOutput, payload)
+    assert schema["$defs"]["ProductAssessment"]["properties"]["basis_refs"]["items"]["enum"] == \
+        ["reg://credit-loan-ops/v4/8", "reg://dsr-management/v2/3"]
+
+
+def test_basis_text_fits_backend_column():
+    from app.backend import BASIS_LIMIT, basis_text
+    refs = [f"reg://dsr-management/v2/{n}" for n in range(1, 20)]
+    text = basis_text(["reg://credit-loan-ops/v4/8", *refs])
+    assert len(text) <= BASIS_LIMIT and text.startswith("reg://credit-loan-ops/v4/8, reg://dsr-management/v2/1")
+    assert basis_text([]) is None
+
