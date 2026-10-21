@@ -3,6 +3,7 @@ package com.ruleripple.backend.task;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -21,14 +22,16 @@ public class AgentDispatcher {
     private final RegulationDocumentRepository documents;
     private final ApprovalRepository approvals;
     private final TaskEventService events;
+    private final TaskService service;
 
     public AgentDispatcher(AgentClient agent, AnalysisTaskRepository tasks, RegulationDocumentRepository documents,
-                           ApprovalRepository approvals, TaskEventService events) {
+                           ApprovalRepository approvals, TaskEventService events, TaskService service) {
         this.agent = agent;
         this.tasks = tasks;
         this.documents = documents;
         this.approvals = approvals;
         this.events = events;
+        this.service = service;
     }
 
     @Async
@@ -48,6 +51,10 @@ public class AgentDispatcher {
             AnalysisTask task = tasks.findById(taskId).orElseThrow();
             Approval approval = approvals.findById(approvalId).orElseThrow();
             agent.resume(task, approval);
+        } catch (HttpClientErrorException.BadRequest notAccepted) {
+            // 결정이 Agent 의 현재 제안과 맞지 않는다. Agent 는 그대로 확인을 기다리므로 FAILED 대신 확인 대기로
+            log.warn("agent did not accept review task={} : {}", taskId, notAccepted.getMessage());
+            service.reviewNotAccepted(taskId, AgentClient.detail(notAccepted));
         } catch (Exception e) {
             log.warn("agent resume failed task={} : {}", taskId, e.getMessage());
             events.append(taskId, "FAILED", Map.<String, Object>of("reason", "Agent 재개 실패: " + e.getMessage()));
