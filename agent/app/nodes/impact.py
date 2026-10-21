@@ -2,9 +2,11 @@
 
 from collections import defaultdict
 from app.schemas import Event, ProductImpact, ProductAssessment
-from app.data import active_rules
+from app.data import active_rules, unended_rules
+from app.lookups import MAX_LOOKUPS, run_lookups
 from app.tools.base import recorder_of, recording
-from app.validation import change_problem, changeable_rules, exemption_needs_customer_data, ground_conditions, condition_errors
+from app.validation import (applied_new_rule, change_problem, changeable_rules, exemption_needs_customer_data,
+                            ground_conditions, condition_errors)
 
 
 def code_checks(model_reason, reason):
@@ -19,7 +21,9 @@ def make_product_impact_agent(tools, reasoner):
         recorder = recorder_of(config)
         belt = recording(tools, recorder, "product_impact_agent")
         products = belt.get_products()
-        rules = active_rules(belt.get_product_rules(as_of=state["snapshot_date"]), state["snapshot_date"])
+        rows = belt.get_product_rules()  # 한 번 조회해서 지금 유효한 규칙(판단용)과 끝나지 않은 규칙(반영 예정 포함)을 나눈다
+        rules = active_rules(rows, state["snapshot_date"])
+        catalog = unended_rules(rows, state["snapshot_date"])
         ids = [p["productId"] for p in products]
         if not ids or len(ids) != len(set(ids)):
             raise ValueError("조회된 상품이 없거나 상품 ID가 중복되었습니다")
@@ -37,10 +41,19 @@ def make_product_impact_agent(tools, reasoner):
             if rule["productId"] not in known:
                 raise ValueError("상품 규칙의 상품 ID를 확인할 수 없습니다")
             by_product[rule["productId"]][rule["ruleId"]] = rule
-        articles = {a["uri"] for a in state["regulation_context"]}
+        # 바뀐 규정 밖의 조항은 모델이 요건마다 골라야 본다. 고른 것과 이유를 남기고, 실행은 하네스가 한다
+        context, related = list(state["regulation_context"]), state.get("related_regulations", [])
+        if related:
+            for req in state["requirements"]:
+                lookups = reasoner.choose_lookups(req, products, rules, context, related)[:MAX_LOOKUPS]
+                if lookups and hasattr(recorder, "planned"):
+                    recorder.planned("product_impact_agent", req.id, lookups, related)
+                found, missing = run_lookups(belt, lookups, related, {a["uri"] for a in context})
+                context, data_gaps = context + found, data_gaps + missing
+        articles = {a["uri"] for a in context}
         candidates = defaultdict(list)
         req_ids = {r.id for r in state["requirements"]}
-        for item in reasoner.product_impacts(state["requirements"], products, rules, state["regulation_context"], documents, data_gaps):
+        for item in reasoner.product_impacts(state["requirements"], products, rules, context, documents, data_gaps):
             if item.product_id not in known or item.requirement_id not in req_ids:
                 continue  # 모델이 만든 상품·요건은 산출물에 넣지 않는다.
             candidates[(item.requirement_id, item.product_id)].append(item)
@@ -51,7 +64,7 @@ def make_product_impact_agent(tools, reasoner):
                 rows = candidates[(req.id, pid)]
                 if len(rows) == 1:
                     row = rows[0].model_copy(deep=True)
-                    ground_conditions(row, {**{a["uri"]: a["text"] for a in state["regulation_context"]},
+                    ground_conditions(row, {**{a["uri"]: a["text"] for a in context},
                         **{d["uri"]: d["content"] for d in documents if d["productId"] == pid}})
                     target_ids = list(dict.fromkeys(row.target_rule_ids))
                     evidence_ids = list(dict.fromkeys(row.evidence_rule_ids))
@@ -70,8 +83,18 @@ def make_product_impact_agent(tools, reasoner):
                             target_ids = [rid for rid in target_ids if rid not in problems]
                             evidence_ids = list(dict.fromkeys(evidence_ids + list(problems)))
                             reason += " / " + "; ".join(note for _, note in problems.values())
-                            if not target_ids:
+                            if not target_ids and req.change != "added":
                                 impact = "no_change" if all(v == "no_change" for v, _ in problems.values()) else "needs_review"
+                            # 새로 생긴 조항은 기존 규칙이 따를 수 없다. 엉뚱한 기존 규칙을 빼면 변경 필요는 새 규칙으로 간다
+                    if impact == "change_required" and not target_ids and req.change == "added":
+                        applied = applied_new_rule(req, [r for r in catalog if r["productId"] == pid], catalog)
+                        if product.get("status") == "SALE_ENDED":  # 기존 규칙 변경과 같은 기준 (change_problem)
+                            impact = "needs_review"
+                            reason += " / 판매가 끝난 상품이라 새 규칙 대신 확인 필요"
+                        elif applied:  # 같은 의무가 이미 반영돼 있다 (다시 분석해도 새 규칙이 또 생기지 않는다)
+                            impact = "no_change"
+                            evidence_ids = list(dict.fromkeys(evidence_ids + [applied["ruleId"]]))
+                            reason += f" / 이미 {applied['ruleKey']} 규칙이 있음({applied['ruleId']}, {applied['effectiveFrom']}부터)"
                     if impact == "no_change" and not evidence_ids and not refs and not basis:
                         impact = "needs_review"
                         reason += " / 유지·적용 제외를 뒷받침할 규칙·문서 근거 없음: 추가 확인"
@@ -86,7 +109,7 @@ def make_product_impact_agent(tools, reasoner):
                 if impact == "no_change" and changeable and exemption_needs_customer_data(req, list(by_product[pid].values())):
                     impact, applicability, target_ids = "needs_review", "unknown", []
                     reason += " / 차주별 DSR 예외 한도 충족 여부를 확인할 자료가 없어 전체 면제를 확정하지 않음"
-                sources = {**{a["uri"]: a["text"] for a in state["regulation_context"]},
+                sources = {**{a["uri"]: a["text"] for a in context},
                            **{d["uri"]: d["content"] for d in documents if d["productId"] == pid}}
                 probe = ProductAssessment(requirement_id=req.id, product_id=pid, impact=impact, reason=reason,
                                           applicability=applicability, conditions=conditions)
@@ -113,7 +136,8 @@ def make_product_impact_agent(tools, reasoner):
                     model = rows[0] if len(rows) == 1 else None
                     recorder.decided("product_impact_agent", req.id, pid, model, impact, target_ids,
                                      code_checks(model.reason if model else None, reason))
-        return {"products": products, "product_rules": rules, "product_impacts": impacts,
+        return {"products": products, "product_rules": rules, "rule_catalog": catalog, "product_impacts": impacts,
+                "regulation_context": context,
                 "product_documents": documents, "data_gaps": data_gaps,
                 "events": [Event(node="product_impact_agent", message=f"상품 {len(products)}개 × 변경 요건 {len(state['requirements'])}개 영향 분석 / 유효 규칙 {len(rules)}개 / 문서 {len(documents)}개")]}
     return product_impact_agent

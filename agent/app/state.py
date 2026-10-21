@@ -14,10 +14,12 @@ class RippleState(TypedDict, total=False):
     snapshot_date: str
     data_gaps: list[str]
     product_documents: list[dict]
-    regulation_context: list[dict]
+    regulation_context: list[dict]  # 바뀐 규정 조항 + Agent가 골라 본 다른 규정 조항
+    related_regulations: list[dict]  # 함께 볼 수 있는 다른 규정 목록 [{regulation_id, version, title}]
     requirements: list[Requirement]
     products: list[dict]
     product_rules: list[dict]
+    rule_catalog: list[dict]  # 끝나지 않은 규칙 전체 (반영 예정 포함). 새 규칙 이름 재사용 · 중복 방지
     product_impacts: list[ProductImpact]
     proposals: list[ProductProposal]
     revision_baselines: dict[str, ProductProposal]

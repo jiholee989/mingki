@@ -11,8 +11,17 @@ Vue 3 + Vite + TypeScript + Tailwind CSS v4 + shadcn-vue
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:5173, mock API 사용
+pnpm dev          # http://localhost:5173, /api는 백엔드(localhost:8080)로 전달
 ```
+
+## 시연 실행
+
+```bash
+docker compose up -d     # 레포 루트에서: 백엔드 · Agent · MCP · DB
+pnpm -C frontend dev     # http://localhost:5173
+```
+
+한 페이지에서 시작 → AI 작업 중 → 확인(체크 후 바꾸기) → 완료 순서로 진행한다. 로그인 화면 없이 시연 계정(officer1)으로 동작하고, 규정 원문은 `data/regulations/credit-loan-ops/`의 v3 · v4를 그대로 올린다. [초기화]는 업무 데이터와 작업 기록을 처음 상태로 되돌린다.
 
 ## 명령
 
@@ -30,9 +39,9 @@ pnpm dev          # http://localhost:5173, mock API 사용
 | 변수            | 개발 기본값 | 설명                                                |
 | --------------- | ----------- | --------------------------------------------------- |
 | `VITE_API_BASE` | `/api`      | 백엔드 API 기본 경로                                |
-| `VITE_USE_MOCK` | `true`      | `true`면 MSW가 API 요청을 가로채 가짜 데이터로 응답 |
+| `VITE_USE_MOCK` | `false`     | `true`면 MSW가 API 요청을 가로채 가짜 데이터로 응답 |
 
-실서버와 연결할 때는 `.env.development`에서 `VITE_USE_MOCK=false`로 바꾼다.
+개발 서버는 `/api`를 `http://localhost:8080`으로 전달한다 (`vite.config.ts`).
 
 ## 폴더 구조
 

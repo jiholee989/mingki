@@ -70,12 +70,14 @@ def test_related_regulation_versions_use_primary_effective_date(monkeypatch):
         if name == "list_regulations":
             return catalog
         if name == "list_articles":
-            return [{"article_id": "1"}]
+            return [{"article_id": "1", "title": "목적"}]
         return {"article_id": "1", "uri": "reg://source", "text": "원문", "title": "제목"}
     monkeypatch.setattr(tools, "call", call)
     try:
         result = tools.get_regulation_context("primary", "v4")
-        assert [(a["regulation_id"], a["version"]) for a in result["articles"]] == [("primary", "v4"), ("related", "v2")]
+        assert [(a["regulation_id"], a["version"]) for a in result["articles"]] == [("primary", "v4")]
+        assert result["related"] == [{"regulation_id": "related", "version": "v2", "title": "",
+                                     "articles": [{"article_id": "1", "title": "목적"}]}]   # 시행일 이전 최신 버전
         assert "undated" in result["data_gaps"][0]
         assert not any(args.get("version") == "v3" for _, args in calls)
         with pytest.raises(ValueError, match="시행일"):

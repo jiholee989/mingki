@@ -9,6 +9,6 @@ regulation_context와 supplementary_changes(부칙)는 판단을 돕는 자료�
 
 작성 항목:
 - summary: 자연어 한 문장. '문체 변경 사항 반영' 같은 가상의 개발 작업을 만들지 않는다.
-- target: 검색용 영문 정책 키.
+- target: 정책을 나타내는 영문 대문자 키, 30자 이내 (예: DSR_LIMIT, ELIGIBLE_MIN_AGE). 규정 이름 · 조항 번호는 넣지 않는다. 새로 생긴 의무면 새 상품 규칙의 이름으로 쓰인다.
 - behavior_change: "기존에는 … / 개정 후에는 …"로 실제 동작 차이를 구체적으로 쓴다. 신규 의무는 "기존에는 해당 의무 없음 / 개정 후에는 …".
 - old_value/new_value: 수치 변경이면 원문 그대로 채우고, 아니면 null.

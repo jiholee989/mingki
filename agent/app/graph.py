@@ -14,7 +14,8 @@ from app.state import RippleState
 
 LLM_NODES = {"requirement_agent", "product_impact_agent", "proposal_agent"}
 NODE_TOOLS = {"requirement_agent": ("diff_versions", "get_regulation_context"),
-              "product_impact_agent": ("get_products", "get_product_rules", "get_product_documents")}
+              "product_impact_agent": ("get_products", "get_product_rules", "get_product_documents",
+                                       "get_article", "search_regulation")}
 SERDE = JsonPlusSerializer(allowed_msgpack_modules=[("app.schemas", name) for name in (
     "Requirement", "RuleChange", "ScopeCondition", "ProductImpact", "ProductProposal", "ProposalReviewRecord", "ProductReport", "Event", "ApplyApproval", "ApplyResult")])
 

@@ -10,6 +10,7 @@ class Requirement(BaseModel):
     article_id: str
     article: str
     article_ref: str
+    title: str | None = Field(default=None, description="조항 제목 (예: DSR 한도). 원문 비교 결과에서 가져온다")
     change: Literal["modified", "added", "removed"]
     summary: str
     target: str
@@ -33,6 +34,15 @@ class ScopeCondition(BaseModel):
     quote: str
 
 
+class Lookup(BaseModel):
+    """영향 판단 전에 모델이 고른 조회. 하네스가 실행한다 (app/lookups.py)."""
+    tool: Literal["get_article", "search_regulation"]
+    regulation_id: str | None = Field(description="get_article이면 필수. search_regulation이면 좁힐 규정, 없으면 null(전체)")
+    article_id: str | None = Field(description="get_article의 조항 ID (예: 10, 15-2). search_regulation이면 null")
+    query: str | None = Field(description="search_regulation의 질문. get_article이면 null")
+    reason: str = Field(description="이 조회로 무엇을 확인하려는지 한 문장")
+
+
 class ProductAssessment(BaseModel):
     requirement_id: str
     product_id: str
@@ -54,9 +64,10 @@ class ProductImpact(ProductAssessment):
 
 
 class RuleChange(BaseModel):
-    rule_id: str
+    """규칙 값 변경. 새 규칙(새로 생긴 조항의 의무)은 rule_id · current_value가 없다."""
+    rule_id: str | None = None
     rule_key: str
-    current_value: str
+    current_value: str | None = None
     proposed_value: str
     unit: str
 

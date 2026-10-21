@@ -99,7 +99,7 @@ def show_review(value):
         if p["status"] == "approved":
             continue
         targets = ",".join(c["rule_key"] for c in p.get("changes", [])) or "절차·자료 확인"
-        values = ", ".join(f"{c['current_value']}→{c['proposed_value']} {c['unit']}" for c in p.get("changes", [])) or "상세 확인"
+        values = ", ".join(f"{c['current_value'] or '새 규칙'}→{c['proposed_value']} {c['unit']}" for c in p.get("changes", [])) or "상세 확인"
         status = "제외" if p["status"] == "rejected" else "검증 실패" if p.get("generation_error") or p.get("verification") == "failed" else "확인 필요" if p["impact"] == "needs_review" else "대기"
         if p["status"] == "pending" and not p.get("generation_error"):
             if p.get("revision_outcome") == "cannot_apply":
@@ -123,7 +123,7 @@ def show_details(proposal):
     print("판단: " + p["reason"])
     print(f"현재: {p['current']}\n제안: {p['recommendation']}\n범위: {p['scope']}")
     for c in p.get("changes", []):
-        print(f"  {c['rule_id']} {c['rule_key']}: {c['current_value']} → {c['proposed_value']} ({c['unit']})")
+        print(f"  {c['rule_id'] or '새 규칙'} {c['rule_key']}: {c['current_value'] or '없음'} → {c['proposed_value']} ({c['unit']})")
     for condition in p.get("conditions", []):
         print(f"조건: {condition['text']} ({condition['source_ref']})")
     for field, label in (("actions", "필수 조치"), ("optional_actions", "추가 제안(선택)"), ("precautions", "주의")):
@@ -184,7 +184,7 @@ def show_review_changes(previous, proposals, decisions):
             print(label + ":")
             if isinstance(p[field], list):
                 def lines(values):
-                    return [f"{v['rule_id']} {v['rule_key']}: {v['current_value']} → {v['proposed_value']} ({v['unit']})"
+                    return [f"{v['rule_id'] or '새 규칙'} {v['rule_key']}: {v['current_value'] or '없음'} → {v['proposed_value']} ({v['unit']})"
                             if isinstance(v, dict) else v for v in values]
                 for line in ndiff(lines(old.get(field, [])), lines(p[field])):
                     if line.startswith(("- ", "+ ")):

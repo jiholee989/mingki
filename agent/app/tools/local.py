@@ -111,12 +111,35 @@ class LocalTools:
                 continue
             if rid not in selected or meta["effective_from"] > selected[rid]["effective_from"]:
                 selected[rid] = meta
-        articles = []
-        for rid, meta in selected.items():
-            articles.extend({**self.get_article(rid, meta["version"], row["article_id"]),
-                             "regulation_id": rid, "version": meta["version"]}
-                            for row in self.list_articles(rid, meta["version"]))
-        return {"articles": articles, "data_gaps": []}
+        # 바뀐 규정의 조항만 준다. 다른 규정은 목록(related)만 주고, Agent가 필요할 때 골라 본다 (app/lookups.py)
+        articles = [{**self.get_article(regulation_id, version, row["article_id"]), "regulation_id": regulation_id, "version": version}
+                    for row in self.list_articles(regulation_id, version)]
+        # 다른 규정은 조항 목차(번호 · 제목)까지 준다. 모델이 번호를 추측하지 않고 목차에서 고른다
+        related = [{"regulation_id": rid, "version": meta["version"], "title": meta.get("title", ""),
+                    "articles": [{"article_id": row["article_id"], "title": row["title"]}
+                                 for row in self.list_articles(rid, meta["version"])]}
+                   for rid, meta in selected.items() if rid != regulation_id]
+        return {"articles": articles, "related": related, "data_gaps": []}
+
+    def search_regulation(self, query: str, regulation_id: str | None = None, version: str | None = None) -> list[dict]:
+        """로컬 모드용 단어 검색 (MCP 모드는 의미 검색). 조항 제목 · 본문에 검색어 단어가 많을수록 앞, 최대 5개."""
+        self._log("search_regulation", query=query, regulation_id=regulation_id, version=version)
+        latest = {}
+        for meta in list_regulations(self.data_dir):
+            rid = meta["regulation_id"]
+            if (regulation_id and rid != regulation_id) or (version and meta["version"] != version):
+                continue
+            if rid not in latest or meta.get("effective_from", "") > latest[rid].get("effective_from", ""):
+                latest[rid] = meta
+        words = [w for w in query.split() if len(w) >= 2]
+        hits = []
+        for rid, meta in latest.items():
+            for aid, article in load_regulation(rid, meta["version"], self.data_dir)["articles"].items():
+                score = sum((article["title"] + " " + article["text"]).count(w) for w in words)
+                if score:
+                    hits.append((score, {"uri": f"reg://{rid}/{meta['version']}/{aid}", "regulation_id": rid,
+                                         "version": meta["version"], "article_id": aid, **article}))
+        return [hit for _, hit in sorted(hits, key=lambda h: -h[0])[:5]]
 
     def get_product_documents(self, product_ids: list[str]) -> dict:
         self._log("get_product_documents", product_ids=product_ids)

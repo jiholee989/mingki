@@ -98,6 +98,17 @@ class SpringBridge:
             payload["error"] = error
         self._record("TOOL_END", payload)
 
+    def planned(self, node, requirement_id, lookups, related=()):
+        """모델이 고른 조회와 이유. 실행 결과는 이어지는 TOOL_START · TOOL_END.
+        규정 · 조항 이름은 화면 표시용으로 다른 규정 목록(related)의 제목 · 목차에서 찾는다. 없으면 null."""
+        regulations = {r["regulation_id"]: r for r in related}
+        def entry(x):
+            regulation = regulations.get(x.regulation_id, {})
+            toc = {a["article_id"]: a["title"] for a in regulation.get("articles", [])}
+            return {"tool": x.tool, "regulationId": x.regulation_id, "articleId": x.article_id, "query": x.query,
+                    "reason": x.reason, "regulationTitle": regulation.get("title") or None, "articleTitle": toc.get(x.article_id)}
+        self._record("TOOL_PLAN", {"node": node, "requirementId": requirement_id, "lookups": [entry(x) for x in lookups]})
+
     def decided(self, node, requirement_id, product_id, model, impact, target_rule_ids, checks):
         """model: 모델의 판단(ProductAssessment) 또는 None. impact · target_rule_ids: 코드 검사 뒤 최종 판단."""
         self._record("DECISION", {
@@ -149,7 +160,7 @@ def report_payload(result):
         mark = {"approved": "반영", "rejected": "제외"}.get(p.status, p.status)
         lines += ["", f"## {p.product_name} ({p.product_id}) — {mark}", "",
                   f"- 근거: {p.article_ref}", f"- 현재: {p.current}", f"- 제안: {p.recommendation}"]
-        lines += [f"- {c.rule_id} {c.rule_key}: {c.current_value} → {c.proposed_value} ({c.unit})" for c in p.changes]
+        lines += [f"- {c.rule_id or '새 규칙'} {c.rule_key}: {c.current_value or '없음'} → {c.proposed_value} ({c.unit})" for c in p.changes]
         lines += [f"- 조치: {a}" for a in p.actions]
     if result.unchanged:
         lines += ["", "## 유지", ""]

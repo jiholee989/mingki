@@ -58,11 +58,14 @@ def test_all_product_documents_and_related_regulations_are_observed():
     documents = tools.get_product_documents(ids)
     assert len(documents["documents"]) == 12 and not documents["data_gaps"]
     context = tools.get_regulation_context("credit-loan-ops", "v4")
-    assert {a["regulation_id"] for a in context["articles"]} == {
-        "credit-loan-ops", "consumer-explanation", "dsr-management", "senior-protection"}
+    assert {a["regulation_id"] for a in context["articles"]} == {"credit-loan-ops"}   # 바뀐 규정 조항만
     assert all("/v3/" not in a["uri"] for a in context["articles"])
-    exceptions = [a for a in context["articles"] if a["regulation_id"] == "dsr-management" and a["article_id"] == "10"]
-    assert "소액신용대출" in exceptions[0]["text"]
+    assert {(r["regulation_id"], r["version"]) for r in context["related"]} == {
+        ("consumer-explanation", "v1"), ("dsr-management", "v2"), ("senior-protection", "v1")}
+    toc = next(r["articles"] for r in context["related"] if r["regulation_id"] == "dsr-management")
+    assert {"article_id": "10", "title": "적용 예외"} in toc and all("text" not in a for a in toc)   # 목차만, 본문 없음
+    assert "소액신용대출" in tools.get_article("dsr-management", "v2", "10")["text"]          # 다른 규정은 골라서 본다
+    assert ("dsr-management", "10") in {(h["regulation_id"], h["article_id"]) for h in tools.search_regulation("소액신용대출 적용 예외")}
     assert "가계대출이 아니므로" in next(d["content"] for d in documents["documents"] if d["productId"] == "P009")
 
 
