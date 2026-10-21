@@ -1,6 +1,5 @@
 package com.ruleripple.backend.internal;
 
-import com.ruleripple.backend.queue.Job;
 import com.ruleripple.backend.queue.JobPublisher;
 import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -24,19 +23,13 @@ import java.util.*;
  *   GET  /internal/products/{id}/rules
  *   GET  /internal/contracts/impact?dsrFrom=0.35&dsrTo=0.40&appliedBefore=2026-12-01   나이 · DSR 구간, 경과조치 판단
  *   GET  /internal/db/schema
- * 쓰기 · 승인 필요 (apply_rule_version, v2 10.4)
+ * 쓰기 · 승인 필요 (apply_rule_version, 10.4)
  *   POST /internal/product-rules/versions   {taskId, approvalId, proposalKey, idempotencyKey}
  *                                           → 확인 기록 · 제안 · 지금 값 검증 → 큐 APPLY_RULE_VERSION → 202 {jobId, status, duplicate}
- * 쓰기 · 승인 필요 (create_work_ticket, 옛 흐름)
- *   POST /internal/work-tickets   {taskId, approvalId, idempotencyKey, title, description?, type, targetRef?, specKeys?, assignee?}
- *                                 → ApprovalGuard 검증 → 큐 → 202 {jobId, status, duplicate}
  */
 @RestController
 @RequestMapping("/internal")
 public class InternalBusinessController {
-
-    public record TicketRequest(UUID taskId, Long approvalId, String idempotencyKey, String title, String description,
-                                WorkTicket.Type type, String targetRef, List<String> specKeys, String assignee) {}
 
     private static final List<String> SCHEMA_TABLES = List.of("products", "product_rules", "loan_contracts");
 
@@ -44,19 +37,15 @@ public class InternalBusinessController {
     private final ProductRuleRepository rules;
     private final LoanContractRepository contracts;
     private final JdbcTemplate jdbc;
-    private final JobPublisher jobs;
-    private final ApprovalGuard guard;
     private final RuleVersionService ruleVersions;
 
     public InternalBusinessController(ProductRepository products, ProductRuleRepository rules,
                                       LoanContractRepository contracts, JdbcTemplate jdbc,
-                                      JobPublisher jobs, ApprovalGuard guard, RuleVersionService ruleVersions) {
+                                      RuleVersionService ruleVersions) {
         this.products = products;
         this.rules = rules;
         this.contracts = contracts;
         this.jdbc = jdbc;
-        this.jobs = jobs;
-        this.guard = guard;
         this.ruleVersions = ruleVersions;
     }
 
@@ -124,23 +113,6 @@ public class InternalBusinessController {
     @PostMapping("/product-rules/versions")
     public ResponseEntity<JobPublisher.Enqueued> applyRuleVersion(@RequestBody RuleVersionService.ApplyRequest req) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ruleVersions.enqueue(req));
-    }
-
-    @PostMapping("/work-tickets")
-    public ResponseEntity<JobPublisher.Enqueued> createTicket(@RequestBody TicketRequest req) {
-        if (req.title() == null || req.title().isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "title is required");
-        List<String> specKeys = req.specKeys() == null ? List.of() : req.specKeys();
-        guard.check(req.taskId(), req.approvalId(), specKeys);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("title", req.title());
-        payload.put("description", req.description());
-        payload.put("type", req.type() == null ? WorkTicket.Type.CODE.name() : req.type().name());
-        payload.put("targetRef", req.targetRef());
-        payload.put("specKeys", specKeys);
-        payload.put("assignee", req.assignee());
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(jobs.publish(req.taskId(), Job.Type.CREATE_TICKET, payload, req.approvalId(), req.idempotencyKey()));
     }
 
     private static boolean blank(String s) {

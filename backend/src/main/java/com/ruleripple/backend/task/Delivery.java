@@ -7,15 +7,14 @@ import lombok.NoArgsConstructor;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/** publish 결과: Draft PR / 작업 티켓 링크. */
+/** 반영 결과 기록. 상품 규칙 새 버전 하나가 한 줄이고, externalRef 는 새 rule_id 다. */
 @Entity
 @Table(name = "deliveries")
 @Getter
 @NoArgsConstructor
 public class Delivery {
 
-    /** RULE_VERSION: 상품 규칙 새 버전 (v2 반영). externalRef 는 새 rule_id */
-    public enum Kind { PR, TICKET, RULE_VERSION }
+    public enum Kind { RULE_VERSION }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

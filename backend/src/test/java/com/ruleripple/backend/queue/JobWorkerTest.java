@@ -3,8 +3,6 @@ package com.ruleripple.backend.queue;
 import com.rabbitmq.client.Channel;
 import com.ruleripple.backend.config.RuleRippleProperties;
 import com.ruleripple.backend.internal.RuleVersionService;
-import com.ruleripple.backend.internal.WorkTicketRepository;
-import com.ruleripple.backend.task.DeliveryRepository;
 import com.ruleripple.backend.task.TaskEventService;
 import org.junit.jupiter.api.Test;
 
@@ -23,8 +21,7 @@ class JobWorkerTest {
     private final JobPublisher publisher = mock(JobPublisher.class);
     private final RuleVersionService ruleVersions = mock(RuleVersionService.class);
     private final Channel channel = mock(Channel.class);
-    private final JobWorker worker = new JobWorker(jobs, publisher, mock(WorkTicketRepository.class),
-            mock(DeliveryRepository.class), mock(TaskEventService.class), ruleVersions, props());
+    private final JobWorker worker = new JobWorker(jobs, publisher, mock(TaskEventService.class), ruleVersions, props());
 
     private static RuleRippleProperties props() {
         var queue = new RuleRippleProperties.Queue("rr.jobs", "rr.jobs.q", "rr.jobs.retry", "rr.jobs.dlq", 3000, 3, 0.0);

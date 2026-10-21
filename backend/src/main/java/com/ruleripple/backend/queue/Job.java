@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * 대기열 작업. status: QUEUED → RUNNING → DONE | RETRYING → … | DEAD
- * 쓰기 작업(CREATE_DRAFT_PR, CREATE_TICKET)은 approvalId 와 idempotencyKey 가 필수다.
+ * 작업은 상품 규칙 반영 하나뿐이고, approvalId 와 idempotencyKey 가 필수다.
  */
 @Entity
 @Table(name = "jobs")
@@ -24,15 +24,7 @@ public class Job {
 
     public enum Status { QUEUED, RUNNING, RETRYING, DONE, DEAD }
 
-    public enum Type {
-        CHECK_PATCH(false), CREATE_DRAFT_PR(true), CREATE_TICKET(true), APPLY_RULE_VERSION(true);
-
-        private final boolean write;
-
-        Type(boolean write) { this.write = write; }
-
-        public boolean isWrite() { return write; }
-    }
+    public enum Type { APPLY_RULE_VERSION }
 
     @Id
     private UUID id;

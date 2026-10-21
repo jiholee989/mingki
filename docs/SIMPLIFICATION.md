@@ -69,7 +69,7 @@
 | 반영 | `apply` | `PUBLISHING` | 상품 규칙에 반영하는 중 |
 | 종료 | `report` | `DONE` · `NO_CHANGE` · `REJECTED` · `FAILED` | |
 
-- `WAITING_REQUIREMENT_APPROVAL` · `HELD`는 쓰지 않는다.
+- `WAITING_REQUIREMENT_APPROVAL` · `HELD`는 없다 (V7에서 지움, BACKEND_API 10.7).
 - `EXTRACTING → LOCATING` 직행을 백엔드에서 허용한다 (`chanhyeok/simplify-reset`). 노드 이름(`impact_agent` · `proposal_agent` · `apply`)은 백엔드 상태 매핑에 추가한다.
 
 ## 3. 결과물: 상품별 변경 제안
@@ -179,14 +179,12 @@ DSR 시나리오 정답 요약 (#21, 상품 12개 전부 판정):
 | 영역 | 할 일 | 상태 |
 |---|---|---|
 | 백엔드 (C) | 직행 · 시연 리셋 · 읽기 보강(#25), 제안 저장 · 확인 · 역할 제거(#28), 반영 API · 큐(#29), 반영 멱등성(#33) | 완료 |
-| | Agent `/continue`를 부르는 "다시 시도" API (`POST /api/ai/tasks/{id}/continue`) | 할 일 |
-| | 옛 흐름 API 정리 (`BACKEND_API.md` 10.7) | 할 일. 프론트 새 화면 PR · B의 `create_work_ticket` 제거와 맞춰서 |
-| | GitHub Actions CI (백엔드 · Agent · MCP 테스트) | 할 일 |
+| | "다시 시도" API `POST /api/ai/tasks/{id}/retry` (Agent `/continue` · `/resume` · `/run`, #39), GitHub Actions CI(#38), 옛 흐름 정리(`BACKEND_API.md` 10.7, V7) | 완료 |
 | Agent (A) | 새 그래프 3개 · 근거 검사(#27), 반영 노드(#32), Spring 어댑터(#30), 복구 · 부분 실패 · 동시 작업(#34), 조항 제한(#35) | 완료 |
 | | **M3:** ① 제15조 제안이 "구조화된 값 변경은 변경 대상 규칙과 정확히 일치" 실패 반복 — R010 `ELIGIBLE_MIN_AGE`를 영향 판단이 고르는지 ② P010 `ESTIMATED_INCOME_RATIO` 0.85 → 0.35 오답 — 요건 대상과 안 맞는 ratio 규칙에 값 변환이 적용됨 ③ 제15조의2 새 규칙(`SENIOR_EXPLANATION_REQUIRED`, bool) 제안이 실제로 나오는지 ④ **새 규칙을 `changes[]`로 표현** — 지금 `RuleChange`가 `rule_id` · `current_value`를 필수로 요구해 새 규칙을 못 담고, `proposal_rows`가 그 제안을 `needs_check` 행으로 내보낸다. 정답지(#44)는 `ruleId: null` + `change_required` + `"true"` · `bool`을 기대 | 할 일. 재현은 `AGENT_ARTICLE_IDS=15` · `15-2`로 한 조항씩, 채점은 `eval/score_proposals.py --expected`(#42 · #44) |
 | | `llm` 모드에서 승인하면 apply가 FAILED로 끝남 (MCP 없음). 건너뛰고 `APPROVED`로 끝낼지 | 판단 대기 |
 | MCP (B) | 조회 도구 · `as_of`(#23), 변경 도구 `apply_rule_version` · `get_job`(#31), 혼합 검색(#20, E와 함께) | 완료 |
-| | `create_work_ticket` · code-mcp 제거 (10.7 정리와 함께) | 할 일 |
+| | `create_work_ticket` · code-mcp 제거 (#48) | 완료 |
 | 데이터 (E) | 데이터 확장 #19, rag-mcp 혼합 검색 #20, DSR 정답지 #21 | 완료 |
 | | 2단계 정답지(고령자 · 제15조의2) #44, 채점 스크립트 #42, 규정 frontmatter `applies_to` #40 | 완료 |
 | | P006 판정 조율(11절), **ISO/IEC 25010 문서(아키텍처 10점)** | 할 일 |
@@ -211,7 +209,6 @@ DSR 시나리오 정답 요약 (#21, 상품 12개 전부 판정):
 | 성민기님 데이터 확장안 (6개 테이블) | 이번 단계는 지금 테이블 구조를 그대로 쓴다 (#19는 행만 늘렸다). M3 이후 다시 본다 |
 | 단순화하는 진짜 이유 | 발표 때 설명할 문장으로 정리 필요 |
 | P006(소액대출) 판정 | 정답지는 `keep`(DSR 관리기준 적용 제외), Agent는 수치형 예외 한도만으로 전체 면제를 확정하지 않아 `needs_check`. 정답지를 바꿀지 판단 규칙을 바꿀지 A · E가 정한다 |
-| `/continue` 호출 주체 | #34의 복구 API를 아직 아무도 안 부른다. 백엔드 "다시 시도" API에 연결하는 쪽으로(9절 백엔드) |
 | `CODEOWNERS` | 10절 폴더 담당을 파일로 만들려면 PM 동의 필요 |
 
 ## 변경 이력
@@ -219,5 +216,6 @@ DSR 시나리오 정답 요약 (#21, 상품 12개 전부 판정):
 | 버전 | 내용 |
 |---|---|
 | v1 (#15) | 코드 수정 → 상품 규칙 제안 · 확인 · 반영으로 단순화 |
+| v2.2 (10-21) | 백엔드 "다시 시도"(#39) · CI(#38) · 옛 흐름 정리(V7) 완료, code-mcp 제거(#48) 완료, 남은 확인에서 `/continue` 호출 주체 삭제 |
 | v2.1 (10-21) | 상태 갱신: M1 · M2 완료(#35), 평가표 대조에서 AI Agent 구현 · MCP를 ✅로, 영역별 할 일을 완료 · 할 일로 정리, M3 알려진 문제 4개(새 규칙 스키마 포함), 2단계 정답지 · 채점기 · `applies_to` 완료(#40 · #42 · #44), 남은 확인에 P006 · `/continue` · `CODEOWNERS` |
 | v2 | 결과물을 상품별 변경 제안서로(영향 3가지 · 후속 작업), Agent 3개 이름, 첫 단계 DSR 한정, 근거 검사 항목 추가, C0006 조회 방법 확정(DSR 구간), 데이터 기준을 #19 · #21로(12개 상품 DSR 판정, 새 행 `R083`부터), 새 규칙 · 절차 변경 처리, business-mcp 요청 5 · 6 · 7 배정, 진행 단계(M1 ~ M4), 협업 규칙. 반영 단계 유지 · 사람 확인은 제안 뒤 1번으로 확정 |
