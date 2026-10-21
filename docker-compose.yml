@@ -62,7 +62,7 @@ services:
       AGENT_CHECKPOINT_DB: postgresql://ruleripple:ruleripple@postgres:5432/ruleripple   # 승인 대기 중 재시작해도 재개
       AGENT_ARTICLE_IDS: ${AGENT_ARTICLE_IDS-8}   # 분석할 조항. 비우면 바뀐 조항 전부 (SIMPLIFICATION 8절)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}         # 없으면 Agent가 시작하지 않고 이유를 로그에 남긴다
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
       RIPPLE_DATA_DIR: /data
     volumes:
       - ./data/regulations:/data/regulations:ro   # 업로드한 원문이 등록된 원문과 같은지 확인용
