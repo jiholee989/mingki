@@ -184,3 +184,36 @@ def test_expected_matches_data(name):
         assert m["rule_id"] in rules, m
     for group in exp.get("bonus", {}).get("contracts", {}).values():
         assert set(group) <= contracts
+
+
+# ---------- 정답에 없는 변경 ----------
+
+def test_unexpected_rule_change_is_counted():
+    """함정 목록에 없는 규칙이라도 정답에 없는 변경은 미통과 (실제 실행의 P010 R073)."""
+    rows = items()
+    by_pid(rows, "P010").update(impact="change_required", ruleId="R073", ruleKey="ESTIMATED_INCOME_RATIO",
+                                currentValue="0.85", proposedValue="0.35", unit="ratio", effectiveDate="2026-12-01")
+    r = score(rows, E)
+    assert [x["rule_id"] for x in r["extra_changes"]] == ["R073"]
+    assert r["core"]["정답에 없는 변경"] == {"ok": 1, "total": 0}
+    assert not r["traps"] and not r["passed"]
+
+
+def test_new_rule_on_wrong_product_is_counted():
+    exp = load_expected("expected_proposals.senior-explanation.yaml")
+    rows = perfect_from(exp)
+    by_pid(rows, "P005").update(impact="change_required", proposedValue="true", unit="bool")  # 정답은 keep
+    r = score(rows, exp)
+    assert [(x["product_id"], x["rule_id"]) for x in r["extra_changes"]] == [("P005", None)]
+    assert not r["passed"]
+
+
+def test_real_run_2026_10_21():
+    """실제 실행(docker compose, gpt-4.1-mini, 제8조) 화면 응답."""
+    data = json.loads((Path(__file__).parent / "fixtures" / "proposals.run-2026-10-21.json").read_text(encoding="utf-8"))
+    r = score(load_proposals(data), E)
+    assert r["core"]["판정 정확도"] == {"ok": 8, "total": 12}
+    assert r["core"]["변경 대상 recall"] == {"ok": 5, "total": 6}
+    assert r["core"]["날짜 · 경과조치"] == {"ok": 5, "total": 5}
+    assert [x["rule_id"] for x in r["extra_changes"]] == ["R073"]
+    assert not r["passed"]
