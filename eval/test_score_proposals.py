@@ -217,3 +217,12 @@ def test_real_run_2026_10_21():
     assert r["core"]["날짜 · 경과조치"] == {"ok": 5, "total": 5}
     assert [x["rule_id"] for x in r["extra_changes"]] == ["R073"]
     assert not r["passed"]
+
+
+def test_numeric_follow_up_keyword_is_compared_as_text():
+    """고령자 정답지의 후속 작업 키워드 65는 YAML에서 숫자로 읽힌다."""
+    exp = load_expected("expected_proposals.senior-age.yaml")
+    rows = perfect_from(exp)
+    by_pid(rows, "P002")["followUp"] = ["신청 대상 '만 65세 이상' 문구 수정"]
+    r = score(rows, exp)
+    assert any(b["product_id"] == "P002" and b["hit"] for b in r["bonus_follow_up"])

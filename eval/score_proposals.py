@@ -128,7 +128,7 @@ def score(proposals: list[dict], expected: dict) -> dict:
     bonus = []
     for b in expected.get("bonus", {}).get("follow_up", []):
         items = [f for r in by_product.get(b["product_id"], []) for f in (r.get("followUp") or [])]
-        hints = b.get("keywords") or _FOLLOW_UP_HINTS
+        hints = [str(h) for h in b.get("keywords") or _FOLLOW_UP_HINTS]  # YAML은 65 같은 키워드를 숫자로 읽는다
         hit = any(any(h in f for h in hints) for f in items)
         bonus.append({"product_id": b["product_id"], "item": b["item"], "hit": hit})
 
