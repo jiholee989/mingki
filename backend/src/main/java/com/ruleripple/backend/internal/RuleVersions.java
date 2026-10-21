@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 상품 규칙 반영 판단 (docs/BACKEND_API.md 10.4). 접수와 워커가 같은 판단을 쓴다.
@@ -71,5 +73,16 @@ final class RuleVersions {
                 .mapToInt(id -> Integer.parseInt(id.substring(1)))
                 .max().orElse(0);
         return String.format("R%03d", max + 1);
+    }
+
+    private static final Pattern REG_URI = Pattern.compile("reg://([a-z0-9-]+)/v\\d+/([0-9a-z-]+)");
+
+    /**
+     * 이어받을 기존 행이 없는 새 규칙의 근거 조항 (JSON 배열). 제안 basis 의 첫 조항
+     * reg://{규정}/{버전}/{조항} → ["{규정}/{조항}"]. 조항이 없으면 [].
+     */
+    static String basisArticlesJson(String basis) {
+        Matcher m = REG_URI.matcher(basis == null ? "" : basis);
+        return m.find() ? "[\"" + m.group(1) + "/" + m.group(2) + "\"]" : "[]";
     }
 }

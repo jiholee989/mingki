@@ -82,4 +82,13 @@ class RuleVersionsTest {
         // 끝난 옛 행만 있으면 새 규칙을 넣을 수 있다 (P010 R070)
         assertThat(RuleVersions.problem(null, null, EFFECTIVE, List.of(row("R070", "0.45", "2022-01-01", "2023-12-31")), TODAY)).isNull();
     }
+
+    @Test
+    void newRuleTakesTheFirstArticleOfTheProposalBasis() {
+        assertThat(RuleVersions.basisArticlesJson("reg://credit-loan-ops/v4/15-2")).isEqualTo("[\"credit-loan-ops/15-2\"]");
+        assertThat(RuleVersions.basisArticlesJson("reg://credit-loan-ops/v4/8, reg://dsr-management/v2/8"))
+                .isEqualTo("[\"credit-loan-ops/8\"]");
+        assertThat(RuleVersions.basisArticlesJson(null)).isEqualTo("[]");
+        assertThat(RuleVersions.basisArticlesJson("근거 없음")).isEqualTo("[]");
+    }
 }

@@ -226,3 +226,15 @@ def test_numeric_follow_up_keyword_is_compared_as_text():
     by_pid(rows, "P002")["followUp"] = ["신청 대상 '만 65세 이상' 문구 수정"]
     r = score(rows, exp)
     assert any(b["product_id"] == "P002" and b["hit"] for b in r["bonus_follow_up"])
+
+
+def test_rule_basis_articles_exist_in_regulations():
+    """상품 규칙의 근거 조항(basis_articles)은 실제 규정 파일에 있는 조항이어야 한다. 비어 있으면 상품 자체 기준."""
+    import re
+    articles = set()
+    for f in (ROOT / "data" / "regulations").glob("*/v*.md"):
+        for n, sub in re.findall(r"^### 제(\d+)조(?:의(\d+))?\(", f.read_text(encoding="utf-8"), re.M):
+            articles.add(f"{f.parent.name}/{n}" + (f"-{sub}" if sub else ""))
+    rules = json.loads((ROOT / "data" / "business" / "product_rules.json").read_text(encoding="utf-8"))
+    assert all(isinstance(r.get("basis_articles"), list) for r in rules)
+    assert {a for r in rules for a in r["basis_articles"]} <= articles

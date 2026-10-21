@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -82,5 +83,9 @@ class RuleVersionServiceTest {
         assertThat(job.getResult()).isEqualTo(result);
         assertThat(job.getLastError()).isNull();
         verify(jobs).save(job);
+        // 새 행은 기존 행(R001)의 근거 조항을 이어받는다. 이어받을 행이 없을 때만 제안 basis 를 쓴다
+        verify(jdbc).update(contains("coalesce((select basis_articles from product_rules where rule_id = ?), ?::jsonb)"),
+                eq("R083"), eq("P001"), eq("DSR_LIMIT"), eq("0.35"), eq("ratio"), eq(LocalDate.of(2026, 12, 1)),
+                eq("R001"), eq("[]"));
     }
 }
