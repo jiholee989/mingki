@@ -22,8 +22,8 @@
 | 검증 ID | 유형 | 인수조건 | 입력 | 기대 결과 | 자동 테스트 | 상태 |
 |---|---|---|---|---|---|---|
 | TC-01 | 정상 | 수정 요청을 보내면 그 제안만 다시 쓰여 새 버전으로 확인 화면에 돌아온다 | 확인 대기 작업, `{proposalId:"REQ-8:P001", baseVersion:1, comment:"기존 대출을 연장하는 고객은 종전 기준이라는 안내를 조치에 넣어줘"}` | 202 · 작업 DESIGNING → 확인 대기. P001 행 `version:2`, `revisionOutcome:revised`, `changedFields:["actions"]`, 조치에 안내 문구. 다른 상품은 1버전 그대로 | `FlowIntegrationTest.requestChangesRewritesOneProposalAndReturnsToReview` (Agent 콜백은 가짜) | 통과 |
-| TC-02 | 예외 | 개정 원문과 충돌하는 요청은 반영하지 않고 사유를 보여 준다 | `comment:"35% 말고 30%로 바꿔줘"` | 확인 대기 복귀. `revisionOutcome:cannot_apply`, 본문은 이전 그대로, `revisionResponse`에 값은 개정 원문 기준이라는 사유. 승인 가능 | Agent `tests/test_observed_regressions.py` (Cannot) · 실제 스택 | Agent 어댑터 뒤 실제 스택 확인 |
-| TC-03 | 예외 | 적용 대상을 바꿔 달라는 요청은 재분석이 필요하다고 안내한다 | `comment:"이 상품은 대상이 아니니까 빼줘"` | `revisionOutcome:needs_clarification`, 본문 그대로, `revisionResponse`에 확인할 질문. 승인 또는 제외 가능 | Agent `tests/test_observed_regressions.py` (Clarify) · 실제 스택 | Agent 어댑터 뒤 실제 스택 확인 |
+| TC-02 | 예외 | 개정 원문과 충돌하는 요청은 반영하지 않고 사유를 보여 준다 | `comment:"35% 말고 30%로 바꿔줘"` | 확인 대기 복귀. `revisionOutcome:cannot_apply`, 본문은 이전 그대로, `revisionResponse`에 값은 개정 원문 기준이라는 사유. 승인 가능 | Agent `tests/test_observed_regressions.py` (Cannot) · 실제 스택 | 통과 (10-22 실제 스택, `docs/test_results/`) |
+| TC-03 | 예외 | 적용 대상을 바꿔 달라는 요청은 본문을 바꾸지 않고 사유를 안내한다 | `comment:"이 상품은 DSR 적용 대상이 아니니까 변경 대상에서 빼줘"` | `revisionOutcome`이 `cannot_apply`(근거에 없음) 또는 `needs_clarification`(재분석 필요), 본문 그대로, `revisionResponse`에 사유. 승인 또는 제외 가능 | Agent `tests/test_observed_regressions.py` (Cannot · Clarify) · 실제 스택 | 통과 (10-22 실제 스택: `cannot_apply`, `docs/test_results/`) |
 | TC-04 | 오류 (실패 유도) | 무엇을 바꿀지 없는 요청은 받지 않는다 | `comment:"다시 써줘"` | Agent 400 → 작업은 확인 대기로 복귀, `errorMessage`에 "구체적으로 다시 적으세요", `GET /revisions/{id}` `state:rejected`. 제안은 1버전 그대로 승인 가능 | `FlowIntegrationTest.revisionTheAgentRefusesGoesBackToReview` (Agent 400 가짜), Agent `validate_feedback` 테스트 | 통과 |
 | TC-05 | 오류 | 잘못된 요청은 접수하지 않는다 | `baseVersion:2`(현재 1) / `proposalId:"REQ-8:P999"` / 유지 판정 `REQ-8:P003` / `comment:" "` | 409 / 400 / 400 / 400. 작업 상태 변화 없음 | `FlowIntegrationTest.revisionRequestChecksProposalVersionAndComment` | 통과 |
 | TC-06 | 예외 | 같은 요청을 다시 보내도 두 번 처리하지 않는다 | 같은 `revisionId` 두 번, 세 번째는 내용만 다르게 | 두 번째는 처음 접수와 같은 `revisionId`, Agent 호출 1회. 세 번째는 409. 다시 쓰는 동안 승인 · 추가 수정 요청은 409 | 같은 테스트 + TC-01 안의 409 확인 | 통과 |
@@ -31,7 +31,7 @@
 | TC-08 | 정상 (화면) | 수정 요청 뒤 "다시 쓰는 중" 화면이 보이고, 끝나면 확인 화면으로 돌아와 바뀐 부분이 표시된다 | 확인 화면에서 상품 하나에 수정 요청 입력 | 처리 중 화면 → 확인 화면, 해당 상품 카드에 새 제안 문장 · 조치, 반영 설명, 바뀐 칸 강조. 캡처 `TC-08_revision.png` | 수동 (화면) | 프론트 작업 뒤 |
 
 - 자동 테스트는 백엔드 `./gradlew test` 71개(단위 64 · 통합 7)에 들어 있다 (#64). 통합 7개는 Docker 위 실제 Postgres · RabbitMQ로 돌고, Agent만 가짜다.
-- 실제 LLM으로 TC-01 ~ 04를 한 바퀴 돌린 결과는 Agent 어댑터 PR이 병합된 뒤 `#64` 본문과 검증 결과서에 남긴다. 캡처 파일명은 `TC-01_revised.png`처럼 TC 번호로 시작한다.
+- 실제 LLM으로 TC-01 ~ 04를 한 바퀴 돌린 기록은 `docs/test_results/20261022-revision-tc01-04.md`(#64)에 있다. TC-03은 Agent가 `cannot_apply`로 답했고, 두 결과 모두 본문을 지키고 사유를 보여 주므로 둘 다 통과로 본다. 캡처 파일명은 `TC-01_revised.png`처럼 TC 번호로 시작한다.
 
 ## 3. 평가셋 · 채점
 
