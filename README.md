@@ -53,6 +53,12 @@ uv run --with pyyaml python eval/run_agent.py \
 
 최종 보고서 기준, DSR 시나리오는 `gpt-5.4-mini`로 3회 측정해 매회 상품 12개를 모두 맞혔다. 전체 조항 통합 평가와는 별도 결과다.
 
+측정 결과와 개선 전후 비교는 [`docs/experiments.md`](docs/experiments.md)에 남긴다. 개선 전(baseline) 결과 파일은 `eval/baseline/`에 있고, 저장된 결과는 LLM 없이 다시 채점할 수 있다.
+
+```bash
+uv run --with pyyaml python eval/summarize_results.py eval/baseline/20261021-170231-all-*.json
+```
+
 ## 구성
 
 | 서비스         | 하는 일                                  | 주소 (호스트)          |
